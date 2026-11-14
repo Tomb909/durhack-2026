@@ -51,7 +51,9 @@ Nothing needs the internet once it is running.
 | Tab | Developer option: the table map and the tray of simulated cards |
 | V | Combinations: every mix of cards side by side (also the button, top right) |
 | X | Remove all simulated cards |
+| W A S D | Move the view; hold Shift to go faster |
 | Arrows, + −, 0 | Turn the view, zoom, reset it (see Moving the camera) |
+| T | Developer option: step through play-area shapes (rectangle, circle, blob) when no camera is connected |
 | I | Instant: no fading or easing, the world jumps to its final state |
 | H | Hide the panels |
 | Q | Picture quality |
@@ -64,7 +66,7 @@ Left alone, the view sways gently from side to side. Touch it and it is yours: a
 |---|---|---|---|---|
 | Turn the view | Drag | Two-finger scroll, or click and drag | One finger | Arrow keys |
 | Zoom, toward the pointer | Wheel | Pinch, or ⌘/Ctrl + two-finger scroll | Pinch | **+** and **−** |
-| Slide the view | Right-drag, middle-drag, or Shift + drag | Shift + two-finger scroll, or Shift + drag | Two fingers | |
+| Move the view | Right-drag, middle-drag, or Shift + drag | Shift + two-finger scroll, or Shift + drag | Two fingers | **W A S D**, with Shift to go faster |
 | Back to the usual view | Double-click | Double-click | | **0** |
 
 A **Reset view** button also appears at the top right whenever the view has been moved; resetting brings the sway back. Pressing on a simulated card still picks the card up rather than turning the view. On a Mac, an ordinary mouse wheel can look like a trackpad to the browser: if the wheel tilts the view instead of zooming, hold ⌘ while you scroll.

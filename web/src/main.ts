@@ -3,7 +3,7 @@
 import { CardStore } from './cards/store';
 import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
-import { bindCameraInput } from './render/camera';
+import { bindCameraInput, MOVE_KEYS, moveWithKeys } from './render/camera';
 import { WorldRenderer } from './render/scene';
 import { SHAPE_PRESETS, WorldSim, shapesDiffer, type WorldShape } from './sim/world';
 import { Combinations } from './ui/combos';
@@ -17,6 +17,8 @@ const view = new WorldRenderer(canvas, document.getElementById('labels')!);
 const table = new TablePanel(document.getElementById('table-panel')!, store, canvas, (x, y) => view.pickTable(x, y));
 const link = new Link();
 const tablePanel = document.getElementById('table-panel') as HTMLElement;
+// The hint at the bottom left says Tab opens the card panel; clicking it does the same.
+document.getElementById('tab-hint')!.addEventListener('click', () => (tablePanel.hidden = false));
 
 // --- play-area shape ----------------------------------------------------------------
 
@@ -135,6 +137,17 @@ const viewReset = document.getElementById('view-reset') as HTMLElement;
 viewReset.addEventListener('click', () => view.rig.reset());
 let cameraHintShown = false;
 
+// W A S D walk the view while held (Shift to go faster). Held keys are tracked here and applied every frame.
+const moveKeys = new Set<string>();
+let moveFast = false;
+const isMoveKey = (key: string) => (MOVE_KEYS as readonly string[]).includes(key);
+window.addEventListener('keyup', (e) => {
+  moveKeys.delete(e.key.toLowerCase());
+  moveFast = e.shiftKey;
+});
+// A key let go while the window is elsewhere is never reported: do not keep walking.
+window.addEventListener('blur', () => moveKeys.clear());
+
 // --- cards by code, with no waiting -------------------------------------------------
 //   ?cards=water*3+life@0.8,0.6   start with these cards, already settled
 //   ?instant                      no fading or easing at all (also the I key)
@@ -178,8 +191,10 @@ const cardCheck = new CardCheck(() => lastSnapshot);
 const qualities = [1, 1.5, 2];
 let quality = 1;
 window.addEventListener('keydown', (e) => {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (combos.isOpen) return; // that view has its own keys
+  moveFast = e.shiftKey;
+  // ⌘, Ctrl and Alt belong to the browser. (A Mac also never reports a key let go while ⌘ is down.)
+  if (e.ctrlKey || e.metaKey || e.altKey || combos.isOpen) return void moveKeys.clear();
+  if (isMoveKey(e.key.toLowerCase())) return void moveKeys.add(e.key.toLowerCase());
   if (e.key === 'Tab') {
     // Developer option: the table map and the tray of simulated cards.
     e.preventDefault();
@@ -216,7 +231,8 @@ window.addEventListener('keydown', (e) => {
       view.setQuality(qualities[quality]);
       toast(`Quality ${qualities[quality]}× · ${view.gpuName}`);
       break;
-    case 's': {
+    case 't': {
+      // The table's shape (was S, which now walks the view).
       if (cameraLive) {
         toast('The camera sets the shape: draw a different border');
         break;
@@ -286,10 +302,11 @@ function tick(now: number): void {
   store.update(dt);
   const frame = store.instant && store.moving ? sim.settleNow(store.cards) : sim.step(store.cards, store.moving, dt);
   table.update();
+  moveWithKeys(view.rig, moveKeys, moveFast, dt);
   if (view.rig.moved && viewReset.hidden && !cameraHintShown) {
     // The first time someone takes the camera, say what else it does (once: after that it is noise).
     cameraHintShown = true;
-    toast('Drag to turn · scroll or pinch to zoom · Shift + drag to move · double-click to reset', 7);
+    toast('Drag to turn · scroll or pinch to zoom · W A S D to move · double-click to reset', 7);
   }
   viewReset.hidden = !view.rig.moved;
   // Behind the Combinations view nothing can be seen: do not spend the GPU drawing it.

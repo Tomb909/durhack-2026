@@ -51,6 +51,12 @@ body.bare #ui > :not(#toast) { display: none; }
 #toast.show { opacity: 1; }
 #keys { position: absolute; right: 18px; bottom: 14px; font-size: 11px; color: rgba(154, 166, 186, 0.7); }
 #keys b { color: rgba(238, 242, 248, 0.8); }
+/* The same quiet hint, bottom left, where the card panel opens. It goes while the panel is showing. */
+#tab-hint { position: absolute; left: 18px; bottom: 14px; padding: 0; border: 0; background: none; font: inherit; font-size: 11px; color: rgba(154, 166, 186, 0.7); cursor: pointer; }
+#tab-hint b { color: rgba(238, 242, 248, 0.8); }
+#tab-hint:hover { color: var(--text); }
+#tab-hint:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 3px; }
+#table-panel:not([hidden]) ~ #tab-hint { display: none; }
 
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(4, 6, 12, 0.62); backdrop-filter: blur(6px); z-index: 30; }
 .overlay[hidden] { display: none; }
