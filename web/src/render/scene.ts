@@ -12,6 +12,7 @@ import { Beacons } from './beacons';
 import { CameraRig } from './camera';
 import { HSCALE, MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
+import { makeLava } from './lava';
 import { CALM, worldMood, type Mood } from './mood';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
@@ -21,6 +22,7 @@ import { QualityGovernor } from './quality';
 import { WorldReach, type Culled } from './sites';
 import { makeTrees } from './trees';
 import { makeWater } from './water';
+import { makePlume } from './plume';
 import { makeWeather } from './weather';
 
 const FOV = 30;
@@ -96,6 +98,9 @@ export class WorldRenderer {
   private retired: THREE.Object3D[] = [];
   /** Things drawn at fixed sites, told before each new world which sites are worth drawing (see sites.ts). */
   private culled: (THREE.Object3D & Culled)[] = [];
+  /** Smoke over the vents, and the lava's level surface: each drawn only while there is some. */
+  private plume!: THREE.Object3D;
+  private lava: THREE.Object3D | null = null;
   private reach = new WorldReach();
   private reachFrame: WorldFrame | null = null;
   private reachVersion = -1;
@@ -145,6 +150,8 @@ export class WorldRenderer {
     this.setShape(DEFAULT_SHAPE);
     this.culled = [makeTrees(this.shared), makePeople(this.shared), makeWeather(this.shared)];
     for (const part of this.culled) this.scene.add(part);
+    this.plume = makePlume(this.shared);
+    this.scene.add(this.plume);
     this.scene.add(this.beacons.group);
 
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
@@ -177,8 +184,11 @@ export class WorldRenderer {
     this.shared.uFieldB.value = this.fields.b;
     this.shared.uFieldC.value = this.fields.c;
     this.shared.uFieldD.value = this.fields.d;
+    this.shared.uFieldE.value = this.fields.e;
+    this.shared.uVent.value = this.fields.vents;
     setSharedWorld(this.shared, gw, gh);
-    this.shaped = [makeTerrain(this.shared, this.palettes, gw, gh), makeSlabSides(this.shared, shape.outline, gw), makeWater(this.shared, gw, gh)];
+    this.lava = makeLava(this.shared, gw, gh);
+    this.shaped = [makeTerrain(this.shared, this.palettes, gw, gh), makeSlabSides(this.shared, shape.outline, gw), this.lava, makeWater(this.shared, gw, gh)];
     for (const object of this.shaped) this.scene.add(object);
   }
 
@@ -319,6 +329,10 @@ export class WorldRenderer {
     this.shared.uSea.value = frame.seaLevel;
     this.fields.update(frame);
     this.shared.uPeak.value = this.fields.peak * HSCALE;
+    this.shared.uVentCount.value = this.fields.ventCount;
+    // No vents, no smoke; no lava, no lava surface: neither is handed to the GPU at all.
+    this.plume.visible = this.fields.ventCount > 0;
+    if (this.lava) this.lava.visible = this.fields.lavaShows;
     this.cullSites(frame);
     this.followMood(frame, dt);
     const count = Math.min(MAX_PULSES, cards.length);

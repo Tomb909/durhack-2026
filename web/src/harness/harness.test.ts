@@ -16,8 +16,9 @@ describe('combination codes', () => {
     expect(parseCode('life@0.8,0.6')).toEqual([{ id: 'life', x: 0.8, y: 0.6 }]);
   });
   it('accepts any unambiguous start of a card id', () => {
-    expect(parseCode('m+w+s+i+l').map((c) => c.id)).toEqual(['mountain', 'water', 'sun', 'ice', 'life']);
-    expect(() => parseCode('lava')).toThrow(/no card called/);
+    expect(parseCode('m+w+s+i+li').map((c) => c.id)).toEqual(['mountain', 'water', 'sun', 'ice', 'life']);
+    expect(() => parseCode('l')).toThrow(/could be life or lava/);
+    expect(() => parseCode('fog')).toThrow(/no card called/);
   });
   it('puts copies side by side, never on top of each other', () => {
     const cards = parseCode('water*3+life');
@@ -30,7 +31,7 @@ describe('combination codes', () => {
   });
   it('lists every combination of cards exactly once', () => {
     const subsets = resolveScenarios({ set: 'subsets' });
-    expect(subsets.length).toBe(2 ** CARD_DEFS.filter((d) => !d.modifier).length); // modifiers are not in the ready-made sets
+    expect(subsets.length).toBe(2 ** CARD_DEFS.filter((d) => !d.modifier && !d.compound).length); // modifiers and compound cards are not mixed in
     expect(new Set(subsets.map((s) => s.code)).size).toBe(subsets.length);
     expect(resolveScenarios({}).length).toBeGreaterThan(10); // the showcase
     expect(resolveScenarios({ codes: 'flood=water*3; life+sun' }).map((s) => s.name)).toEqual(['flood', 'life_sun']);
@@ -62,14 +63,14 @@ describe('the Combinations view filter', () => {
     expect(list[3].cards.filter((c) => c.id === 'water').length).toBe(3);
   });
   it('ignores a remembered choice for a card that no longer exists', () => {
-    const list = combinations({ off: ['lava'], copies: { lava: 3 } }, ids);
+    const list = combinations({ off: ['fog'], copies: { fog: 3 } }, ids);
     expect(list.length).toBe(32);
-    expect(list.some((s) => s.code.includes('lava'))).toBe(false);
+    expect(list.some((s) => s.code.includes('fog'))).toBe(false);
   });
 });
 
 // These run every combination of cards (2^cards), so they get slower with each new card.
-describe('the settled world depends on the cards alone', { timeout: 30_000 }, () => {
+describe('the settled world depends on the cards alone', { timeout: 120_000 }, () => {
   const all = resolveScenarios({ set: 'all' });
   it('gives the same world whatever came before it', () => {
     const fresh = all.map((s) => measure(new WorldSim().settleNow(liveCards(s.cards))).hash);
@@ -84,7 +85,8 @@ describe('the settled world depends on the cards alone', { timeout: 30_000 }, ()
       const once = measure(sim.settleNow(cards)).hash;
       // Working the world out again from where it stands, and letting it run, must not move anything.
       sim.step(cards, true, 1 / 60);
-      for (let i = 0; i < 600; i++) sim.step(cards, false, 1 / 60);
+      // Ten seconds of running, in big steps: every combination is settled here, so small steps add up to minutes.
+      for (let i = 0; i < 100; i++) sim.step(cards, false, 1 / 10);
       // Felled forest is meant to build up as time runs (the land remembers), so it is set aside here:
       // everything that comes from the cards alone must be unchanged.
       sim.frame.cleared.fill(0);
@@ -92,7 +94,7 @@ describe('the settled world depends on the cards alone', { timeout: 30_000 }, ()
     }
   });
   it('is where the animated world ends up, at any frame rate', () => {
-    for (const code of ['water', 'water*3', 'life+water', 'mountain+water', 'water*3@0.3,0.3+life@0.8,0.6', 'mountain+water+sun+ice+life']) {
+    for (const code of ['water', 'water*3', 'life+water', 'mountain+water', 'water*3@0.3,0.3+life@0.8,0.6', 'mountain+water+sun+ice+life', 'ravine+water', 'lava+ravine', 'volcano+water']) {
       const placements = parseCode(code);
       const settled = measure(new WorldSim().settleNow(liveCards(placements)));
       for (const fps of [60, 24]) {
@@ -105,7 +107,7 @@ describe('the settled world depends on the cards alone', { timeout: 30_000 }, ()
           sim.step(store.cards, store.moving, 1 / fps);
         }
         const live = measure(sim.frame);
-        for (const key of ['flooded', 'fresh', 'rain', 'snow', 'forest', 'frozen', 'desert'] as const) {
+        for (const key of ['flooded', 'fresh', 'rain', 'snow', 'forest', 'frozen', 'desert', 'lava'] as const) {
           expect(Math.abs(live[key] - settled[key]), `${code} @${fps}fps ${key}`).toBeLessThan(0.15);
         }
       }
