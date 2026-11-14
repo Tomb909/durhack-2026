@@ -134,10 +134,12 @@ function scenario(code: string, layout: Layout, name?: string): Scenario {
 
 /** The cards that do something by themselves. A modifier (BIG) only changes a card beside it, so it is left out of the ready-made sets: write it in a code (`big+mountain`) to see it. */
 const ids = () => CARD_DEFS.filter((d) => !d.modifier).map((d) => d.id);
+/** The cards mixed in every-combination sets. A compound card (VOLCANO) is already a mix, and each card here doubles the list. */
+const mixable = () => CARD_DEFS.filter((d) => !d.modifier && !d.compound).map((d) => d.id);
 
 /** Every way of choosing cards, one copy each: 2^n codes, fewest cards first. */
 function subsets(): string[] {
-  const all = ids();
+  const all = mixable();
   const out: string[][] = [];
   for (let mask = 0; mask < 1 << all.length; mask++) out.push(all.filter((_, i) => mask & (1 << i)));
   out.sort((a, b) => a.length - b.length);
@@ -145,7 +147,7 @@ function subsets(): string[] {
 }
 
 function pairs(): string[] {
-  const all = ids();
+  const all = mixable();
   const out: string[] = [];
   for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) out.push(`${all[i]}+${all[j]}`);
   return out;
@@ -157,6 +159,10 @@ const SHOWCASE: [code: string, name?: string][] = [
   ['water+sun'], ['life'], ['life+water'], ['life+water+sun'], ['life+water+ice'], ['life+sun'], ['mountain+water'],
   ['water*3@0.3,0.3+life@0.8,0.6', 'life_by_flooded_sea'],
   ['people'], ['people+water+life'], ['big+mountain'],
+  ['ravine'], ['ravine*3'], ['ravine+water'], ['ravine+water*3'], ['mountain+ravine'], ['lava'], ['lava+mountain'], ['lava+ravine'], ['lava+water'], ['lava+ice'],
+  ['volcano'], ['volcano+water'], ['volcano+life+water'], ['volcano+ice'],
+  ['big+volcano'], ['volcano+mountain'], ['volcano+water*3'], ['volcano@0.45,0.5+ravine@0.62,0.5', 'volcano_by_ravine'],
+  ['volcano@0.3,0.45+volcano@0.7,0.55', 'two_volcanoes'],
 ];
 
 export const SETS: Record<string, () => [code: string, name?: string][]> = {

@@ -2,7 +2,7 @@
 
 Handwritten word cards on a table, watched by a phone, reshape a 3D world on a laptop. DurHack 2026.
 
-Put **MOUNTAIN** in a corner and mountains rise there. Add **WATER** and it rains; add more and the sea floods the lowlands. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **LIFE** grows forest only where it is warm and wet enough. The world comes from how the cards combine.
+Put **MOUNTAIN** in a corner and mountains rise there. Add **WATER** and it rains; add more and the sea floods the lowlands. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **LIFE** grows forest only where it is warm and wet enough. **RAVINE** cracks the ground open, **LAVA** wells up and runs downhill into it, and a **VOLCANO** raises a smoking cone with lava spilling from its crater. The world comes from how the cards combine.
 
 ## Run it
 
@@ -77,11 +77,13 @@ A developer option, hidden by default: press **Tab** to show the table map and a
 
 Place **BIG** near the card it modifies, on any side, with their centers no more than 30% of the table width apart. The nearest card is modified, and the table map marks it with **+BIG**. BIG increases that card's local area of influence by 1.5×; on MOUNTAIN, it also makes the height effect 1.5× stronger. Multiple BIG cards stack. Global effects such as WATER's sea-level rise are unchanged.
 
+**RAVINE** is the opposite of MOUNTAIN: it cuts a fissure through the ground, following a fault line that runs through the card, so cards laid along a line draw one long rift and a card on a mountain cuts a canyon through it. A ravine goes below sea level but stays dry until water reaches it: rain running in makes a lake, and a risen sea pours in once it touches the edge. **LAVA** wells up at the card, runs downhill, thins out and stops, and pools level in any hollow it meets (a ravine, a crater). It burns off plants, nobody builds on it, and it sets to black rock under water or where ICE makes it cold. **VOLCANO** raises a stratovolcano: concave flanks scored with gullies, a sunken crater behind a sharp, notched rim, a molten lake in the crater and lava streams spilling from the notches down several flanks. Smoke rises from the crater (from any pool of molten lava, in fact). Two volcanoes on one spot grow into one taller cone, BIG makes it bigger all over, and on a mountain it keeps its crater.
+
 ## Making cards and the sheet
 
 - **Sheet:** A3 (or two A4s taped flat). Draw one closed rectangle with a thick black marker, a finger-width in from the edge.
 - **Cards:** one word per scrap of plain white paper, BLOCK CAPITALS, thick black marker, letters 1.5–2.5 cm tall and close together, blank margin all round. Nothing else on the scrap.
-- **Words:** BIG, MOUNTAIN, WATER, SUN, ICE, LIFE. Make several of each.
+- **Words:** BIG, MOUNTAIN, WATER, SUN, ICE, LIFE, PEOPLE, RAVINE, LAVA, VOLCANO. Make several of each. (CANYON, CHASM or FISSURE also read as RAVINE; MAGMA as LAVA.)
 - **Copies** go side by side, never stacked. Turning a card does nothing.
 
 ## If something goes wrong
@@ -103,9 +105,9 @@ phone (camera page) ── JPEG frames over HTTPS ──► server/deck  (Python
 web/src/cards (smoothing) ─► web/src/sim (world rules, no graphics) ─► web/src/render (Three.js picture)
 ```
 
-- `web/src/cards/cards.json` defines the cards as data: a word, an icon, and what it pushes on (height, temperature, wetness, life, sea level). A new card is a new entry.
+- `web/src/cards/cards.json` defines the cards as data: a word, an icon, and what it pushes on (height, temperature, wetness, life, people, lava, sea level). A new card is a new entry. A height effect can be negative (a cut), keep to a fault line (`crack`: RAVINE) or be a volcano's cone (`cone`: crater, notches, gullies and lava vents, all set on the card).
 - `web/src/sim/world.ts` holds every rule and every tunable number (`RULES`). Nothing in it knows about graphics.
-- `web/src/render/` only draws. It receives the world as two textures and can be restyled freely; `palette.ts` holds the climate colours.
+- `web/src/render/` only draws. It receives the world as a few textures and can be restyled freely; `palette.ts` holds the climate colours, `lava.ts` the look of lava, and `plume.ts` the smoke and embers over molten pools.
 - The sky follows the world. `web/src/render/mood.ts` reads four numbers off the world (how hot, cold, wet and alive it is) and `backdrop.ts` paints from them: amber dusk over a hot world, teal and aurora over a frozen one, grey overcast in the rain, green and fireflies where things grow.
 - `server/deck/vision/` is the tracking: `playarea.py`, `detect.py`, `reader.py`, `tracker.py`.
 
@@ -150,7 +152,7 @@ Every combination of the cards appears as a tile, with what is on the table and 
 
 | Control | Does |
 |---|---|
-| **A switch per card** | Switch a card off to leave it out, on to bring it back. The view shows every combination of the cards that are on: six cards is 64 worlds, five is 32. A modifier card such as BIG starts switched off, because it only changes the card beside it. The number beside the title is how many are showing. |
+| **A switch per card** | Switch a card off to leave it out, on to bring it back. The view shows every combination of the cards that are on, and each card switched on doubles the list: eight cards is 256 worlds, five is 32. A modifier card such as BIG starts switched off, because it only changes the card beside it; so does a compound card such as VOLCANO, which is already a mix of simpler cards. The number beside the title is how many are showing. |
 | **− ×1 +** beside a card | How many copies of that card, wherever it appears, from 1 to 3. Three Waters flood the lowlands; three Mountains make a far taller range. |
 | **3D / Map / Both** | The world as the app draws it, flat from above (nothing hidden behind clouds), or 3D with the map in the corner. |
 | **S / M / L** | Tile size: small to see many at once, large to look closely. |
@@ -167,7 +169,7 @@ No browser, under a second for every combination:
 npm --prefix web run harness -- --set subsets
 ```
 
-One line per world: sea level, highest peak, and the share of the map that is flooded, river or lake, raining, snowing, forest, frozen, desert, plus a fingerprint of the whole world. To see what a rule change did, save the numbers before and compare after:
+One line per world: sea level, highest peak, and the share of the map that is flooded, river or lake, raining, snowing, forest, frozen, desert, villages, farmland, lava, plus a fingerprint of the whole world. To see what a rule change did, save the numbers before and compare after:
 
 ```bash
 npm --prefix web run harness -- --set all --baseline
@@ -190,7 +192,7 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | Option (command line / address) | Meaning |
 |---|---|
 | `"water*3" "life+sun"` / `c=water*3;life+sun` | Your own combination codes, one world each. `name=code` names one. |
-| `--set` / `set=` | `showcase` (default), `singles`, `pairs`, `subsets` (every mix of the cards, 64 with six cards), `copies` (each card ×1 to ×3), `all`. Comma separated. |
+| `--set` / `set=` | `showcase` (default), `singles`, `pairs`, `subsets` (every mix of the plain cards, 256 with eight), `copies` (each card ×1 to ×3), `all`. Comma separated. |
 | `--layout` / `layout=` | Where cards without a position go: `cluster` (together, default) or `spread` (each kind apart) |
 | `--view` / `view=` | `3d`, `map` (flat top-down, no GPU needed), `both` (3D with a map inset) |
 | `--tile` / `tile=` | Tile width in pixels (default 400). `--tile 1200 --cols 1` for a close look at a few worlds. |
@@ -205,6 +207,9 @@ Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for 
 - **A new card** in `cards.json` needs nothing: it gets its own switch in the Combinations view, joins every set, and works in codes.
 - **A new thing the world can have** (a new array on the world's frame in `sim/world.ts`): add it to `measure()` in `web/src/harness/metrics.ts` so the fingerprint covers it, give it a number there if it is worth comparing (`METRIC_KEYS` and `METRIC_LABELS`), and a colour in `web/src/harness/map.ts`.
 - **A modifier card** (one with `modifier` in `cards.json`, like BIG) is left out of the ready-made sets and starts switched off in the Combinations view. Write it in a code to see it: `big+mountain`.
+- **A compound card** (one with `compound` in `cards.json`, like VOLCANO: several simpler cards in one) is left out of `subsets` and `pairs`, which double with every card, and starts switched off in the Combinations view. It is still in `singles`, `copies` and the showcase, and works in codes: `volcano+water`.
+- **Card ids that start alike** need more letters in a code: `l` could be life or lava, so write `li` or `la`.
 - **Things that build up over time** are not in the harness, which shows each world the moment it settles. Woodcutters' felled forest (`cleared`) is the one so far.
+- **Something worked out only for drawing** (the ash and glow around lava made in `render/fields.ts`, and the smoke vents found by `render/vents.ts`) is not part of the world, so it is in the 3D tiles but not in the numbers, the fingerprint or the flat map.
 - **A change to how the app draws** shows up in the tiles by itself: they use the app's own renderer. Anything drawn as a page element rather than in the 3D picture (the card labels, for one) does not appear in tiles.
-- `npm --prefix web test` checks that the settled world depends on the cards alone and that the animated world ends up there. If a rule change breaks that, the harness would stop matching the app.
+- `npm --prefix web test` checks that the settled world depends on the cards alone and that the animated world ends up there. It settles every combination, so it takes longer with each plain card added. If a rule change breaks that, the harness would stop matching the app.

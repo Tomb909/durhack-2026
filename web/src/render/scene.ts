@@ -14,6 +14,7 @@ import { Beacons } from './beacons';
 import { CameraRig } from './camera';
 import { MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
+import { makeLava } from './lava';
 import { CALM, worldMood, type Mood } from './mood';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
@@ -21,6 +22,7 @@ import { makeTerrain } from './terrain';
 import { makePeople } from './people';
 import { makeTrees } from './trees';
 import { makeWater } from './water';
+import { makePlume } from './plume';
 import { makeWeather } from './weather';
 
 const FOV = 30;
@@ -76,6 +78,7 @@ export class WorldRenderer {
     this.scene.add(makeTrees(this.shared));
     this.scene.add(makePeople(this.shared));
     this.scene.add(makeWeather(this.shared));
+    this.scene.add(makePlume(this.shared));
     this.scene.add(this.beacons.group);
 
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
@@ -114,8 +117,10 @@ export class WorldRenderer {
     this.shared.uFieldB.value = this.fields.b;
     this.shared.uFieldC.value = this.fields.c;
     this.shared.uFieldD.value = this.fields.d;
+    this.shared.uFieldE.value = this.fields.e;
+    this.shared.uVent.value = this.fields.vents;
     setSharedWorld(this.shared, gw, gh);
-    this.shaped = [makeTerrain(this.shared, this.palettes, gw, gh), makeSlabSides(this.shared, shape.outline, gw), makeWater(this.shared, gw, gh)];
+    this.shaped = [makeTerrain(this.shared, this.palettes, gw, gh), makeSlabSides(this.shared, shape.outline, gw), makeLava(this.shared, gw, gh), makeWater(this.shared, gw, gh)];
     for (const object of this.shaped) this.scene.add(object);
   }
 
@@ -215,6 +220,7 @@ export class WorldRenderer {
     this.shared.uTime.value = this.time;
     this.shared.uSea.value = frame.seaLevel;
     this.fields.update(frame);
+    this.shared.uVentCount.value = this.fields.ventCount;
     this.followMood(frame, dt);
     const count = Math.min(MAX_PULSES, cards.length);
     for (let i = 0; i < count; i++) {

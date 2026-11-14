@@ -1,7 +1,7 @@
 // A flat, top-down picture of a world, one pixel per grid cell. No 3D, no GPU:
 // it shows exactly what the rules decided, with nothing hidden behind clouds.
 import { cardDef } from '../cards/defs';
-import { RULES, type WorldFrame } from '../sim/world';
+import { RULES, underSea, type WorldFrame } from '../sim/world';
 import type { Placement } from './codes';
 
 type RGB = [number, number, number];
@@ -21,14 +21,16 @@ const RAIN: RGB = [40, 60, 120];
 const FARM: RGB = [206, 190, 92];
 const HOME: RGB = [222, 96, 48];
 const BOAT: RGB = [250, 240, 214];
+const LAVA: RGB = [255, 104, 20];
+const BASALT: RGB = [44, 38, 42];
 
 export const MAP_LEGEND: [label: string, colour: RGB][] = [
-  ['sea', SEA_DEEP], ['river/lake', FRESH], ['forest', FOREST], ['desert', SAND], ['snow/ice', SNOW], ['rock', ROCK], ['farmland', FARM], ['villages', HOME], ['rain (dots)', RAIN],
+  ['sea', SEA_DEEP], ['river/lake', FRESH], ['forest', FOREST], ['desert', SAND], ['snow/ice', SNOW], ['rock', ROCK], ['farmland', FARM], ['villages', HOME], ['lava', LAVA], ['cooled lava', BASALT], ['rain (dots)', RAIN],
 ];
 
 /** Draw the world into a canvas the size of the grid (scale it up when copying). */
 export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | OffscreenCanvas): void {
-  const { w, h, height, temperature, wetness, vegetation, waterSurface, river, precipitation, homes, farms, fishing, seaLevel } = frame;
+  const { w, h, height, temperature, wetness, vegetation, waterSurface, river, precipitation, homes, farms, fishing, lava, lavaHeat, seaLevel } = frame;
   canvas.width = w;
   canvas.height = h;
   const g = canvas.getContext('2d') as CanvasRenderingContext2D;
@@ -40,7 +42,7 @@ export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | Offscreen
       const t = temperature[k];
       const cold = ramp(RULES.freezing + 0.08, RULES.freezing - 0.08, t);
       let c: RGB;
-      if (ground < seaLevel) {
+      if (underSea(frame, k)) {
         c = lerp(lerp(SEA_SHALLOW, SEA_DEEP, ramp(0, 0.06, seaLevel - ground)), SEA_ICE, cold);
       } else {
         c = lerp(GROUND, SAND, ramp(0.2, 0.05, wetness[k]) * ramp(0.1, 0.5, t));
@@ -55,6 +57,8 @@ export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | Offscreen
         const water = Math.max(ramp(0.0005, 0.003, waterSurface[k] - ground), ramp(0.25, 0.7, river[k]));
         c = lerp(c, lerp(FRESH, SEA_ICE, cold), water);
       }
+      // Lava: bright where molten, near black where it has set (seen through the water it set under).
+      if (lava[k] > 0.02) c = lerp(c, lerp(BASALT, LAVA, lavaHeat[k]), Math.min(1, lava[k] * 1.6) * (underSea(frame, k) ? 0.6 : 1));
       // People: houses as a scatter of roof-coloured cells, fishing boats as pale specks on the water.
       if (homes[k] > 0.25 && (i * 7 + j * 3) % 5 < 2) c = lerp(c, HOME, 0.9);
       if (fishing[k] > 0.3 && (i * 5 + j * 11) % 23 === 0) c = BOAT;

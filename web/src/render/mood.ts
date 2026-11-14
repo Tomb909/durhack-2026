@@ -1,7 +1,7 @@
 // The world's conditions as four numbers, so the sky can follow them:
 // how hot, how cold, how wet, and how alive the world is (each 0..1).
 // No graphics in here: a world frame in, a mood out.
-import { RULES, type WorldFrame } from '../sim/world';
+import { RULES, underSea, type WorldFrame } from '../sim/world';
 
 export interface Mood {
   hot: number;
@@ -17,7 +17,7 @@ const sat = (v: number) => Math.min(1, Math.max(0, v));
 /** Read the mood off a world. A quarter of the map in one state is already a strong mood. */
 export function worldMood(frame: WorldFrame): Mood {
   const n = frame.w * frame.h;
-  const { temperature, precipitation, vegetation, height, mask, seaLevel } = frame;
+  const { temperature, precipitation, vegetation, mask } = frame;
   let inside = 0, hot = 0, cold = 0, rain = 0, sea = 0, green = 0;
   for (let i = 0; i < n; i++) {
     if (mask[i] < 0) continue; // outside the play area
@@ -25,7 +25,7 @@ export function worldMood(frame: WorldFrame): Mood {
     if (temperature[i] > 0.35) hot++;
     else if (temperature[i] < RULES.freezing) cold++;
     if (precipitation[i] > 0.05) rain++;
-    if (height[i] < seaLevel) sea++;
+    if (underSea(frame, i)) sea++;
     green += Math.min(1, vegetation[i]);
   }
   if (!inside) return { ...CALM };

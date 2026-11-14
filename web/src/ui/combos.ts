@@ -39,9 +39,10 @@ const esc = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const titleCase = (word: string) => word.charAt(0) + word.slice(1).toLowerCase();
 
 function loadPrefs(): Prefs {
-  // A modifier card (BIG) only changes the card beside it: it starts switched off, so the
-  // first thing you see is every combination of the cards that act by themselves.
-  const prefs: Prefs = { ...defaultFilter(), off: CARD_DEFS.filter((d) => d.modifier).map((d) => d.id), view: '3d', size: 'm' };
+  // A modifier card (BIG) only changes the card beside it, and a compound card (VOLCANO) is
+  // already a mix of simpler ones: both start switched off, so the first thing you see is
+  // every combination of the plain cards. Each card switched on doubles the list.
+  const prefs: Prefs = { ...defaultFilter(), off: CARD_DEFS.filter((d) => d.modifier || d.compound).map((d) => d.id), view: '3d', size: 'm' };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) ?? '{}') as Partial<Prefs>;
     if (Array.isArray(saved.off)) prefs.off = saved.off.filter((id) => typeof id === 'string');

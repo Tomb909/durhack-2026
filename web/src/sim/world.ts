@@ -1,9 +1,9 @@
 // The world's rules. No Three.js in here: cards in, fields out.
 //
-// Cards never change the world directly. They push on five properties
-// (height, temperature, wetness, sea level, life) and everything you see is
-// derived from those. There are no card-pair special cases anywhere.
-import type { FieldName } from '../cards/defs';
+// Cards never change the world directly. They push on a few properties
+// (height, temperature, wetness, sea level, life, people, lava) and everything
+// you see is derived from those. There are no card-pair special cases anywhere.
+import type { CardEffect, FieldName } from '../cards/defs';
 import { heightMultiplier, modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { LiveCard } from '../cards/store';
 import { Hydrology, type HydrologyRules } from './hydrology';
@@ -146,6 +146,39 @@ export const RULES = {
     flat: 0.004, // farmland wants it flatter still
     hilly: 0.011,
   },
+  /** Lava wells up where it is pushed, runs downhill, pools in hollows, and cools to black rock under water or in the cold. */
+  lava: {
+    ventStart: 0.3, // how strongly Lava must push before molten rock wells up
+    ventFull: 0.8,
+    thickness: 0.006, // how thick it lies on open ground
+    coolBelow: -0.3, // colder than this and it has set to rock
+    coolSpan: 0.25, // fully molten this much warmer than that
+    flow: {
+      riverStart: 10,
+      riverFull: 60,
+      lakeStart: 12,
+      lakeFull: 80,
+      lakeMinDepth: 0.0012,
+      riverDepth: 0.005,
+      dryOffset: 0.004,
+      keep: 0.98, // a stream loses this much at every step, so it runs out
+      levelLakes: true,
+    } satisfies HydrologyRules,
+  },
+  /** A volcano's cone (an effect with `cone`; the shape itself is on the card). */
+  volcano: {
+    ceiling: 0.9, // rims level off around this height, however many copies or BIG
+    huddle: 0.35, // each copy close by lifts a cone by up to this share
+    grow: 0.55, // a cone fading in starts this wide (share of its full size) and grows to full
+    lopsided: 0.15, // the crater sits off centre by this share of its radius, so one side of the rim is lower
+    outline: [0.07, 0.045, 0.03], // the foot bulges out by these shares at 2, 3 and 5 lobes round the cone
+    craterPower: 3, // the crater's inner wall rises as (distance / crater radius)^this: flat floor, steep wall
+    crest: 0.15, // rounding where the inner wall meets the flank, as a share of the crater's depth (small: a sharp rim)
+    gullyWidth: [1.0, 0.045], // gully half-width in cells: this many, plus this share of the distance from the centre
+    notchWidth: 2.2, // notch half-width in cells
+    notchReach: 0.12, // a notch fades out down the flank over this share of the base radius
+    evenOut: [0.35, 0.65], // the summit evens out the ground under it fully within this share of the base radius, and not at all beyond that
+  },
   settleSeconds: 0.35, // how fast rivers and lakes ease to their new shape
   /** Land beside water is damper, which can move the water again. Look this many times at most. */
   settlePasses: 12,
@@ -188,6 +221,12 @@ export interface WorldFrame {
    * the land remembers. Kept apart from `vegetation` (which follows the cards alone).
    */
   cleared: Float32Array;
+  /** 0..1 how much lava covers the ground here, molten or set. */
+  lava: Float32Array;
+  /** 0..1 how molten that lava is: 1 glowing, 0 cooled to black rock (under water, or in the cold). */
+  lavaHeat: Float32Array;
+  /** Height of the lava's surface. Below `height` where there is none. */
+  lavaSurface: Float32Array;
   /** Signed distance to the play area's outline in cells, positive inside. */
   mask: Float32Array;
   /** Long / short side. */
@@ -205,6 +244,9 @@ const smoothstep = (a: number, b: number, x: number) => {
 
 const softCap = (x: number, ceiling: number) => ceiling * Math.tanh(x / ceiling);
 
+/** True where the sea covers this cell. Ground below sea level can still be dry: a hole the sea has not reached. */
+export const underSea = (frame: WorldFrame, i: number) => frame.height[i] < frame.seaLevel && frame.waterSurface[i] > frame.height[i];
+
 type LocalField = Exclude<FieldName, 'seaLevel'>;
 
 export class WorldSim {
@@ -219,6 +261,23 @@ export class WorldSim {
   private base: Float32Array;
   private ridge: Float32Array;
   private rough: Float32Array;
+  /** Fault lines: a cut (an effect with `crack`) follows the line of this field that runs through its card. */
+  private fault: Float32Array;
+  /** How fast `fault` changes per cell, so a crack is the same width everywhere. */
+  private faultGrade: Float32Array;
+  /** Volcano cones (effects with `cone`): the highest cone at each cell. */
+  private coneLift: Float32Array;
+  /** Molten rock pouring out of the cones' notches, in lava flow units. */
+  private ventFlow: Float32Array;
+  /**
+   * How much a cone's summit evens out the ground under it (0..1), and the level it evens it to
+   * (summed, weighted by that share). A volcano on a mountain keeps its crater whole.
+   */
+  private coneMask: Float32Array;
+  private coneFloor: Float32Array;
+  /** Height at full precision while it is worked out. */
+  private ground: Float64Array;
+  private hadCone = false;
   /** Summed card pushes per property (after the copies ceiling). */
   private push: Record<LocalField, Float32Array>;
   private copies: Float32Array;
@@ -227,6 +286,11 @@ export class WorldSim {
   private nearWater: Float32Array;
   private scratch: Float32Array;
   private hydrology: Hydrology;
+  private lavaFlow: Hydrology;
+  private lavaSource: Float32Array;
+  private lavaTarget: Float32Array;
+  private lavaHeatTarget: Float32Array;
+  private lavaSurfaceTarget: Float32Array;
   private lastSurface: Float32Array;
   private lastRiver: Float32Array;
   private settle = 0;
@@ -240,8 +304,10 @@ export class WorldSim {
     const h = (this.h = gridHeight(aspect));
     const n = (this.n = w * h);
     const f = () => new Float32Array(n);
-    this.base = f(); this.ridge = f(); this.rough = f();
-    this.push = { height: f(), temperature: f(), wetness: f(), life: f(), people: f() };
+    this.base = f(); this.ridge = f(); this.rough = f(); this.fault = f(); this.faultGrade = f(); this.coneLift = f(); this.ventFlow = f(); this.coneMask = f(); this.coneFloor = f(); this.ground = new Float64Array(n);
+    this.push = { height: f(), temperature: f(), wetness: f(), life: f(), people: f(), lava: f() };
+    this.lavaSource = f(); this.lavaTarget = f(); this.lavaHeatTarget = f(); this.lavaSurfaceTarget = f();
+    this.lavaFlow = new Hydrology(w, h);
     this.copies = f(); this.surfaceTarget = f(); this.riverTarget = f(); this.nearWater = f(); this.scratch = f();
     this.lastSurface = f(); this.lastRiver = f();
     this.hydrology = new Hydrology(w, h);
@@ -252,7 +318,8 @@ export class WorldSim {
       w, h,
       height: f(), temperature: f(), wetness: f(),
       vegetation: f(), waterSurface: f(), river: f(),
-      precipitation: f(), homes: f(), farms: f(), fishing: f(), logging: f(), cleared: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
+      precipitation: f(), homes: f(), farms: f(), fishing: f(), logging: f(), cleared: f(),
+      lava: f(), lavaHeat: f(), lavaSurface: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
     };
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
@@ -265,6 +332,17 @@ export class WorldSim {
         this.base[k] = fbm(X * 1.9, Y * 1.9, 4, 11);
         this.ridge[k] = ridged(X * 3.4, Y * 3.4, 5, 5);
         this.rough[k] = fbm(X * 9, Y * 9, 2, 23) - 0.5;
+        this.fault[k] = fbm(X * 2.3, Y * 2.3, 3, 71);
+      }
+    }
+    // Never flatter than this, or a crack would spread into a wide pit where the field levels off.
+    const gentlest = 0.0035;
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const k = j * w + i;
+        const gx = (this.fault[j * w + Math.min(w - 1, i + 1)] - this.fault[j * w + Math.max(0, i - 1)]) / 2;
+        const gy = (this.fault[Math.min(h - 1, j + 1) * w + i] - this.fault[Math.max(0, j - 1) * w + i]) / 2;
+        this.faultGrade[k] = Math.max(gentlest, Math.hypot(gx, gy));
       }
     }
     let lowest = Infinity;
@@ -288,18 +366,25 @@ export class WorldSim {
       if (!this.started) {
         this.frame.waterSurface.set(this.surfaceTarget);
         this.frame.river.set(this.riverTarget);
+        this.arriveLava();
         this.started = true;
       }
     }
     if (this.settle > 0) {
       this.settle -= dt;
       const k = 1 - Math.exp(-dt / RULES.settleSeconds);
-      const { waterSurface, river } = this.frame;
+      const { waterSurface, river, lava, lavaHeat, lavaSurface } = this.frame;
       const st = this.surfaceTarget;
       const rt = this.riverTarget;
+      const lt = this.lavaTarget;
+      const ht = this.lavaHeatTarget;
+      const lst = this.lavaSurfaceTarget;
       for (let i = 0; i < this.n; i++) {
         waterSurface[i] += (st[i] - waterSurface[i]) * k;
         river[i] += (rt[i] - river[i]) * k;
+        lava[i] += (lt[i] - lava[i]) * k;
+        lavaHeat[i] += (ht[i] - lavaHeat[i]) * k;
+        lavaSurface[i] += (lst[i] - lavaSurface[i]) * k;
       }
       // The water has arrived. Land beside it is damper now, which may move the
       // water again, so look once more and keep going until nothing changes.
@@ -344,10 +429,18 @@ export class WorldSim {
     for (let i = 0; i < RULES.settlePasses; i++) if (!this.refine(cards)) break;
     this.frame.waterSurface.set(this.surfaceTarget);
     this.frame.river.set(this.riverTarget);
+    this.arriveLava();
     this.settle = 0;
     this.passesLeft = 0;
     this.frame.version++;
     return this.frame;
+  }
+
+  /** Put the lava where it is heading, at once. */
+  private arriveLava(): void {
+    this.frame.lava.set(this.lavaTarget);
+    this.frame.lavaHeat.set(this.lavaHeatTarget);
+    this.frame.lavaSurface.set(this.lavaSurfaceTarget);
   }
 
   /** Let the water reach its target and work the world out again. True if that moved the water. */
@@ -367,6 +460,13 @@ export class WorldSim {
   private recompute(cards: LiveCard[]): void {
     const { n, frame, push } = this;
     for (const key of Object.keys(push) as LocalField[]) push[key].fill(0);
+    if (this.hadCone) {
+      this.coneLift.fill(0);
+      this.ventFlow.fill(0);
+      this.coneMask.fill(0);
+      this.coneFloor.fill(0);
+      this.hadCone = false;
+    }
 
     const modifiersByTarget = modifierTargets(cards);
     const radiusMultipliers = new Map<LiveCard, number>();
@@ -376,6 +476,7 @@ export class WorldSim {
 
     // --- 1. gather card pushes. Copies of the same card add up, then level off.
     let sea = RULES.seaBase;
+    const cones: [LiveCard[], CardEffect][] = [];
     const groups = new Map<string, LiveCard[]>();
     for (const card of cards) {
       if (card.strength <= 0) continue;
@@ -390,6 +491,10 @@ export class WorldSim {
           let total = 0;
           for (const card of group) total += card.strength;
           if (effect.field === 'seaLevel') sea += effect.amount * softCap(total, RULES.seaCopiesCeiling);
+          continue;
+        }
+        if (effect.cone) {
+          if (effect.field === 'height') cones.push([group, effect]); // built on the ground, once that is known
           continue;
         }
         const target = push[effect.field as LocalField];
@@ -408,7 +513,7 @@ export class WorldSim {
         }
         for (const [radius, byAmount] of byRadius) {
           for (const [amountMultiplier, radiusGroup] of byAmount) {
-            this.addCopies(radiusGroup, radius);
+            this.addCopies(radiusGroup, radius, (effect.crack ?? 0) * (radius / (effect.radius ?? 0.2)));
             const copies = this.copies;
             const ceiling = RULES.copiesCeiling;
             for (let i = 0; i < n; i++) {
@@ -427,11 +532,27 @@ export class WorldSim {
 
     // --- 3. derive everything from the five properties
     const { height, temperature, wetness, vegetation, precipitation } = frame;
+    const ground = this.ground;
     for (let i = 0; i < n; i++) {
       const lift = push.height[i];
       // Ridged noise carves the lift into peaks and valleys; the middle of a range rises steepest.
+      // A cut (lift below zero) keeps more of its depth everywhere, so its floor is not broken into separate pits.
       const peak = 0.72 + 0.5 * smoothstep(0.0, 0.5, lift);
-      const h = this.base[i] + lift * peak * (0.38 + 0.62 * this.ridge[i]) + lift * 0.14 * this.rough[i];
+      const shaped = lift >= 0 ? peak * (0.38 + 0.62 * this.ridge[i]) : 0.72 + 0.28 * this.ridge[i];
+      ground[i] = height[i] = this.base[i] + lift * shaped + lift * 0.14 * this.rough[i];
+    }
+    // Volcanoes stand on that ground.
+    for (const [group, effect] of cones) this.addCones(group, effect, radiusMultipliers, modifiersByTarget);
+    if (this.hadCone) {
+      const { coneLift, coneMask, coneFloor, rough } = this;
+      for (let i = 0; i < n; i++) {
+        const m = coneMask[i];
+        const g = ground[i];
+        ground[i] = (m > 0 ? g + (coneFloor[i] / m - g) * Math.min(1, m) : g) + coneLift[i] * (1 + 0.1 * rough[i]);
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const h = ground[i];
       height[i] = h;
 
       const altitude = Math.max(0, h - RULES.lapseStartsAt);
@@ -446,7 +567,11 @@ export class WorldSim {
     }
 
     // --- 4. water on land
-    this.hydrology.compute(height, sea, precipitation, this.surfaceTarget, this.riverTarget, RULES.hydrology, this.inside);
+    // Ground below the base sea level only exists where something dug it: the sea has to find its way in.
+    this.hydrology.compute(height, sea, precipitation, this.surfaceTarget, this.riverTarget, RULES.hydrology, this.inside, RULES.seaBase);
+
+    // --- 4b. lava: wells up where pushed, runs downhill, pools; water and cold set it to rock
+    this.flowLava();
 
     // --- 5. plants: only where Life reaches AND the climate suits AND it is not under water
     for (let i = 0; i < n; i++) {
@@ -455,12 +580,55 @@ export class WorldSim {
         smoothstep(RULES.plantWetMin, RULES.plantWetGood, wetness[i]) *
         smoothstep(RULES.plantColdLimit, RULES.plantColdGood, temperature[i]);
       const submerged = smoothstep(0.0, 0.004, this.surfaceTarget[i] - height[i]);
-      vegetation[i] = this.inside[i] ? life * suits * (1 - submerged) : 0;
+      const burnt = smoothstep(0.02, 0.3, this.lavaTarget[i]);
+      vegetation[i] = this.inside[i] ? life * suits * (1 - submerged) * (1 - burnt) : 0;
     }
 
     // --- 6. people: houses on dry, gentle, liveable land; fields on flat fertile land; boats on open water
     this.settlePeople();
     frame.version++;
+  }
+
+  private hadLava = false;
+  private flowLava(): void {
+    const { n, frame, lavaSource, lavaTarget, lavaHeatTarget, lavaSurfaceTarget, surfaceTarget } = this;
+    const { height, temperature } = frame;
+    const L = RULES.lava;
+    const pushed = this.push.lava;
+    const vents = this.ventFlow;
+    let any = false;
+    for (let i = 0; i < n; i++) {
+      // Lava pushed on wells up (up to 1 per cell); a cone's notches pour out more than that.
+      const s = this.inside[i] ? smoothstep(L.ventStart, L.ventFull, pushed[i]) + vents[i] : 0;
+      lavaSource[i] = s;
+      if (s > 0) any = true;
+    }
+    if (!any) {
+      if (this.hadLava) {
+        lavaTarget.fill(0);
+        lavaHeatTarget.fill(0);
+      }
+      for (let i = 0; i < n; i++) lavaSurfaceTarget[i] = height[i] - L.flow.dryOffset;
+      this.hadLava = false;
+      return;
+    }
+    this.hadLava = true;
+    // The same downhill rules as water, with no sea to stop at. `scratch` holds the streams.
+    const stream = this.scratch;
+    this.lavaFlow.compute(height, -Infinity, lavaSource, lavaSurfaceTarget, stream, L.flow, this.inside);
+    for (let i = 0; i < n; i++) {
+      const pooled = smoothstep(0.0005, 0.004, lavaSurfaceTarget[i] - height[i]);
+      const amount = Math.max(stream[i], pooled, Math.min(1, lavaSource[i]));
+      lavaTarget[i] = amount;
+      // Lying on open ground it has some thickness of its own.
+      let top = Math.max(lavaSurfaceTarget[i], height[i] + L.thickness * amount - L.flow.dryOffset * (1 - amount));
+      // Water puts it out: it sets as rock on the bed, under the water.
+      const water = surfaceTarget[i] - height[i];
+      const quenched = smoothstep(0.0, 0.003, water);
+      if (quenched > 0) top += (Math.min(top, surfaceTarget[i] - 0.003) - top) * quenched;
+      lavaSurfaceTarget[i] = top;
+      lavaHeatTarget[i] = (1 - quenched) * smoothstep(L.coolBelow, L.coolBelow + L.coolSpan, temperature[i]);
+    }
   }
 
   private settlePeople(): void {
@@ -484,11 +652,12 @@ export class WorldSim {
       const dry = 1 - smoothstep(0.0, 0.0012, depth);
       const climate = smoothstep(-0.8, -0.5, t) * (1 - smoothstep(0.65, 0.92, t));
       const gentle = (1 - smoothstep(P.steep, P.tooSteep, slope)) * (1 - smoothstep(P.highland, P.peaks, height[i]));
-      const home = smoothstep(P.homeStart, P.homeFull, reach) * climate * gentle * dry;
+      const clear = 1 - smoothstep(0.02, 0.3, this.lavaTarget[i]); // nobody builds or farms on lava
+      const home = smoothstep(P.homeStart, P.homeFull, reach) * climate * gentle * dry * clear;
       const fertile =
         smoothstep(0.28, 0.5, wetness[i]) * smoothstep(-0.35, -0.12, t) * (1 - smoothstep(0.45, 0.75, t)) *
         (1 - smoothstep(P.flat, P.hilly, slope));
-      const farm = smoothstep(P.farmStart, P.farmFull, reach) * fertile * dry * (1 - 0.7 * home);
+      const farm = smoothstep(P.farmStart, P.farmFull, reach) * fertile * dry * clear * (1 - 0.7 * home);
       const open = smoothstep(0.002, 0.006, depth) * smoothstep(RULES.freezing - 0.05, RULES.freezing + 0.1, t);
       homes[i] = home;
       farms[i] = farm;
@@ -499,9 +668,175 @@ export class WorldSim {
     }
   }
 
-  /** Sum of gaussian falloffs for every copy in the group, into `this.copies`. */
-  private addCopies(group: LiveCard[], radius: number): void {
+  /**
+   * Volcano cones for every copy in the group, into `coneLift` (the highest cone wins where
+   * they meet) and the lava pouring from their notches into `ventFlow`.
+   *
+   * A cone: a concave flank, (1 - d)^power from the rim to the foot; a crater (a flat-floored
+   * bowl, set a little off centre) cut out of the top with a sharp crest; gullies down the
+   * flanks; and notches in the rim at the heads of the first few gullies. The foot bulges
+   * unevenly. Each copy is turned by an angle that follows its position, so two volcanoes
+   * differ, and everything moves smoothly as a card glides or fades.
+   */
+  private addCones(group: LiveCard[], effect: CardEffect, radiusMultipliers: Map<LiveCard, number>, modifiers: Map<LiveCard, LiveCard[]>): void {
+    const spec = effect.cone!;
+    const V = RULES.volcano;
+    const { w, h, coneLift, ventFlow } = this;
+    const cells = w - 1;
+    const copies = group.map((card) => ({
+      card,
+      x: card.x * (w - 1),
+      y: card.y * (h - 1),
+      radius: (effect.radius ?? 0.2) * (radiusMultipliers.get(card) ?? 1) * cells * (V.grow + (1 - V.grow) * card.strength),
+      rim: effect.amount * heightMultiplier(modifiers.get(card) ?? []) * card.strength,
+    }));
+    // Copies standing close together grow into one taller cone: each leans towards the others
+    // nearby (all the way when they stand on the same spot), and is lifted by them.
+    const merged = copies.map((a) => {
+      let near = 0;
+      let sx = 0;
+      let sy = 0;
+      for (const b of copies) {
+        if (b === a) continue;
+        const d = Math.hypot(b.x - a.x, b.y - a.y) / (0.5 * a.radius);
+        const g = b.card.strength * Math.exp(-0.5 * d * d);
+        near += g;
+        sx += g * (b.x - a.x);
+        sy += g * (b.y - a.y);
+      }
+      return {
+        x: a.x + sx / (1 + near),
+        y: a.y + sy / (1 + near),
+        rim: softCap(a.rim * (1 + V.huddle * Math.tanh(near)), V.ceiling),
+      };
+    });
+    const G = Math.max(0, Math.round(spec.gullies));
+    const N = Math.min(G, Math.max(0, Math.round(spec.notches)));
+    const p = spec.power;
+    const q = V.craterPower;
+    const [o2, o3, o5] = V.outline;
+    const [gw0, gw1] = V.gullyWidth;
+    // Fixed character per gully: how far it strays from even spacing, how deep it is.
+    const jitter = (j: number) => {
+      const v = Math.sin(j * 12.9898 + 4.1) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    const gullyBearing = new Float64Array(G);
+    const gullyDeep = new Float64Array(G);
+    const notchOf = new Int32Array(G).fill(-1);
+    for (let k = 0; k < N; k++) notchOf[Math.round((k * G) / N)] = k;
+    for (let j = 0; j < G; j++) {
+      gullyBearing[j] = (2 * Math.PI * (j + (notchOf[j] >= 0 ? 0 : 0.6 * (jitter(j) - 0.5)))) / G;
+      gullyDeep[j] = notchOf[j] >= 0 ? 1 : 0.55 + 0.45 * jitter(j + 17);
+    }
+    // A gully wanders a little as it goes down.
+    const wander = (j: number, r: number, radius: number) => 0.09 * Math.sin((r / radius) * 6 + j * 1.7);
+    const wrap = (a: number) => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+
+    copies.forEach((c, index) => {
+      const { x: cx, y: cy, rim: H } = merged[index];
+      if (H <= 0) return;
+      this.hadCone = true;
+      const R = c.radius;
+      const rc = spec.crater * R;
+      const D = spec.craterDepth * H;
+      const turn = (2.0 * cx) / (w - 1) + (1.4 * cy) / (h - 1); // radians: follows the card, so it glides
+      // The summit evens out the ground under it to the level at the card, so the crater stays whole on rough ground.
+      const level = sampleField(this.frame.height, w, h, cx / (w - 1), cy / (h - 1));
+      const evenIn = V.evenOut[0] * R;
+      const evenOut = V.evenOut[1] * R;
+      // The crater leans towards the last notch, the lowest, so the crater lake spills there:
+      // the weakest vent, so the streams come out at different strengths.
+      const lean = N > 0 ? turn + gullyBearing[Math.round(((N - 1) * G) / N)] : turn;
+      const ox = V.lopsided * rc * Math.cos(lean);
+      const oy = V.lopsided * rc * Math.sin(lean);
+      const crest = V.crest * D;
+      const reach = R * (1 + o2 + o3 + o5) + 1;
+      const x0 = Math.max(0, Math.floor(cx - reach));
+      const x1 = Math.min(w - 1, Math.ceil(cx + reach));
+      const y0 = Math.max(0, Math.floor(cy - reach));
+      const y1 = Math.min(h - 1, Math.ceil(cy + reach));
+      for (let j = y0; j <= y1; j++) {
+        const dy = j - cy;
+        for (let i = x0; i <= x1; i++) {
+          const dx = i - cx;
+          const r = Math.hypot(dx, dy);
+          if (r > reach) continue;
+          const cell = j * w + i;
+          if (r < evenOut) {
+            const m = c.card.strength * (1 - smoothstep(evenIn, evenOut, r)); // eases in with the card
+            this.coneMask[cell] += m;
+            this.coneFloor[cell] += m * level;
+          }
+          const theta = Math.atan2(dy, dx);
+          const a = theta - turn;
+          const foot = R * (1 + o2 * Math.cos(2 * a) + o3 * Math.cos(3 * a + 1.3) + o5 * Math.cos(5 * a + 0.4));
+          const t = (r - rc) / (foot - rc);
+          if (t >= 1) continue;
+          const flank = H * Math.pow(1 - t, p); // above the rim inside it: cut away by the crater
+          const rr = Math.hypot(dx - ox, dy - oy) / rc;
+          const bowl = H - D + D * rr * rr * rr * (q === 3 ? 1 : Math.pow(rr, q - 3));
+          // Smooth minimum (polynomial), small rounding: the rim is a crest, not a shoulder.
+          const gap = Math.max(crest - Math.abs(flank - bowl), 0) / crest;
+          let z = Math.min(flank, bowl) - gap * gap * crest * 0.25;
+          if (t > 0 && G > 0) {
+            let g = 0;
+            const width2 = (gw0 + gw1 * r) ** 2;
+            for (let k = 0; k < G; k++) {
+              const lateral = r * wrap(a - gullyBearing[k] - wander(k, r, R));
+              if (lateral * lateral > 9 * width2) continue;
+              const v = gullyDeep[k] * Math.exp(-(lateral * lateral) / width2);
+              if (v > g) g = v;
+            }
+            z -= spec.gullyDepth * flank * smoothstep(0, 0.35, t) * g;
+          }
+          for (let k = 0; k < N; k++) {
+            const gully = Math.round((k * G) / N);
+            const lateral = r * wrap(a - gullyBearing[gully] - wander(gully, r, R));
+            const down = (r - rc) / (V.notchReach * R);
+            const depth = spec.notchDepth * D * (k === N - 1 ? 1 : 0.82);
+            z -= depth * Math.exp(-(lateral * lateral) / (V.notchWidth * V.notchWidth) - down * down);
+          }
+          if (z > coneLift[cell]) coneLift[cell] = z;
+        }
+      }
+      // Lava pours out just below each notch, onto the flank.
+      const flow = (spec.lava ?? 0) * c.card.strength;
+      if (flow <= 0) return;
+      for (let k = 0; k < N; k++) {
+        const gully = Math.round((k * G) / N);
+        const r = rc + 2;
+        const b = turn + gullyBearing[gully] + wander(gully, r, R);
+        this.splat(ventFlow, cx + r * Math.cos(b), cy + r * Math.sin(b), flow * Math.pow(0.6, k));
+      }
+    });
+  }
+
+  /** Add `amount` at a point between cells, shared among the four around it. */
+  private splat(field: Float32Array, x: number, y: number, amount: number): void {
+    const { w, h } = this;
+    const fx = Math.min(w - 1.001, Math.max(0, x));
+    const fy = Math.min(h - 1.001, Math.max(0, y));
+    const ix = Math.floor(fx);
+    const iy = Math.floor(fy);
+    const tx = fx - ix;
+    const ty = fy - iy;
+    const i = iy * w + ix;
+    field[i] += amount * (1 - tx) * (1 - ty);
+    field[i + 1] += amount * tx * (1 - ty);
+    field[i + w] += amount * (1 - tx) * ty;
+    field[i + w + 1] += amount * tx * ty;
+  }
+
+  /**
+   * Sum of gaussian falloffs for every copy in the group, into `this.copies`.
+   * With `crack` (a width, as a fraction of the world's width) each copy keeps to the
+   * fault line running through it instead of spreading evenly: a fissure, not a bowl.
+   */
+  private addCopies(group: LiveCard[], radius: number, crack = 0): void {
     const copies = this.copies;
+    const { fault, faultGrade } = this;
+    const crackCells = crack * (this.w - 1);
     copies.fill(0);
     const { w: GW, h: GH } = this;
     const sigmaX = radius * (GW - 1); // radius is a fraction of the world's width
@@ -514,12 +849,19 @@ export class WorldSim {
       const x1 = Math.min(GW - 1, Math.ceil(cx + reach * sigmaX));
       const y0 = Math.max(0, Math.floor(cy - reach * sigmaY));
       const y1 = Math.min(GH - 1, Math.ceil(cy + reach * sigmaY));
+      const line = crack > 0 ? sampleField(fault, GW, GH, card.x, card.y) : 0;
       for (let j = y0; j <= y1; j++) {
         const dy = (j - cy) / sigmaY;
         const row = j * GW;
         for (let i = x0; i <= x1; i++) {
           const dx = (i - cx) / sigmaX;
-          copies[row + i] += card.strength * Math.exp(-0.5 * (dx * dx + dy * dy));
+          let amount = card.strength * Math.exp(-0.5 * (dx * dx + dy * dy));
+          if (crack > 0) {
+            // Roughly how many cells this one is from the card's fault line.
+            const off = (fault[row + i] - line) / (faultGrade[row + i] * crackCells);
+            amount *= Math.exp(-0.5 * off * off);
+          }
+          copies[row + i] += amount;
         }
       }
     }

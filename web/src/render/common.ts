@@ -3,12 +3,16 @@
 // The renderer's whole view of the world is two textures (see fields.ts):
 //   uFieldA = height, temperature, wetness, vegetation
 //   uFieldB = waterSurface, river, precipitation, inside mask (0.5 on the outline)
-//   uFieldC = homes, farms, fishing, (spare)
-//   uFieldD = cleared (felled forest, permanent), logging, (spare), (spare)
+//   uFieldC = homes, farms, fishing, lavaHeat (1 molten .. 0 set to rock)
+//   uFieldD = cleared (felled forest, permanent), logging, lavaSurface, lava (how much covers the ground)
+//   uFieldE = ash (lava spread wide: burnt ground), lava glow (molten lava spread a little),
+//             molten lava spread a medium way (scoria, crater rim), any lava spread a medium way (basalt)
 // plus the sea level. Rewrite anything in render/ freely: nothing else in the
 // app depends on it.
 import * as THREE from 'three';
 import { A3_ASPECT, GW, RULES, gridHeight } from '../sim/world';
+import { MAX_VENTS } from './vents';
+export { MAX_VENTS };
 
 /** World size in scene units. X = table left to right, Z = far to near, Y = up. */
 export const WORLD_W = 10;
@@ -31,6 +35,7 @@ export interface SharedUniforms {
   uFieldB: THREE.IUniform<THREE.Texture | null>;
   uFieldC: THREE.IUniform<THREE.Texture | null>;
   uFieldD: THREE.IUniform<THREE.Texture | null>;
+  uFieldE: THREE.IUniform<THREE.Texture | null>;
   uTexel: THREE.IUniform<THREE.Vector2>;
   uGrid: THREE.IUniform<THREE.Vector2>;
   /** World width and depth in scene units. */
@@ -45,6 +50,9 @@ export interface SharedUniforms {
   uPulse: THREE.IUniform<THREE.Vector4[]>;
   uPulseColor: THREE.IUniform<THREE.Color[]>;
   uPulseCount: THREE.IUniform<number>;
+  /** Where smoke rises (see vents.ts): table u, table v, strength, unused. */
+  uVent: THREE.IUniform<THREE.Vector4[]>;
+  uVentCount: THREE.IUniform<number>;
 }
 
 export const MAX_PULSES = 16;
@@ -55,6 +63,7 @@ export function makeSharedUniforms(): SharedUniforms {
     uFieldB: { value: null },
     uFieldC: { value: null },
     uFieldD: { value: null },
+    uFieldE: { value: null },
     uTexel: { value: new THREE.Vector2(1 / GW, 1 / gridHeight(world.aspect)) },
     uGrid: { value: new THREE.Vector2(GW, gridHeight(world.aspect)) },
     uWorld: { value: new THREE.Vector2(world.w, world.d) },
@@ -66,6 +75,8 @@ export function makeSharedUniforms(): SharedUniforms {
     uPulse: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Vector4(0, 0, 99, 0)) },
     uPulseColor: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Color(1, 1, 1)) },
     uPulseCount: { value: 0 },
+    uVent: { value: Array.from({ length: MAX_VENTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uVentCount: { value: 0 },
   };
 }
 
@@ -75,6 +86,7 @@ uniform sampler2D uFieldA;
 uniform sampler2D uFieldB;
 uniform sampler2D uFieldC;
 uniform sampler2D uFieldD;
+uniform sampler2D uFieldE;
 uniform vec2 uTexel;
 uniform vec2 uGrid;
 uniform float uSea;
@@ -98,6 +110,7 @@ vec4 fieldA(vec2 uv) { return texture2D(uFieldA, fieldUv(uv)); }
 vec4 fieldB(vec2 uv) { return texture2D(uFieldB, fieldUv(uv)); }
 vec4 fieldC(vec2 uv) { return texture2D(uFieldC, fieldUv(uv)); }
 vec4 fieldD(vec2 uv) { return texture2D(uFieldD, fieldUv(uv)); }
+vec4 fieldE(vec2 uv) { return texture2D(uFieldE, fieldUv(uv)); }
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
