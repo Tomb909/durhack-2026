@@ -108,6 +108,7 @@ web/src/cards (smoothing) ─► web/src/sim (world rules, no graphics) ─► w
 - `web/src/render/` only draws. It receives the world as two textures and can be restyled freely; `palette.ts` holds the climate colours.
 - The sky follows the world. `web/src/render/mood.ts` reads four numbers off the world (how hot, cold, wet and alive it is) and `backdrop.ts` paints from them: amber dusk over a hot world, teal and aurora over a frozen one, grey overcast in the rain, green and fireflies where things grow.
 - `server/deck/vision/` is the tracking: `playarea.py`, `detect.py`, `reader.py`, `tracker.py`.
+- `server/deck/words.py` turns a typed word into a card with the model; `web/src/cards/words.ts` is the page's half (see Any word becomes a card).
 
 ### Developing
 
@@ -116,7 +117,7 @@ web/src/cards (smoothing) ─► web/src/sim (world rules, no graphics) ─► w
 | `npm --prefix web run dev` | World page with hot reload at <http://localhost:5173> (talks to the server on 8000) |
 | `npm --prefix web test` | World-rule tests |
 | `npm --prefix web run harness` | Every card combination as numbers, and as a picture sheet with `--shots` (see below) |
-| `uv run pytest` | Tracking tests on synthetic frames |
+| `uv run pytest` | Tracking tests on synthetic frames, and the word-card server with the model stubbed |
 | `uv run deck --source synth` | Fake camera with moving cards, no phone needed |
 | `uv run deck --record recordings/run1` | Save about 3 camera frames a second |
 | `uv run python tools/replay_report.py recordings/run1` | Replay saved frames through tracking |
@@ -138,6 +139,36 @@ Cards can also come from the address, already settled, with no dragging and no w
 
 In the browser console, `deck.set('mountain+ice')` swaps the cards at once.
 
+### Any word becomes a card
+
+A prototype: type any word or phrase in the Combinations view and it becomes a working card, combined with every other card, with no reload.
+
+**Try it.** Open the Combinations view (**V**), type `castle`, `haunted house`, `jazz`, `swamp` or `火山` in **Add a word** and press Enter. A chip says the word is being read; a few seconds later it is a card with a switch, copies and **only**, and the tiles show it alone and with every card that is on. **only** (on any card) shows just the combinations that include that card; adding a word turns it on for that word, because the view stops at 64 tiles. Open a tile large to see how the word was read, what the card does and how long it took. **Show in the live world** works, and the card is in the card panel (**Tab**).
+
+For the model, start the server with credentials the Anthropic SDK can find (`ant auth login`, or `ANTHROPIC_API_KEY`), then `uv run deck`. `DECK_WORD_MODEL` (default `claude-opus-5-5`) and `DECK_WORD_EFFORT` (default `low`) change the model and effort without a code change. With no server, no credentials or no network the word still becomes a card at once: a guess, drawn with a dashed border, with **Try again**.
+
+**How it works.** A card is data, never code. A generated card is a `CardDef` like those in `cards.json`, and may do any mix of three things (all optional, see `web/src/cards/defs.ts`):
+
+| Part | What it is |
+|---|---|
+| `effects` | Pushes on the world's fields, as the built-in cards do, and may push the other way (CANYON, DESERT, BLIGHT). At most four. |
+| `atmosphere` | `tint` and `strength` lean the whole picture's colour, `light` darkens (night) or brightens it; blended across cards and capped so the sky's own mood still shows. `particles` (`rise`, `fall`, `drift`, `swirl`) hang in the air by the card. |
+| `prop` | An object built from 1 to 24 primitives (`box`, `cylinder`, `cone`, `pyramid`, `prism`, `sphere`) in a unit cube, with a `scale`, a `count`, a `habitat` (`land`, `water`, `shore`, `air`, `anywhere`), a gentle `motion` and `glow`. Drawn like the trees and houses: flat colours, faceted light. |
+
+Where a word's card comes from, stopping at the first that answers: a built-in card by word or alias; a card already made (stored on the server, or kept in this browser); the model (one call through `POST /api/word`, stored in `.deck/words.json` on success); a near match a letter or two away (`volcanoe` → VOLCANO, a guess); the abstract fallback (a guess). Guesses are never stored on the server, so trying again later can replace them. **✕** removes a made card from this browser; its stored copy stays on the server, so typing the word again is instant.
+
+The **abstract fallback** runs in the page and knows nothing about meaning, so it uses the sound and look of the word (the bouba/kiki effect): spiky letters (k, t, z, x, i, v…) give shards, cones and hot bright colours; round letters (b, o, m, u, l…) give stacked spheres in cool pale colours; length sets height, vowels how open it is, and a hash of the word the hue. Same word, same card.
+
+Every card, from any source, passes through one gate, `cleanCard` in `web/src/cards/words.ts`: every number is clamped, every list limited, colours must be `#rrggbb`, unknown shapes and fields are dropped, and text loses its markup characters. The id comes from the word (`haunted house` → `haunted-house`; a word with no Latin letters gets `w-` and a hash), so a made card can never replace a built-in one. Where objects stand is worked out in `web/src/sim/props.ts` from the world and the cards alone: a boat floats on the nearest open water within reach, or sits beached at the card when there is none; land objects never stand in water; shore objects keep to the waterline; nothing stands outside the play area.
+
+The server side is `server/deck/words.py`: the prompt, the JSON schema for structured outputs, the store, and one shared call when two requests ask for the same word. `GET /api/words` lists the stored cards. A stored card has the shape of an entry in `cards.json`, so a good one can be promoted by pasting it there.
+
+**Limits.** The camera does not make cards yet: an unknown handwritten word still shows "?". Objects are simple shapes and loop gently; nothing walks. Tint and light are one grade over the whole picture, so two cards with strong, different tints average out. The model is asked once per new word, so a new word takes as long as one call; a word seen before is instant.
+
+**Measuring it.** `uv run python tools/word_probe.py` resolves about 20 words of different kinds through a running server (`--url` for another port) and writes the seconds each took, what kind of card came back and its reading to `.deck/probe.json`, then prints the harness command that draws them. Every new word is one model call, which costs money.
+
+No measurements yet: this was built without model credentials, so the model path was tested only against a stubbed client and has not been run for real. Run the probe and put the measured numbers here.
+
 ### Harness: every combination, at once
 
 The same cards always settle to the same world, so there is no need to place cards and wait. The harness jumps each world straight to its settled state (about 10 ms) and draws it at one frozen moment. There are three ways in: a view inside the app for looking, a command for numbers, and a picture sheet for files.
@@ -146,12 +177,14 @@ The same cards always settle to the same world, so there is no need to place car
 
 Press the **Combinations** button at the top right of the world page, or **V**. It works on the built page (`uv run deck`) and the dev page alike; `/?combos` in the address opens it straight away. **Esc** closes it.
 
-Every combination of the cards appears as a tile, with what is on the table and the main numbers underneath (share of the map that is sea, rain, forest and so on). One row of controls along the top:
+Every combination of the cards appears as a tile, with what is on the table and the main numbers underneath (share of the map that is sea, rain, forest and so on, and how many objects stand). With many cards only the first 64 are shown, fewest cards first. One row of controls along the top:
 
 | Control | Does |
 |---|---|
 | **A switch per card** | Switch a card off to leave it out, on to bring it back. The view shows every combination of the cards that are on: six cards is 64 worlds, five is 32. A modifier card such as BIG starts switched off, because it only changes the card beside it. The number beside the title is how many are showing. |
 | **− ×1 +** beside a card | How many copies of that card, wherever it appears, from 1 to 3. Three Waters flood the lowlands; three Mountains make a far taller range. |
+| **only** beside a card | Show only the combinations that include this card (with several marked, those that include all of them). |
+| **Add a word** | Make a card from any word or phrase (see Any word becomes a card). Made cards say where they came from (**AI**, or a dashed **guess** with **Try again**) and have **✕** to remove them. |
 | **3D / Map / Both** | The world as the app draws it, flat from above (nothing hidden behind clouds), or 3D with the map in the corner. |
 | **S / M / L** | Tile size: small to see many at once, large to look closely. |
 
@@ -167,7 +200,7 @@ No browser, under a second for every combination:
 npm --prefix web run harness -- --set subsets
 ```
 
-One line per world: sea level, highest peak, and the share of the map that is flooded, river or lake, raining, snowing, forest, frozen, desert, plus a fingerprint of the whole world. To see what a rule change did, save the numbers before and compare after:
+One line per world: sea level, highest peak, the share of the map that is flooded, river or lake, raining, snowing, forest, frozen, desert, village and farmland, how many objects stand (from made cards), plus a fingerprint of the whole world. To see what a rule change did, save the numbers before and compare after:
 
 ```bash
 npm --prefix web run harness -- --set all --baseline
@@ -190,7 +223,8 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | Option (command line / address) | Meaning |
 |---|---|
 | `"water*3" "life+sun"` / `c=water*3;life+sun` | Your own combination codes, one world each. `name=code` names one. |
-| `--set` / `set=` | `showcase` (default), `singles`, `pairs`, `subsets` (every mix of the cards, 64 with six cards), `copies` (each card ×1 to ×3), `all`. Comma separated. |
+| `--set` / `set=` | `showcase` (default), `singles`, `pairs`, `subsets` (every mix of the cards, 64 with six cards), `copies` (each card ×1 to ×3), `all`, `words` (every card made from a word, alone), `words-mixed` (each made card beside water, a mountain, and life with water). Comma separated. The other sets use the built-in cards only, so they stay the same worlds. |
+| `--guess` / `guess=` | Make the abstract fallback card for these words (comma separated), so codes can use them: `--guess kiki,bouba kiki bouba`. |
 | `--layout` / `layout=` | Where cards without a position go: `cluster` (together, default) or `spread` (each kind apart) |
 | `--view` / `view=` | `3d`, `map` (flat top-down, no GPU needed), `both` (3D with a map inset) |
 | `--tile` / `tile=` | Tile width in pixels (default 400). `--tile 1200 --cols 1` for a close look at a few worlds. |
@@ -198,13 +232,15 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | `--az`, `--el` / `az=`, `el=` | Look from this many degrees round the world, and this many above the table (default 0 and 37). `--zoom 0.45 --el 14 --az 35` shows the whole depth of the world from the side. |
 | `--no-beacons`, `--png`, `--tiles` / `beacons=0`, `fmt=png`, `tiles=1` | Hide the card pillars, lossless files, one file per world as well |
 
-Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for a position, and any unambiguous start of an id (`m+w*2`). Ids come from `cards.json`, so a new card works in codes and in every set straight away. Chrome is found automatically; set `CHROME_PATH` if it is somewhere unusual, or use `--serve` to open the sheet in a browser yourself.
+Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for a position, and any unambiguous start of a built-in card's id (`m+w*2`). Ids come from `cards.json`, so a new card works in codes and in every set straight away. Cards made from words work by their full id (`haunted-house+water*3`): the shorthand matches built-in cards only, so making MUD never makes `m` ambiguous. The command line and the sheet read the stored cards from `.deck/words.json` themselves (the dev server serves them read-only at `/__harness/words`), so they need no Python server. Chrome is found automatically; set `CHROME_PATH` if it is somewhere unusual, or use `--serve` to open the sheet in a browser yourself.
 
 #### Keeping the harness current
 
 - **A new card** in `cards.json` needs nothing: it gets its own switch in the Combinations view, joins every set, and works in codes.
 - **A new thing the world can have** (a new array on the world's frame in `sim/world.ts`): add it to `measure()` in `web/src/harness/metrics.ts` so the fingerprint covers it, give it a number there if it is worth comparing (`METRIC_KEYS` and `METRIC_LABELS`), and a colour in `web/src/harness/map.ts`.
+- **Cards made from words** need nothing either: they get a switch in the Combinations view, work in codes by full id, and are in the `words` set. Their objects are counted (`objects`) and marked on the flat map as small squares in the card's colour (white outline: afloat); worlds without objects keep the fingerprint they always had. To draw one without the model, use `--guess`.
+- **A new field on a card** (in `CardDef`, `web/src/cards/defs.ts`): give it a check in `cleanCard` (`web/src/cards/words.ts`), the schema and prompt in `server/deck/words.py`, and a line in the large view's word panel (`doings()` in `web/src/ui/combos.ts`).
 - **A modifier card** (one with `modifier` in `cards.json`, like BIG) is left out of the ready-made sets and starts switched off in the Combinations view. Write it in a code to see it: `big+mountain`.
 - **Things that build up over time** are not in the harness, which shows each world the moment it settles. Woodcutters' felled forest (`cleared`) is the one so far.
 - **A change to how the app draws** shows up in the tiles by itself: they use the app's own renderer. Anything drawn as a page element rather than in the 3D picture (the card labels, for one) does not appear in tiles.
-- `npm --prefix web test` checks that the settled world depends on the cards alone and that the animated world ends up there. If a rule change breaks that, the harness would stop matching the app.
+- `npm --prefix web test` checks that the settled world depends on the cards alone and that the animated world ends up there, for built-in cards and for made cards with effects and objects. If a rule change breaks that, the harness would stop matching the app.

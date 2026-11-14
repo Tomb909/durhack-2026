@@ -1,11 +1,26 @@
 // Dev-server side of the harness: lets the harness page save its pictures and
-// numbers to .deck/harness/ (ignored by git), and tells the command-line runner
-// when a sheet is finished. Only active under `vite` (never in a build).
-import { mkdirSync, writeFileSync } from 'node:fs';
+// numbers to .deck/harness/ (ignored by git), tells the command-line runner
+// when a sheet is finished, and serves the cards made from typed words
+// (.deck/words.json, read-only) so they can be drawn without the Python server.
+// Only active under `vite` (never in a build).
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const HARNESS_OUT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.deck', 'harness');
+/** Cards made from typed words, as the Python server stores them. */
+export const WORDS_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.deck', 'words.json');
+
+/** The stored word cards as a list (empty if there are none or the file is spoiled). */
+export function readWords() {
+  try {
+    if (!existsSync(WORDS_FILE)) return [];
+    const data = JSON.parse(readFileSync(WORDS_FILE, 'utf8'));
+    return Array.isArray(data?.cards) ? data.cards : [];
+  } catch {
+    return [];
+  }
+}
 
 function body(request) {
   return new Promise((done, fail) => {
@@ -29,6 +44,7 @@ export function harnessPlugin(options = {}) {
           response.setHeader('Content-Type', 'application/json');
           response.end(JSON.stringify(data));
         };
+        if (request.method === 'GET' && url.pathname === '/words') return reply(200, { cards: readWords() });
         if (request.method !== 'POST') return reply(405, { error: 'POST only' });
         try {
           if (url.pathname === '/save') {

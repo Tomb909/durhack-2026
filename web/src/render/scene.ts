@@ -9,6 +9,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
 import type { LiveCard } from '../cards/store';
 import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
+import { AirLayer, GradeShader } from './air';
 import { makeBackdrop } from './backdrop';
 import { Beacons } from './beacons';
 import { CameraRig } from './camera';
@@ -19,6 +20,7 @@ import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
 import { makeTerrain } from './terrain';
 import { makePeople } from './people';
+import { PropLayer } from './props';
 import { makeTrees } from './trees';
 import { makeWater } from './water';
 import { makeWeather } from './weather';
@@ -35,6 +37,10 @@ export class WorldRenderer {
   private camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 400);
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
+  /** Word cards: their objects, their particles, and the grade of light they lend the picture. */
+  private props: PropLayer;
+  private air: AirLayer;
+  private grade: ShaderPass;
   private shared: SharedUniforms;
   private fields!: FieldTextures;
   private palettes = makePalettes();
@@ -76,11 +82,19 @@ export class WorldRenderer {
     this.scene.add(makeTrees(this.shared));
     this.scene.add(makePeople(this.shared));
     this.scene.add(makeWeather(this.shared));
+    this.props = new PropLayer(this.shared);
+    this.scene.add(this.props.group);
+    this.air = new AirLayer(this.shared, this.props.night);
+    this.scene.add(this.air.points);
     this.scene.add(this.beacons.group);
 
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(this.renderer, target);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+    // Off unless a card changes the air, so a world of built-in cards is drawn exactly as before.
+    this.grade = new ShaderPass(GradeShader);
+    this.grade.enabled = false;
+    this.composer.addPass(this.grade);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.22, 0.55, 1.6);
     this.composer.addPass(this.bloom);
     const vignette = new ShaderPass(VignetteShader);
@@ -223,6 +237,14 @@ export class WorldRenderer {
       this.shared.uPulseColor.value[i].set(card.def.color);
     }
     this.shared.uPulseCount.value = count;
+    this.props.update(frame, cards);
+    this.air.update(frame, cards, this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight));
+    const grade = this.air.grade;
+    this.props.night.value = Math.max(0, -grade.light);
+    this.grade.enabled = grade.amount > 0.001 || Math.abs(grade.light) > 0.001;
+    this.grade.uniforms.uTint.value.copy(grade.tint);
+    this.grade.uniforms.uAmount.value = grade.amount;
+    this.grade.uniforms.uLight.value = grade.light;
     this.placeCamera();
     this.camera.updateMatrixWorld();
     this.beacons.setVisible(this.showBeacons);

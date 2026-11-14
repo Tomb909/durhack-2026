@@ -3,6 +3,7 @@
 // Each world is settled straight to its final state (no fading, no easing) and
 // drawn at one fixed moment, so the same address always gives the same sheet.
 // Address options are listed in the README ("Harness").
+import { guessCards, loadStoredCards } from '../cards/words';
 import { LAYOUTS, resolveScenarios, type Layout, type Scenario } from './codes';
 import { MAP_LEGEND } from './map';
 import { formatTable, type Row } from './metrics';
@@ -47,6 +48,10 @@ async function run(): Promise<Result> {
   const started = performance.now();
   const view = (VIEWS.includes(params.get('view') as View) ? params.get('view') : '3d') as View;
   const layout = (LAYOUTS.includes(params.get('layout') as Layout) ? params.get('layout') : 'cluster') as Layout;
+  // Cards made from typed words, from the store (not this browser's own copy): codes can name them.
+  await loadStoredCards({ local: false });
+  // ...and the abstract fallback for any words asked for by name, to see what a guess looks like.
+  if (params.get('guess')) guessCards(params.get('guess')!);
   const scenarios: Scenario[] = resolveScenarios({ set: params.get('set'), codes: params.get('c'), layout });
   const count = scenarios.length;
 

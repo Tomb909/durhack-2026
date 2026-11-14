@@ -1,7 +1,7 @@
 // The small table map in the corner. It shows where every card is (real cards
 // seen by the camera and simulated ones), and it is also where simulated cards
 // are made: drag one from the tray onto the map or straight onto the world.
-import { CARD_DEFS } from '../cards/defs';
+import { CARD_DEFS, onCardsChanged } from '../cards/defs';
 import { modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { CardStore, LiveCard } from '../cards/store';
 import type { Candidate } from '../net/link';
@@ -17,6 +17,7 @@ interface Drag {
 
 export class TablePanel {
   private table: HTMLElement;
+  private tray: HTMLElement;
   private chips = new Map<string, HTMLElement>();
   private maybes: HTMLElement[] = [];
   private drag: Drag | null = null;
@@ -41,23 +42,10 @@ export class TablePanel {
     this.border.setAttribute('preserveAspectRatio', 'none');
     this.table.prepend(this.border);
     this.setShape(DEFAULT_SHAPE);
-    const tray = root.querySelector('#tray') as HTMLElement;
-    for (const def of CARD_DEFS) {
-      const el = document.createElement('div');
-      el.className = 'tray-card';
-      el.title = `Drag ${def.word} onto the table`;
-      el.innerHTML = `<span class="icon">${def.icon}</span>${def.word}`;
-      el.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        const ghost = document.createElement('div');
-        ghost.className = 'ghost';
-        ghost.textContent = def.icon;
-        document.body.appendChild(ghost);
-        this.drag = { cardId: def.id, key: null, ghost };
-        this.move(e);
-      });
-      tray.appendChild(el);
-    }
+    this.tray = root.querySelector('#tray') as HTMLElement;
+    this.fillTray();
+    // Cards made from typed words join the tray as soon as they exist.
+    onCardsChanged(() => this.fillTray());
     // Pick up a simulated card by grabbing it in the world itself.
     canvas.addEventListener('pointerdown', (e) => {
       const at = this.pickWorld(e.clientX, e.clientY);
@@ -77,6 +65,34 @@ export class TablePanel {
     window.addEventListener('pointermove', (e) => this.move(e));
     window.addEventListener('pointerup', (e) => this.drop(e));
     window.addEventListener('pointercancel', (e) => this.drop(e));
+  }
+
+  /** One card in the tray per card definition, built-in first, then the ones made from words. */
+  private fillTray(): void {
+    this.tray.replaceChildren();
+    for (const def of CARD_DEFS) {
+      const el = document.createElement('div');
+      el.className = `tray-card${def.origin ? ' made' : ''}${def.origin === 'fallback' ? ' guess' : ''}`;
+      el.title = `Drag ${def.word} onto the table${def.reading ? `. ${def.reading}` : ''}`;
+      // Text, not markup: the icon and word of a made card come from a typed word.
+      const icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.textContent = def.icon;
+      const word = document.createElement('span');
+      word.className = 'word';
+      word.textContent = def.word;
+      el.append(icon, word);
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const ghost = document.createElement('div');
+        ghost.className = 'ghost';
+        ghost.textContent = def.icon;
+        document.body.appendChild(ghost);
+        this.drag = { cardId: def.id, key: null, ghost };
+        this.move(e);
+      });
+      this.tray.appendChild(el);
+    }
   }
 
   /** Match the map to the play area's proportions and outline. */

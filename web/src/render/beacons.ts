@@ -158,7 +158,13 @@ export class Beacons {
         const el = document.createElement('div');
         el.className = 'world-label';
         el.style.setProperty('--c', def.color);
-        el.innerHTML = `<span class="i">${def.icon}</span><span class="w"></span>`;
+        // Built as elements, not markup: a card's icon and word may come from a typed word.
+        const icon = document.createElement('span');
+        icon.className = 'i';
+        icon.textContent = def.icon;
+        const word = document.createElement('span');
+        word.className = 'w';
+        el.append(icon, word);
         this.layer.appendChild(el);
         label = { el, text: '', width: 0, height: 0, lift: 0, x: 0, y: 0 };
         this.labels.set(key, label);
