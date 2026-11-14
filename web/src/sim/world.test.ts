@@ -4,9 +4,9 @@ import type { LiveCard } from '../cards/store';
 import { RULES, WorldSim, gridHeight, sampleField, type WorldFrame, type WorldShape } from './world';
 
 let n = 0;
-function card(id: string, x: number, y: number, strength = 1): LiveCard {
+function card(id: string, x: number, y: number, strength = 1, angle = 0): LiveCard {
   const def = cardDef(id)!;
-  return { key: `t${n++}`, def, source: 'sim', x, y, tx: x, ty: y, vx: 0, vy: 0, strength, fade: strength, present: true, visible: true, age: 9 };
+  return { key: `t${n++}`, def, source: 'sim', x, y, angle, targetAngle: angle, tx: x, ty: y, vx: 0, vy: 0, strength, fade: strength, present: true, visible: true, age: 9 };
 }
 
 function settle(cards: LiveCard[]): WorldFrame {
@@ -129,6 +129,41 @@ describe('water', () => {
   });
 });
 
+describe('wind', () => {
+  it('blows in the card orientation, including its reverse', () => {
+    const east = settle([card('wind', 0.5, 0.5, 1, 0)]);
+    const west = settle([card('wind', 0.5, 0.5, 1, Math.PI)]);
+    expect(at(east, east.windX, 0.5, 0.5)).toBeGreaterThan(0.95);
+    expect(at(east, east.windY, 0.5, 0.5)).toBeCloseTo(0, 3);
+    expect(at(west, west.windX, 0.5, 0.5)).toBeLessThan(-0.95);
+    expect(at(west, west.windY, 0.5, 0.5)).toBeCloseTo(0, 3);
+  });
+
+  it('scatters LIFE downwind into a narrow line of trees', () => {
+    const cards = [card('life', 0.35, 0.5), card('water', 0.35, 0.5)];
+    const still = settle(cards);
+    const eastward = settle([...cards, card('wind', 0.35, 0.5)]);
+    const westward = settle([...cards, card('wind', 0.35, 0.5, 1, Math.PI)]);
+    expect(at(eastward, eastward.vegetation, 0.68, 0.5)).toBeGreaterThan(at(still, still.vegetation, 0.68, 0.5) + 0.15);
+    expect(at(eastward, eastward.vegetation, 0.68, 0.5)).toBeGreaterThan(at(westward, westward.vegetation, 0.68, 0.5) + 0.15);
+    expect(at(eastward, eastward.vegetation, 0.68, 0.5)).toBeGreaterThan(at(eastward, eastward.vegetation, 0.68, 0.56) + 0.2);
+  });
+
+  it('turns nearby ICE and WIND into a cold, downwind snow squall', () => {
+    const ice = settle([card('ice', 0.5, 0.5)]);
+    const blizzard = settle([card('ice', 0.5, 0.5), card('wind', 0.5, 0.5)]);
+    expect(at(blizzard, blizzard.temperature, 0.62, 0.5)).toBeLessThan(RULES.freezing);
+    expect(at(blizzard, blizzard.precipitation, 0.62, 0.5)).toBeGreaterThan(at(ice, ice.precipitation, 0.62, 0.5) + 0.25);
+  });
+
+  it('scours wet snow from high ground only when wind is present', () => {
+    const mountain = settle([card('mountain', 0.5, 0.5), card('water', 0.5, 0.5)]);
+    const storm = settle([card('mountain', 0.5, 0.5), card('water', 0.5, 0.5), card('wind', 0.5, 0.5)]);
+    expect(Math.max(...mountain.snowBlow)).toBe(0);
+    expect(Math.max(...storm.snowBlow)).toBeGreaterThan(0.1);
+  });
+});
+
 describe('climate comes from combinations, not single cards', () => {
   it('sun alone dries the land (desert): hot and no rain', () => {
     const f = settle([card('sun', 0.5, 0.5)]);
@@ -227,38 +262,38 @@ describe('people', () => {
   const total = (a: Float32Array, t = 0.3) => a.filter((v) => v > t).length / a.length;
 
   it('build houses where they are placed, on dry liveable land', () => {
-    const f = settle([card('people', 0.4, 0.5)]);
+    const f = settle([card('settlement', 0.4, 0.5)]);
     expect(at(f, f.homes, 0.4, 0.5)).toBeGreaterThan(0.5);
     expect(at(f, f.homes, 0.9, 0.2)).toBe(0);
     expect(total(f.homes)).toBeLessThan(0.12);
   });
 
   it('farm flat land only when it is wet enough', () => {
-    expect(total(settle([card('people', 0.4, 0.5)]).farms)).toBe(0);
-    const f = settle([card('people', 0.4, 0.5), card('water', 0.45, 0.5)]);
+    expect(total(settle([card('settlement', 0.4, 0.5)]).farms)).toBe(0);
+    const f = settle([card('settlement', 0.4, 0.5), card('water', 0.45, 0.5)]);
     expect(total(f.farms)).toBeGreaterThan(0.05);
   });
 
   it('fish where there is open water nearby', () => {
     const lake = [card('water', 0.3, 0.5), card('water', 0.5, 0.5), card('water', 0.6, 0.6)];
     expect(total(settle(lake).fishing, 0.2)).toBe(0);
-    expect(total(settle([...lake, card('people', 0.4, 0.5)]).fishing, 0.2)).toBeGreaterThan(0.01);
+    expect(total(settle([...lake, card('settlement', 0.4, 0.5)]).fishing, 0.2)).toBeGreaterThan(0.01);
   });
 
   it('do not live on mountain peaks or in frozen land', () => {
-    expect(Math.max(...settle([card('people', 0.4, 0.5), card('mountain', 0.4, 0.5)]).homes)).toBeLessThan(0.3);
-    expect(Math.max(...settle([card('people', 0.4, 0.5), card('ice', 0.4, 0.5), card('ice', 0.42, 0.5)]).homes)).toBeLessThan(0.3);
+    expect(Math.max(...settle([card('settlement', 0.4, 0.5), card('mountain', 0.4, 0.5)]).homes)).toBeLessThan(0.3);
+    expect(Math.max(...settle([card('settlement', 0.4, 0.5), card('ice', 0.4, 0.5), card('ice', 0.42, 0.5)]).homes)).toBeLessThan(0.3);
   });
 
   it('clear the forest for their fields', () => {
     const wild = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5)]);
-    const farmed = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('people', 0.4, 0.5)]);
+    const farmed = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('settlement', 0.4, 0.5)]);
     expect(total(farmed.vegetation)).toBeLessThan(total(wild.vegetation) * 0.6);
   });
 });
 
 describe('woodcutters', () => {
-  const forest = () => [card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('people', 0.55, 0.5)];
+  const forest = () => [card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('settlement', 0.55, 0.5)];
   const felled = (f: WorldFrame) => f.cleared.reduce((s, v) => s + v, 0);
 
   it('fell the forest near people over time, never in an instant settle', () => {

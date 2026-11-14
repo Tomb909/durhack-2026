@@ -31,9 +31,11 @@ void main() {
   float temperature = a.g;
   float river = b.g;
   float rain = b.b;
+  vec2 wind = fieldD(vUv).ba;
+  float gust = length(wind);
 
   // Ripples: two layers of drifting noise give the normal.
-  vec2 p = vWorld.xz;
+  vec2 p = vWorld.xz - wind * uTime * 0.20;
   float t = uTime;
   float n1 = vnoise(p * 5.0 + vec2(t * 0.35, t * 0.22));
   float n2 = vnoise(p * 11.0 - vec2(t * 0.30, -t * 0.41));
@@ -67,6 +69,9 @@ void main() {
   float foam = (1.0 - smoothstep(0.0, lap + 0.0016, depth)) * smoothstep(0.35, 0.65, n2 + 0.25);
   foam += (1.0 - smoothstep(0.0, 0.0009, depth)) * 0.8;
   col = mix(col, vec3(0.95, 0.98, 1.0), clamp(foam, 0.0, 1.0) * 0.85 * (1.0 - frozen) * (1.0 - smoothstep(0.05, 0.4, river)));
+  vec2 flow = normalize(wind + vec2(0.00001));
+  float windChop = pow(max(0.0, sin(dot(vWorld.xz, flow) * 19.0 - t * 3.2)), 12.0) * smoothstep(0.16, 0.75, gust);
+  col = mix(col, vec3(0.82, 0.94, 1.0), windChop * 0.38 * (1.0 - frozen) * smoothstep(0.001, 0.025, depth));
   // Rain rings.
   float ring = smoothstep(0.80, 0.98, vnoise(p * 26.0 + floor(t * 6.0) * 7.3)) * rain;
   col += ring * 0.10 * (1.0 - frozen);

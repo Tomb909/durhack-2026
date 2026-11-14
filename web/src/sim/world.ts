@@ -1,8 +1,7 @@
 // The world's rules. No Three.js in here: cards in, fields out.
 //
-// Cards never change the world directly. They push on five properties
-// (height, temperature, wetness, sea level, life) and everything you see is
-// derived from those. There are no card-pair special cases anywhere.
+// Cards push on world properties and everything visible is derived from those
+// fields. WIND also supplies a directional vector for weather and seed spread.
 import type { FieldName } from '../cards/defs';
 import { heightMultiplier, modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { LiveCard } from '../cards/store';
@@ -175,6 +174,11 @@ export interface WorldFrame {
   river: Float32Array;
   /** 0..1 rain or snow falling here. */
   precipitation: Float32Array;
+  /** Directional wind in world-space x/z components, each clamped to -1..1. */
+  windX: Float32Array;
+  windY: Float32Array;
+  /** Snow ready to be scoured from windy, snow-covered high ground. */
+  snowBlow: Float32Array;
   /** 0..1 how many houses. */
   homes: Float32Array;
   /** 0..1 farmland (flat, fertile land near people). */
@@ -241,7 +245,7 @@ export class WorldSim {
     const n = (this.n = w * h);
     const f = () => new Float32Array(n);
     this.base = f(); this.ridge = f(); this.rough = f();
-    this.push = { height: f(), temperature: f(), wetness: f(), life: f(), people: f() };
+    this.push = { height: f(), temperature: f(), wetness: f(), life: f(), settlement: f() };
     this.copies = f(); this.surfaceTarget = f(); this.riverTarget = f(); this.nearWater = f(); this.scratch = f();
     this.lastSurface = f(); this.lastRiver = f();
     this.hydrology = new Hydrology(w, h);
@@ -252,7 +256,7 @@ export class WorldSim {
       w, h,
       height: f(), temperature: f(), wetness: f(),
       vegetation: f(), waterSurface: f(), river: f(),
-      precipitation: f(), homes: f(), farms: f(), fishing: f(), logging: f(), cleared: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
+      precipitation: f(), windX: f(), windY: f(), snowBlow: f(), homes: f(), farms: f(), fishing: f(), logging: f(), cleared: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
     };
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
@@ -367,6 +371,7 @@ export class WorldSim {
   private recompute(cards: LiveCard[]): void {
     const { n, frame, push } = this;
     for (const key of Object.keys(push) as LocalField[]) push[key].fill(0);
+    const windCards = cards.filter((card) => card.def.id === 'wind' && card.strength > 0);
 
     const modifiersByTarget = modifierTargets(cards);
     const radiusMultipliers = new Map<LiveCard, number>();
@@ -420,6 +425,9 @@ export class WorldSim {
         }
       }
     }
+    this.buildWindField(windCards);
+    this.buildBlizzard(cards, windCards);
+    this.scatterSeeds(cards, windCards);
     frame.seaLevel = sea;
 
     // --- 2. where is there open water right now? (from the last result)
@@ -444,6 +452,7 @@ export class WorldSim {
 
       precipitation[i] = this.inside[i] ? smoothstep(RULES.rainStart, RULES.rainFull, wet) : 0;
     }
+    this.updateSnowBlow();
 
     // --- 4. water on land
     this.hydrology.compute(height, sea, precipitation, this.surfaceTarget, this.riverTarget, RULES.hydrology, this.inside);
@@ -463,12 +472,155 @@ export class WorldSim {
     frame.version++;
   }
 
+  private buildWindField(windCards: LiveCard[]): void {
+    const { w, h, aspect, frame } = this;
+    frame.windX.fill(0);
+    frame.windY.fill(0);
+    const radius = 0.3;
+    const sigmaX = radius * (w - 1);
+    const sigmaY = radius * aspect * (h - 1);
+    for (const card of windCards) {
+      const cx = card.x * (w - 1);
+      const cy = card.y * (h - 1);
+      const x0 = Math.max(0, Math.floor(cx - 3.3 * sigmaX));
+      const x1 = Math.min(w - 1, Math.ceil(cx + 3.3 * sigmaX));
+      const y0 = Math.max(0, Math.floor(cy - 3.3 * sigmaY));
+      const y1 = Math.min(h - 1, Math.ceil(cy + 3.3 * sigmaY));
+      const dx = Math.cos(card.angle) * card.strength;
+      const dy = Math.sin(card.angle) * card.strength;
+      for (let j = y0; j <= y1; j++) {
+        const ny = (j - cy) / sigmaY;
+        const row = j * w;
+        for (let i = x0; i <= x1; i++) {
+          const nx = (i - cx) / sigmaX;
+          const influence = Math.exp(-0.5 * (nx * nx + ny * ny));
+          frame.windX[row + i] += dx * influence;
+          frame.windY[row + i] += dy * influence;
+        }
+      }
+    }
+    for (let i = 0; i < frame.windX.length; i++) {
+      const magnitude = Math.hypot(frame.windX[i], frame.windY[i]);
+      if (magnitude > 1) {
+        frame.windX[i] /= magnitude;
+        frame.windY[i] /= magnitude;
+      }
+    }
+  }
+
+  /** Wind carrying moisture across nearby ICE creates a directional snow squall. */
+  private buildBlizzard(cards: LiveCard[], windCards: LiveCard[]): void {
+    if (!windCards.length) return;
+    const iceCards = cards.filter((card) => card.def.id === 'ice' && card.strength > 0);
+    const { w, h, aspect, push } = this;
+    for (const ice of iceCards) {
+      let wind: LiveCard | undefined;
+      let nearest = 0.36;
+      for (const candidate of windCards) {
+        const distance = Math.hypot(candidate.x - ice.x, (candidate.y - ice.y) / aspect);
+        if (distance < nearest) {
+          nearest = distance;
+          wind = candidate;
+        }
+      }
+      if (!wind) continue;
+
+      const dirX = Math.cos(wind.angle);
+      const dirY = Math.sin(wind.angle);
+      const cx = ice.x * (w - 1);
+      const cy = ice.y * (h - 1);
+      const reachX = 0.58 * (w - 1);
+      const reachY = 0.58 * aspect * (h - 1);
+      for (let j = Math.max(0, Math.floor(cy - reachY)); j <= Math.min(h - 1, Math.ceil(cy + reachY)); j++) {
+        const dy = (j / (h - 1) - ice.y) / aspect;
+        const row = j * w;
+        for (let i = Math.max(0, Math.floor(cx - reachX)); i <= Math.min(w - 1, Math.ceil(cx + reachX)); i++) {
+          const dx = i / (w - 1) - ice.x;
+          const along = dx * dirX + dy * dirY;
+          if (along < -0.10 || along > 0.56) continue;
+          const across = -dx * dirY + dy * dirX;
+          const streak = Math.exp(-0.5 * (((along - 0.18) / 0.22) ** 2 + (across / 0.12) ** 2));
+          const force = ice.strength * wind.strength * streak;
+          push.wetness[row + i] += 0.78 * force;
+          push.temperature[row + i] -= 0.12 * force;
+        }
+      }
+    }
+  }
+
+  /** Wind carries LIFE seeds downwind; nearby WATER makes the trail take root. */
+  private scatterSeeds(cards: LiveCard[], windCards: LiveCard[]): void {
+    if (!windCards.length) return;
+    const lifeCards = cards.filter((card) => card.def.id === 'life' && card.strength > 0);
+    const waterCards = cards.filter((card) => card.def.id === 'water' && card.strength > 0);
+    const { w, h, aspect, push } = this;
+    for (const life of lifeCards) {
+      let wind: LiveCard | undefined;
+      let nearest = 0.3;
+      for (const candidate of windCards) {
+        const dx = candidate.x - life.x;
+        const dy = (candidate.y - life.y) / aspect;
+        const distance = Math.hypot(dx, dy);
+        if (distance < nearest) {
+          nearest = distance;
+          wind = candidate;
+        }
+      }
+      if (!wind) continue;
+
+      const hasWater = waterCards.some(
+        (water) => Math.hypot(water.x - life.x, (water.y - life.y) / aspect) < 0.3,
+      );
+      const plumeLength = hasWater ? 0.55 : 0.42;
+      const acrossSigma = hasWater ? 0.018 : 0.028;
+      const dirX = Math.cos(wind.angle);
+      const dirY = Math.sin(wind.angle);
+      for (let j = 0; j < h; j++) {
+        const dy = j / (h - 1) - life.y;
+        const row = j * w;
+        for (let i = 0; i < w; i++) {
+          const dx = i / (w - 1) - life.x;
+          const along = dx * dirX + (dy / aspect) * dirY;
+          if (along < 0 || along > plumeLength) continue;
+          const across = -dx * dirY + (dy / aspect) * dirX;
+          const lateral = across / acrossSigma;
+          const ends = smoothstep(0, 0.035, along) * (1 - smoothstep(plumeLength - 0.05, plumeLength, along));
+          const seeds = Math.exp(-0.5 * lateral * lateral) * ends * life.strength * wind.strength;
+          push.life[row + i] += seeds * (hasWater ? 1.9 : 0.95);
+          if (hasWater) push.wetness[row + i] += seeds * 0.48;
+        }
+      }
+    }
+  }
+
+  private updateSnowBlow(): void {
+    const { w, h, n, frame, inside } = this;
+    const { height, temperature, wetness, windX, windY, snowBlow } = frame;
+    for (let i = 0; i < n; i++) {
+      if (!inside[i]) {
+        snowBlow[i] = 0;
+        continue;
+      }
+      const x = i % w;
+      const left = x > 0 ? height[i - 1] : height[i];
+      const right = x < w - 1 ? height[i + 1] : height[i];
+      const up = i >= w ? height[i - w] : height[i];
+      const down = i + w < n ? height[i + w] : height[i];
+      const slope = 0.5 * Math.hypot(right - left, down - up);
+      const snow = smoothstep(RULES.freezing + 0.12, RULES.freezing - 0.08, temperature[i]) *
+        smoothstep(0.22, 0.45, wetness[i]);
+      const highland = smoothstep(0.13, 0.34, height[i]);
+      const wind = Math.min(1, Math.hypot(windX[i], windY[i]));
+      snowBlow[i] = snow * highland * (0.25 + 0.75 * smoothstep(0.001, 0.018, slope)) * wind;
+    }
+  }
+
   private settlePeople(): void {
     const { n, frame, push, w } = this;
     const { height, temperature, wetness, vegetation, homes, farms, fishing } = frame;
     const P = RULES.people;
     for (let i = 0; i < n; i++) {
-      const reach = Math.min(1.2, push.people[i]);
+      const reach = Math.min(1.2, push.settlement[i]);
       if (reach <= 0.01 || !this.inside[i]) {
         homes[i] = farms[i] = fishing[i] = frame.logging[i] = 0;
         continue;

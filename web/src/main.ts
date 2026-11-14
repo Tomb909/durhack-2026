@@ -4,6 +4,10 @@ import { CardStore } from './cards/store';
 import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { bindCameraInput, MOVE_KEYS, moveWithKeys } from './render/camera';
+import { Ambience } from './audio/ambience';
+import { audio } from './audio/engine';
+import { VillageLife } from './audio/life';
+import { world } from './render/common';
 import { WorldRenderer } from './render/scene';
 import { SHAPE_PRESETS, WorldSim, shapesDiffer, type WorldShape } from './sim/world';
 import { Combinations } from './ui/combos';
@@ -223,6 +227,10 @@ window.addEventListener('keydown', (e) => {
     case 'h':
       document.body.classList.toggle('bare');
       break;
+    case 'm':
+      audio.start();
+      toast(audio.toggleMute() ? 'Sound off' : 'Sound on');
+      break;
     case 'o':
       view.sway = !view.sway;
       break;
@@ -292,6 +300,14 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// --- sound ------------------------------------------------------------------------
+// Browsers only allow sound after a click or key press, so it starts on the first one.
+const ambience = new Ambience(audio);
+const village = new VillageLife(audio);
+const startSound = () => audio.start();
+window.addEventListener('pointerdown', startSound);
+window.addEventListener('keydown', startSound);
+
 // --- main loop ----------------------------------------------------------------------
 
 let last = performance.now();
@@ -309,6 +325,9 @@ function tick(now: number): void {
     toast('Drag to turn · scroll or pinch to zoom · W A S D to move · double-click to reset', 7);
   }
   viewReset.hidden = !view.rig.moved;
+  const pose = view.rig.target;
+  ambience.update(frame, { x: pose.panX / world.w + 0.5, y: pose.panZ / world.d + 0.5, zoom: pose.zoom }, dt);
+  village.update(ambience.soundscape, pose.zoom, dt);
   // Behind the Combinations view nothing can be seen: do not spend the GPU drawing it.
   if (combos.isOpen) view.advance(dt);
   else if (still !== null) view.renderAt(frame, store.cards, still);

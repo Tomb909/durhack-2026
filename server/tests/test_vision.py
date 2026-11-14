@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 
 import pytest
@@ -42,8 +43,8 @@ def test_match_is_forgiving_but_not_ambiguous():
     assert match("LICE", VOCAB)[0] is None  # ICE or LIFE? refuse to guess
     assert match("VOLCANO", VOCAB)[0] is None
     assert normalise("w4ter!") == "WATERI"
-    assert match("PE0PLE", VOCAB) == ("people", 0)
-    assert match("PEPLE", VOCAB) == ("people", 1)
+    assert match("SETTLEMENT", VOCAB) == ("settlement", 0)
+    assert match("SETTLEMNT", VOCAB) == ("settlement", 1)
 
 
 def test_reader_refreshes_vocabulary_when_card_data_changes(tmp_path):
@@ -76,6 +77,27 @@ def test_overlay_hides_unrecognized_letter_fragments_inside_known_card():
     assert [candidate["text"] for candidate in tracker.candidates()] == ["??"]
 
 
+def test_wind_card_output_preserves_arrow_direction_from_text_orientation():
+    tracker = Tracker()
+    tracker.tracks = [Track(1, 100, 100, 20, 90, 30, 0, 0, card="wind", turned=180)]
+
+    (card,) = tracker.cards()
+
+    assert card["angle"] == pytest.approx(math.radians(200), abs=1e-5)
+
+
+def test_camera_distinguishes_opposite_wind_card_orientations(reader):
+    scraps = [Scrap("WIND", 0.3, 0.5), Scrap("WIND", 0.7, 0.5, angle=180)]
+    vision = Vision(reader)
+    run(vision, scraps, frames=7)
+
+    winds = by_card(vision)["wind"]
+
+    assert len(winds) == 2
+    difference = math.atan2(math.sin(winds[0]["angle"] - winds[1]["angle"]), math.cos(winds[0]["angle"] - winds[1]["angle"]))
+    assert abs(difference) == pytest.approx(math.pi, abs=0.15)
+
+
 def test_reads_every_card_at_any_rotation(reader):
     scraps = [
         Scrap("BIG", 0.1, 0.1),
@@ -84,13 +106,13 @@ def test_reads_every_card_at_any_rotation(reader):
         Scrap("SUN", 0.2, 0.7, angle=95),
         Scrap("ICE", 0.5, 0.6, angle=-40),
         Scrap("LIFE", 0.8, 0.75, angle=200),
-        Scrap("PEOPLE", 0.5, 0.2, angle=20),
+        Scrap("SETTLEMENT", 0.5, 0.88, angle=5),
     ]
     vision = Vision(reader)
     run(vision, scraps, frames=6)
     assert vision.play_area.locked
     cards = by_card(vision)
-    assert set(cards) == {"big", "mountain", "water", "sun", "ice", "life", "people"}
+    assert set(cards) == {"big", "mountain", "water", "sun", "ice", "life", "settlement"}
     for scrap in scraps:
         (card,) = cards[scrap.word.lower()]
         assert abs(card["x"] - scrap.x) < 0.03, (scrap.word, card)
