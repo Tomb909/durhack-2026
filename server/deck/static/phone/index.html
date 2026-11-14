@@ -9,14 +9,17 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #0b0d12; color: #f2f4f8; font: 16px/1.4 system-ui, -apple-system, sans-serif; overflow: hidden; }
   #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-  #wrap { position: relative; max-width: 100%; max-height: 100%; }
+  #wrap { position: relative; max-width: 100%; max-height: 100%; overflow: hidden; }
   video { display: block; max-width: 100vw; max-height: 100dvh; }
   #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
   #banner { position: fixed; left: 0; right: 0; top: 0; padding: calc(env(safe-area-inset-top) + 10px) 14px 10px; text-align: center; font-weight: 700; font-size: 18px; background: #6b7280; transition: background .25s; }
   #banner.ok { background: #15803d; }
   #banner.warn { background: #b45309; }
   #banner.bad { background: #b91c1c; }
-  #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px); display: flex; gap: 8px; align-items: center; background: rgba(11,13,18,.72); font-size: 13px; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: rgba(11,13,18,.72); font-size: 13px; }
+  #zoomRow { flex: 0 0 100%; display: flex; gap: 10px; align-items: center; font-size: 14px; }
+  #zoomLabel { white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 5.5em; }
+  #zoom { flex: 1; min-width: 0; height: 32px; accent-color: #2563eb; }
   #bar select { flex: 1; min-width: 0; font-size: 14px; padding: 6px; background: #1c212b; color: inherit; border: 1px solid #394150; border-radius: 6px; }
   #torch { font-size: 14px; padding: 6px 10px; background: #1c212b; color: inherit; border: 1px solid #394150; border-radius: 6px; }
   #torch.on { background: #ca8a04; border-color: #facc15; color: #111; }
@@ -32,7 +35,7 @@
 <body>
 <div id="stage"><div id="wrap"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div></div>
 <div id="banner">Starting…</div>
-<div id="bar"><select id="camera" aria-label="Camera"></select><button id="torch" hidden>Light</button><span id="stats"></span></div>
+<div id="bar"><label id="zoomRow"><span id="zoomLabel">Zoom 1.0×</span><input id="zoom" type="range" min="1" max="4" step="0.1" value="1"></label><select id="camera" aria-label="Camera"></select><button id="torch" hidden>Light</button><span id="stats"></span></div>
 <div id="start">
   <h1 style="margin:0">Deck of Worlds</h1>
   <p>Prop this phone 40–60 cm above the sheet so the whole black border is in view, then start.</p>
@@ -78,23 +81,77 @@
     video.srcObject = stream;
     await video.play();
     setupTorch();
+    setupZoom();
+  }
+
+  function trackCaps() {
+    const track = stream.getVideoTracks()[0];
+    return track.getCapabilities ? track.getCapabilities() : {};
+  }
+
+  // Zoom and torch go in one call: each applyConstraints replaces the last set.
+  function applyTrack() {
+    const advanced = [];
+    if (nativeZoom) advanced.push({ zoom: zoom });
+    if (torchOn) advanced.push({ torch: true });
+    else if (trackCaps().torch) advanced.push({ torch: false });
+    return stream.getVideoTracks()[0].applyConstraints({ advanced });
   }
 
   // The phone's light, where the browser allows it (it removes the phone's own shadow).
   const torchButton = document.getElementById('torch');
   let torchOn = false;
   function setupTorch() {
-    const track = stream.getVideoTracks()[0];
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    torchButton.hidden = !caps.torch;
+    torchButton.hidden = !trackCaps().torch;
     torchOn = false; torchButton.classList.remove('on');
   }
   torchButton.addEventListener('click', async () => {
     try {
       torchOn = !torchOn;
-      await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: torchOn }] });
+      await applyTrack();
       torchButton.classList.toggle('on', torchOn);
     } catch (e) { torchOn = false; torchButton.classList.remove('on'); }
+  });
+
+  // Zoom, for a stand that sits too high. The camera's own zoom where the browser offers it;
+  // otherwise the middle of the picture is cropped out and only that part is sent.
+  const zoomSlider = document.getElementById('zoom');
+  const zoomLabel = document.getElementById('zoomLabel');
+  let zoom = 1, nativeZoom = false, zoomBusy = false, zoomApplied = 1;
+  function setupZoom() {
+    const z = trackCaps().zoom;
+    nativeZoom = !!(z && z.max > z.min);
+    const min = nativeZoom ? z.min : 1, max = nativeZoom ? Math.min(z.max, 8) : 4;
+    zoomSlider.min = min; zoomSlider.max = max;
+    zoomSlider.step = nativeZoom && z.step ? Math.max(z.step, 0.1) : 0.1;
+    const saved = parseFloat(localStorage.getItem('deck.zoom'));
+    zoom = Math.min(max, Math.max(min, isFinite(saved) ? saved : 1));
+    zoomSlider.value = zoom;
+    zoomApplied = nativeZoom ? NaN : zoom;
+    showZoom();
+    pushZoom();
+  }
+  function showZoom() {
+    zoomLabel.textContent = 'Zoom ' + zoom.toFixed(1) + '×';
+    video.style.transform = nativeZoom || zoom === 1 ? '' : 'scale(' + zoom + ')';
+  }
+  // Follow the slider without queueing a camera call for every step of a drag.
+  async function pushZoom() {
+    if (!nativeZoom || zoomBusy) return;
+    zoomBusy = true;
+    try {
+      while (zoomApplied !== zoom) {
+        const target = zoom;
+        try { await applyTrack(); } catch (e) { nativeZoom = false; showZoom(); break; }
+        zoomApplied = target;
+      }
+    } finally { zoomBusy = false; }
+  }
+  zoomSlider.addEventListener('input', () => {
+    zoom = parseFloat(zoomSlider.value);
+    localStorage.setItem('deck.zoom', zoom);
+    showZoom();
+    pushZoom();
   });
 
   async function listCameras() {
@@ -144,9 +201,12 @@
   function grab() {
     const vw = video.videoWidth, vh = video.videoHeight;
     if (!vw || !vh) return null;
-    const scale = Math.min(1, MAX_SIDE / Math.max(vw, vh));
-    capture.width = Math.round(vw * scale); capture.height = Math.round(vh * scale);
-    capture.getContext('2d').drawImage(video, 0, 0, capture.width, capture.height);
+    // With no camera zoom, send only the middle 1/zoom of the picture.
+    const crop = nativeZoom ? 1 : zoom;
+    const sw = vw / crop, sh = vh / crop;
+    const scale = Math.min(1, MAX_SIDE / Math.max(sw, sh));
+    capture.width = Math.round(sw * scale); capture.height = Math.round(sh * scale);
+    capture.getContext('2d').drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, capture.width, capture.height);
     return new Promise(resolve => capture.toBlob(resolve, 'image/jpeg', QUALITY));
   }
 
@@ -176,7 +236,7 @@
 
   function draw() {
     const s = lastStatus; if (!s) return;
-    const rect = video.getBoundingClientRect();
+    const rect = overlay.parentElement.getBoundingClientRect();  // not the video: its zoom transform enlarges its rect
     const dpr = window.devicePixelRatio || 1;
     overlay.width = rect.width * dpr; overlay.height = rect.height * dpr;
     const g = overlay.getContext('2d');
