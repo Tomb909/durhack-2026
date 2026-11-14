@@ -29,6 +29,7 @@ SLOW_READ_AFTER = 10  # after this many failed reads, retry less often
 SLOW_READ_INTERVAL = 0.5
 POSITION_BLEND = 0.6
 VERIFY_INTERVAL = 3.0  # re-read a known card this often, in case two scraps swapped
+WIND_VERIFY_INTERVAL = 0.5  # also keep a rotated WIND card's arrow direction current
 VERIFY_SIZE_CHANGE = 0.35  # ...or at once if its word suddenly changes size
 DISSENT_TO_SWITCH = 2
 
@@ -55,6 +56,7 @@ class Track:
     ref_long: float = 0.0  # word length when the identity was confirmed
     last_verify: float = 0.0
     dissent: Counter = field(default_factory=Counter)
+    turned: int = 0  # clockwise correction used to read the word, in degrees
 
     def as_detection(self) -> Detection:
         return Detection(self.x, self.y, self.angle, self.long, self.short, 0.0)
@@ -104,7 +106,11 @@ class Tracker:
                 blend = POSITION_BLEND if track.visible else 1.0
                 track.x += blend * (det.x - track.x)
                 track.y += blend * (det.y - track.y)
-                track.angle, track.long, track.short = det.angle, det.long, det.short
+                # The word's long axis has no inherent sign. Keep its axis continuous
+                # across the minAreaRect 180-degree wrap; OCR supplies the sign below.
+                angle_delta = (det.angle - track.angle + 90.0) % 180.0 - 90.0
+                track.angle += angle_delta
+                track.long, track.short = det.long, det.short
                 track.last_seen = now
                 track.visible = True
                 track.clear_since = None
@@ -143,6 +149,7 @@ class Tracker:
                 sure = reading.edits == 0 and reading.confidence >= SURE_CONFIDENCE
                 if sure or track.votes[reading.card] >= VOTES_TO_CONFIRM:
                     self._confirm(track, reading.card)
+                    track.turned = reading.turned
                     track.ref_long, track.last_verify = track.long, now
 
             # Occasionally double-check known cards (cheap), so a mix-up heals itself.
@@ -152,7 +159,8 @@ class Tracker:
                 if track.card is None or not track.visible:
                     continue
                 resized = abs(track.long - track.ref_long) > VERIFY_SIZE_CHANGE * max(track.ref_long, 1.0)
-                if now - track.last_verify < (0.4 if resized else VERIFY_INTERVAL):
+                verify_interval = 0.4 if resized else WIND_VERIFY_INTERVAL if track.card == "wind" else VERIFY_INTERVAL
+                if now - track.last_verify < verify_interval:
                     continue
                 budget -= 1
                 track.last_verify = now
@@ -160,6 +168,7 @@ class Tracker:
                 if reading.card == track.card:
                     track.dissent.clear()
                     track.ref_long = track.long
+                    track.turned = reading.turned
                 elif reading.card is not None and reading.edits == 0 and reading.confidence >= 0.8:
                     track.dissent[reading.card] += 1
                     if track.dissent[reading.card] >= DISSENT_TO_SWITCH:
@@ -169,6 +178,7 @@ class Tracker:
                         self._next_id += 1
                         track.dissent.clear()
                         track.ref_long = track.long
+                        track.turned = reading.turned
 
         # --- decide what happens to scraps we cannot see
         survivors: list[Track] = []
@@ -260,7 +270,14 @@ class Tracker:
     def cards(self) -> list[dict]:
         w, h = self.size
         return [
-            {"id": t.id, "card": t.card, "x": round(t.x / w, 4), "y": round(t.y / h, 4), "visible": t.visible}
+            {
+                "id": t.id,
+                "card": t.card,
+                "x": round(t.x / w, 4),
+                "y": round(t.y / h, 4),
+                "angle": round(float(np.deg2rad(t.angle + (180 if t.turned == 180 else 0))), 5),
+                "visible": t.visible,
+            }
             for t in self.tracks
             if t.card is not None
         ]

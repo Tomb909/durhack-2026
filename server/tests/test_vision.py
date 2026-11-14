@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 
 import pytest
@@ -74,6 +75,27 @@ def test_overlay_hides_unrecognized_letter_fragments_inside_known_card():
 
     assert [track.id for track in tracker.display_tracks()] == [1, 4]
     assert [candidate["text"] for candidate in tracker.candidates()] == ["??"]
+
+
+def test_wind_card_output_preserves_arrow_direction_from_text_orientation():
+    tracker = Tracker()
+    tracker.tracks = [Track(1, 100, 100, 20, 90, 30, 0, 0, card="wind", turned=180)]
+
+    (card,) = tracker.cards()
+
+    assert card["angle"] == pytest.approx(math.radians(200), abs=1e-5)
+
+
+def test_camera_distinguishes_opposite_wind_card_orientations(reader):
+    scraps = [Scrap("WIND", 0.3, 0.5), Scrap("WIND", 0.7, 0.5, angle=180)]
+    vision = Vision(reader)
+    run(vision, scraps, frames=7)
+
+    winds = by_card(vision)["wind"]
+
+    assert len(winds) == 2
+    difference = math.atan2(math.sin(winds[0]["angle"] - winds[1]["angle"]), math.cos(winds[0]["angle"] - winds[1]["angle"]))
+    assert abs(difference) == pytest.approx(math.pi, abs=0.15)
 
 
 def test_reads_every_card_at_any_rotation(reader):

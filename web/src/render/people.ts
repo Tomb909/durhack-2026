@@ -102,6 +102,9 @@ void main() {
   vec4 d0 = fieldD(aSite);
   vec4 a0 = fieldA(aSite);
   vec4 b0 = fieldB(aSite);
+  vec2 wind = d0.ba;
+  float gust = length(wind);
+  vec2 windUv = vec2(wind.x, wind.y * WORLD_W / WORLD_D);
   // Is open water close by (for anglers on the bank)? Which way is it?
   vec2 e = vec2(0.018, 0.018 * WORLD_W / WORLD_D);
   float wE = fieldC(aSite + vec2(e.x, 0.0)).b, wW = fieldC(aSite - vec2(e.x, 0.0)).b;
@@ -132,6 +135,7 @@ void main() {
     offset = vec2(cos(u), sin(u)) * r;
     float moving = smoothstep(0.45, 0.55, fract(t * (0.05 + 0.04 * aRand.z)));
     heading = vec2(-sin(u), cos(u));
+    if (gust > 0.12) heading = normalize(mix(heading, wind, min(0.7, gust)));
     bounce = abs(sin(t * 9.0)) * 0.006 * moving;
     lean = 0.05 * sin(t * 0.7) * (1.0 - moving);
   } else if (role == 1) {
@@ -158,6 +162,7 @@ void main() {
     swing = 0.75 + 0.05 * sin(t * 0.9) + 0.06 * step(0.97, fract(t * 0.05)) * sin(t * 20.0);
   }
 
+  offset += windUv * sin(uTime * 2.8 + aRand.w * 30.0) * 0.012 * gust;
   vec2 site = aSite + offset * vec2(1.0, WORLD_W / WORLD_D); // offsets are in widths of the world
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
@@ -176,6 +181,7 @@ void main() {
   }
   if (sit > 0.5) q.y *= 0.6;
   q = rotZ(q, -lean);
+  q.xz -= wind * q.y * 0.38;
 
   float angle = atan(heading.y, heading.x);
   float co = cos(angle), si = sin(angle);
@@ -253,7 +259,10 @@ void main() {
   float u = uTime * (0.03 + 0.03 * aRand.z) + aRand.w * 9.0;
   float t = (floor(u) + smoothstep(0.5, 1.0, fract(u))) * 1.4 + aRand.w * 6.2832;
   vec2 drift = vec2(cos(t), sin(t)) * 0.012;
-  vec2 site = aSite + drift;
+  vec2 wind = fieldD(aSite).ba;
+  float gust = length(wind);
+  vec2 windUv = vec2(wind.x, wind.y * WORLD_W / WORLD_D);
+  vec2 site = aSite + drift + windUv * (0.008 + 0.018 * gust) * sin(uTime * 0.35 + aRand.w * 12.0);
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
   vec4 c = fieldC(site);
@@ -263,7 +272,7 @@ void main() {
   float size = uSize * (0.8 + 0.4 * aRand.y) * grow;
 
   // Bow points along the direction of travel; a gentle rock on the swell.
-  float angle = -t - 1.5708;
+  float angle = gust > 0.12 ? atan(wind.y, wind.x) : -t - 1.5708;
   float co = cos(angle), si = sin(angle);
   vec3 q = position;
   float roll = 0.12 * sin(uTime * 1.9 + aRand.w * 20.0);
@@ -456,7 +465,14 @@ export class Merchants {
       let hash = 0;
       for (const char of route.key) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) | 0;
       const offset = ((hash >>> 0) % 1000) / 1000 * 2;
-      const phase = ((time * MERCHANT_SPEED) / distance + offset) % 2;
+      const midX = (route.from.x + route.to.x) * 0.5;
+      const midY = (route.from.y + route.to.y) * 0.5;
+      const tailwind =
+        (sampleField(frame.windX, frame.w, frame.h, midX, midY) * dx +
+          sampleField(frame.windY, frame.w, frame.h, midX, midY) * dz) /
+        distance;
+      const speed = MERCHANT_SPEED * (1 + 0.7 * tailwind);
+      const phase = ((time * speed) / distance + offset) % 2;
       const forward = phase <= 1;
       const progress = forward ? phase : 2 - phase;
       const x = route.from.x + (route.to.x - route.from.x) * progress;
@@ -469,7 +485,7 @@ export class Merchants {
       convoy.group.position.set((x - 0.5) * world.w, ground + Math.abs(Math.sin(time * 8 + offset)) * 0.003, (y - 0.5) * world.d);
       convoy.group.rotation.y = Math.atan2(forward ? -dz : dz, forward ? dx : -dx);
       convoy.group.rotation.z = Math.sin(time * 8 + offset) * 0.012;
-      const wheelTurn = (time * MERCHANT_SPEED * (forward ? 1 : -1)) / 0.034;
+      const wheelTurn = (time * speed * (forward ? 1 : -1)) / 0.034;
       for (const axle of convoy.wheels) axle.rotation.z = wheelTurn + offset;
     }
 
@@ -511,7 +527,9 @@ void main() {
   // About half the houses have the fire lit. Puffs rise, swell and fade, drifting downwind.
   float lit = step(fract(aRand.y * 13.7), 0.5) * step(0.01, size);
   float life = fract(uTime * 0.09 + aPart / 3.0 + aRand.y * 5.0);
-  vec3 rise = vec3(0.10 * life + 0.02 * sin(uTime * 0.8 + aRand.x * 9.0 + life * 4.0), 0.32 * life, 0.04 * life);
+  vec2 wind = fieldD(aSite).ba;
+  vec3 rise = vec3(0.02 * sin(uTime * 0.8 + aRand.x * 9.0 + life * 4.0), 0.32 * life, 0.0);
+  rise.xz += wind * (0.12 + 0.30 * life);
   float puff = (0.45 + 1.6 * life) * lit;
   vec2 xz = tableXz(aSite);
   vec3 world = vec3(xz.x, a.r * HSCALE - 0.01, xz.y) + chimney + rise * uSize + position * puff * uSize;

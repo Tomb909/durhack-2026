@@ -155,6 +155,12 @@ export class TablePanel {
       if (!chip) {
         chip = document.createElement('div');
         chip.textContent = card.def.icon;
+        if (card.def.id === 'wind') {
+          const arrow = document.createElement('span');
+          arrow.className = 'wind-arrow';
+          arrow.textContent = '➤';
+          chip.appendChild(arrow);
+        }
         chip.style.setProperty('--c', card.def.color);
         const key = card.key;
         chip.addEventListener('pointerdown', (e) => {
@@ -178,6 +184,12 @@ export class TablePanel {
         chip.title = `${card.def.word}: place near a card, within ${Math.round(card.def.modifier.maxDistance * 100)}% of the table width`;
       } else {
         chip.title = sim ? `${card.def.word} (simulated): drag to move, drag off to remove` : `${card.def.word} (seen by the camera)`;
+      }
+      if (card.def.id === 'wind') {
+        const compass = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+        const direction = compass[Math.round(((card.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / (Math.PI / 4)) % compass.length];
+        chip.title = `${card.def.word}: blowing ${direction}`;
+        chip.style.setProperty('--wind-angle', `${card.angle}rad`);
       }
       let badge = chip.querySelector('.modifier-badge');
       if (modifiers.length) {

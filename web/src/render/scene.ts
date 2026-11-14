@@ -22,6 +22,7 @@ import { makePeople, Merchants } from './people';
 import { makeTrees } from './trees';
 import { makeWater } from './water';
 import { makeWeather } from './weather';
+import { makeWindEffects } from './wind';
 
 const FOV = 30;
 const SWAY = THREE.MathUtils.degToRad(22); // never a full spin: left stays left
@@ -79,6 +80,7 @@ export class WorldRenderer {
     this.scene.add(makePeople(this.shared));
     this.scene.add(this.merchants.group);
     this.scene.add(makeWeather(this.shared));
+    this.scene.add(makeWindEffects(this.shared));
     this.scene.add(this.beacons.group);
 
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });

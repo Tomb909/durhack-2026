@@ -4,9 +4,9 @@ import type { LiveCard } from '../cards/store';
 import { RULES, WorldSim, gridHeight, sampleField, type WorldFrame, type WorldShape } from './world';
 
 let n = 0;
-function card(id: string, x: number, y: number, strength = 1): LiveCard {
+function card(id: string, x: number, y: number, strength = 1, angle = 0): LiveCard {
   const def = cardDef(id)!;
-  return { key: `t${n++}`, def, source: 'sim', x, y, tx: x, ty: y, vx: 0, vy: 0, strength, fade: strength, present: true, visible: true, age: 9 };
+  return { key: `t${n++}`, def, source: 'sim', x, y, angle, targetAngle: angle, tx: x, ty: y, vx: 0, vy: 0, strength, fade: strength, present: true, visible: true, age: 9 };
 }
 
 function settle(cards: LiveCard[]): WorldFrame {
@@ -126,6 +126,41 @@ describe('water', () => {
     expect(land(3)).toBeGreaterThan(0.25);
     expect(land(3)).toBeGreaterThan(land(1) + 0.2);
     expect(land(3)).toBeLessThan(0.75);
+  });
+});
+
+describe('wind', () => {
+  it('blows in the card orientation, including its reverse', () => {
+    const east = settle([card('wind', 0.5, 0.5, 1, 0)]);
+    const west = settle([card('wind', 0.5, 0.5, 1, Math.PI)]);
+    expect(at(east, east.windX, 0.5, 0.5)).toBeGreaterThan(0.95);
+    expect(at(east, east.windY, 0.5, 0.5)).toBeCloseTo(0, 3);
+    expect(at(west, west.windX, 0.5, 0.5)).toBeLessThan(-0.95);
+    expect(at(west, west.windY, 0.5, 0.5)).toBeCloseTo(0, 3);
+  });
+
+  it('scatters LIFE downwind into a narrow line of trees', () => {
+    const cards = [card('life', 0.35, 0.5), card('water', 0.35, 0.5)];
+    const still = settle(cards);
+    const eastward = settle([...cards, card('wind', 0.35, 0.5)]);
+    const westward = settle([...cards, card('wind', 0.35, 0.5, 1, Math.PI)]);
+    expect(at(eastward, eastward.vegetation, 0.68, 0.5)).toBeGreaterThan(at(still, still.vegetation, 0.68, 0.5) + 0.15);
+    expect(at(eastward, eastward.vegetation, 0.68, 0.5)).toBeGreaterThan(at(westward, westward.vegetation, 0.68, 0.5) + 0.15);
+    expect(at(eastward, eastward.vegetation, 0.68, 0.5)).toBeGreaterThan(at(eastward, eastward.vegetation, 0.68, 0.56) + 0.2);
+  });
+
+  it('turns nearby ICE and WIND into a cold, downwind snow squall', () => {
+    const ice = settle([card('ice', 0.5, 0.5)]);
+    const blizzard = settle([card('ice', 0.5, 0.5), card('wind', 0.5, 0.5)]);
+    expect(at(blizzard, blizzard.temperature, 0.62, 0.5)).toBeLessThan(RULES.freezing);
+    expect(at(blizzard, blizzard.precipitation, 0.62, 0.5)).toBeGreaterThan(at(ice, ice.precipitation, 0.62, 0.5) + 0.25);
+  });
+
+  it('scours wet snow from high ground only when wind is present', () => {
+    const mountain = settle([card('mountain', 0.5, 0.5), card('water', 0.5, 0.5)]);
+    const storm = settle([card('mountain', 0.5, 0.5), card('water', 0.5, 0.5), card('wind', 0.5, 0.5)]);
+    expect(Math.max(...mountain.snowBlow)).toBe(0);
+    expect(Math.max(...storm.snowBlow)).toBeGreaterThan(0.1);
   });
 });
 

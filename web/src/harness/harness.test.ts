@@ -14,9 +14,11 @@ describe('combination codes', () => {
     expect(parseCode('water_x3').length).toBe(3);
     expect(parseCode('life water sun').map((c) => c.id)).toEqual(['life', 'water', 'sun']);
     expect(parseCode('life@0.8,0.6')).toEqual([{ id: 'life', x: 0.8, y: 0.6 }]);
+    expect(parseCode('wind~90@0.5,0.5')).toEqual([{ id: 'wind', x: 0.5, y: 0.5, angle: Math.PI / 2 }]);
   });
   it('accepts any unambiguous start of a card id', () => {
-    expect(parseCode('m+w+s+i+l').map((c) => c.id)).toEqual(['mountain', 'water', 'sun', 'ice', 'life']);
+    expect(parseCode('m+wate+s+i+l').map((c) => c.id)).toEqual(['mountain', 'water', 'sun', 'ice', 'life']);
+    expect(() => parseCode('w')).toThrow(/could be water or wind/);
     expect(() => parseCode('lava')).toThrow(/no card called/);
   });
   it('puts copies side by side, never on top of each other', () => {
@@ -27,6 +29,8 @@ describe('combination codes', () => {
   it('writes a code one standard way and names it for files', () => {
     expect(tidyCode('Life_Water x3')).toBe('life+water*3');
     expect(nameOf('water*3+life@0.8,0.6')).toBe('water_x3_life');
+    expect(tidyCode('wind~90@0.5,0.5')).toBe('wind~90@0.5,0.5');
+    expect(nameOf('wind~90@0.5,0.5')).toBe('wind_90deg');
   });
   it('lists every combination of cards exactly once', () => {
     const subsets = resolveScenarios({ set: 'subsets' });

@@ -52,6 +52,14 @@
     "effects": [{ "field": "life", "amount": 1.0, "radius": 0.24 }]
   },
   {
+    "id": "wind",
+    "word": "WIND",
+    "aliases": [],
+    "icon": "🌬️",
+    "color": "#a7d8e8",
+    "effects": []
+  },
+  {
     "id": "people",
     "word": "PEOPLE",
     "aliases": ["PERSON", "HUMANS"],

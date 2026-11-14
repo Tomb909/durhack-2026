@@ -3,8 +3,8 @@
 // The renderer's whole view of the world is two textures (see fields.ts):
 //   uFieldA = height, temperature, wetness, vegetation
 //   uFieldB = waterSurface, river, precipitation, inside mask (0.5 on the outline)
-//   uFieldC = homes, farms, fishing, (spare)
-//   uFieldD = cleared (felled forest, permanent), logging, (spare), (spare)
+//   uFieldC = homes, farms, fishing, wind-blown snow
+//   uFieldD = cleared (felled forest, permanent), logging, wind-x, wind-z
 // plus the sea level. Rewrite anything in render/ freely: nothing else in the
 // app depends on it.
 import * as THREE from 'three';

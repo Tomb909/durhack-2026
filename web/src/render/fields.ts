@@ -61,8 +61,11 @@ export class FieldTextures {
       dataC[o] = homes[i];
       dataC[o + 1] = farms[i];
       dataC[o + 2] = fishing[i];
+      dataC[o + 3] = frame.snowBlow[i];
       dataD[o] = cleared[i];
       dataD[o + 1] = logging[i] * (1 - cleared[i]);
+      dataD[o + 2] = frame.windX[i];
+      dataD[o + 3] = frame.windY[i];
       dataB[o + 3] = Math.min(1, Math.max(0, 0.5 + mask[i]));
     }
     this.a.needsUpdate = true;
