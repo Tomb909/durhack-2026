@@ -61,6 +61,45 @@ describe('mountain', () => {
   });
 });
 
+describe('BIG modifier', () => {
+  it('makes a modified mountain taller as well as wider', () => {
+    const empty = settle([]);
+    const mountain = settle([card('mountain', 0.5, 0.5)]);
+    const bigMountain = settle([card('big', 0.65, 0.5), card('mountain', 0.5, 0.5)]);
+    const lift = (frame: WorldFrame) => at(frame, frame.height, 0.5, 0.5) - at(empty, empty.height, 0.5, 0.5);
+    expect(lift(bigMountain)).toBeGreaterThan(lift(mountain) * 1.35);
+  });
+
+  it('widens the local influence radius of the nearest card to either side', () => {
+    const empty = settle([]);
+    const mountain = settle([card('mountain', 0.5, 0.5)]);
+    const bigMountain = settle([card('big', 0.65, 0.5), card('mountain', 0.5, 0.5)]);
+    const distantLift = (frame: WorldFrame) => at(frame, frame.height, 0.74, 0.5) - at(empty, empty.height, 0.74, 0.5);
+    expect(distantLift(bigMountain)).toBeGreaterThan(distantLift(mountain) * 1.5);
+  });
+
+  it('attaches by 2D proximity and ignores cards outside the larger range', () => {
+    const mountain = settle([card('mountain', 0.5, 0.5)]);
+    const bigBelow = settle([card('mountain', 0.5, 0.5), card('big', 0.5, 0.85)]);
+    const bigTooFar = settle([card('big', 0.81, 0.5), card('mountain', 0.5, 0.5)]);
+    const nearbyLift = (frame: WorldFrame) => at(frame, frame.height, 0.5, 0.7);
+    expect(nearbyLift(bigBelow)).toBeGreaterThan(nearbyLift(mountain));
+    expect(bigTooFar.height).toEqual(mountain.height);
+  });
+
+  it('stacks nearby BIG modifiers and leaves global effects alone', () => {
+    const empty = settle([]);
+    const oneBig = settle([card('big', 0.4, 0.5), card('mountain', 0.5, 0.5)]);
+    const twoBig = settle([card('big', 0.36, 0.5), card('big', 0.44, 0.5), card('mountain', 0.5, 0.5)]);
+    const water = settle([card('water', 0.5, 0.5)]);
+    const bigWater = settle([card('big', 0.4, 0.5), card('water', 0.5, 0.5)]);
+    const distantLift = (frame: WorldFrame) => at(frame, frame.height, 0.74, 0.5) - at(empty, empty.height, 0.74, 0.5);
+    expect(distantLift(twoBig)).toBeGreaterThan(distantLift(oneBig));
+    expect(at(bigWater, bigWater.wetness, 0.75, 0.5)).toBeGreaterThan(at(water, water.wetness, 0.75, 0.5) + 0.08);
+    expect(bigWater.seaLevel).toBe(water.seaLevel);
+  });
+});
+
 describe('water', () => {
   it('rains near the card and forms rivers or lakes', () => {
     const f = settle([card('water', 0.35, 0.35)]);

@@ -1,5 +1,14 @@
 [
   {
+    "id": "big",
+    "word": "BIG",
+    "aliases": [],
+    "icon": "🔍",
+    "color": "#c084fc",
+    "effects": [],
+    "modifier": { "type": "radius", "multiplier": 1.5, "heightMultiplier": 1.5, "maxDistance": 0.3 }
+  },
+  {
     "id": "mountain",
     "word": "MOUNTAIN",
     "aliases": ["MOUNTAINS"],

@@ -4,6 +4,7 @@
 // (height, temperature, wetness, sea level, life) and everything you see is
 // derived from those. There are no card-pair special cases anywhere.
 import type { FieldName } from '../cards/defs';
+import { heightMultiplier, modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { LiveCard } from '../cards/store';
 import { Hydrology, type HydrologyRules } from './hydrology';
 import { fbm, ridged } from './noise';
@@ -172,6 +173,12 @@ export class WorldSim {
     const { n, frame, push } = this;
     for (const key of Object.keys(push) as LocalField[]) push[key].fill(0);
 
+    const modifiersByTarget = modifierTargets(cards);
+    const radiusMultipliers = new Map<LiveCard, number>();
+    for (const [target, modifiers] of modifiersByTarget) {
+      radiusMultipliers.set(target, radiusMultiplier(modifiers));
+    }
+
     // --- 1. gather card pushes. Copies of the same card add up, then level off.
     let sea = RULES.seaBase;
     const groups = new Map<string, LiveCard[]>();
@@ -192,11 +199,29 @@ export class WorldSim {
         }
         const target = push[effect.field as LocalField];
         if (!target) continue;
-        this.addCopies(group, effect.radius ?? 0.2);
-        const copies = this.copies;
-        const ceiling = RULES.copiesCeiling;
-        for (let i = 0; i < n; i++) {
-          if (copies[i] > 0) target[i] += effect.amount * ceiling * Math.tanh(copies[i] / ceiling);
+        const byRadius = new Map<number, Map<number, LiveCard[]>>();
+        for (const card of group) {
+          const radius = (effect.radius ?? 0.2) * (radiusMultipliers.get(card) ?? 1);
+          const amountMultiplier = effect.field === 'height'
+            ? heightMultiplier(modifiersByTarget.get(card) ?? [])
+            : 1;
+          let byAmount = byRadius.get(radius);
+          if (!byAmount) byRadius.set(radius, (byAmount = new Map()));
+          const sameEffect = byAmount.get(amountMultiplier);
+          if (sameEffect) sameEffect.push(card);
+          else byAmount.set(amountMultiplier, [card]);
+        }
+        for (const [radius, byAmount] of byRadius) {
+          for (const [amountMultiplier, radiusGroup] of byAmount) {
+            this.addCopies(radiusGroup, radius);
+            const copies = this.copies;
+            const ceiling = RULES.copiesCeiling;
+            for (let i = 0; i < n; i++) {
+              if (copies[i] > 0) {
+                target[i] += effect.amount * amountMultiplier * ceiling * Math.tanh(copies[i] / ceiling);
+              }
+            }
+          }
         }
       }
     }

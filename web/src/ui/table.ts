@@ -2,6 +2,7 @@
 // seen by the camera and simulated ones), and it is also where simulated cards
 // are made: drag one from the tray onto the map or straight onto the world.
 import { CARD_DEFS } from '../cards/defs';
+import { modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { CardStore, LiveCard } from '../cards/store';
 import type { Candidate } from '../net/link';
 
@@ -119,9 +120,15 @@ export class TablePanel {
 
   /** Call every frame. */
   update(): void {
+    const modifiersByTarget = modifierTargets(this.store.cards);
+    const targetByModifier = new Map<LiveCard, LiveCard>();
+    for (const [target, modifiers] of modifiersByTarget) {
+      for (const modifier of modifiers) targetByModifier.set(modifier, target);
+    }
     const seen = new Set<string>();
     for (const card of this.store.cards) {
       seen.add(card.key);
+      const modifiers = modifiersByTarget.get(card) ?? [];
       let chip = this.chips.get(card.key);
       if (!chip) {
         chip = document.createElement('div');
@@ -139,8 +146,28 @@ export class TablePanel {
         this.chips.set(card.key, chip);
       }
       const sim = card.source === 'sim';
-      chip.className = `chip ${sim ? 'sim' : 'camera'}${card.visible ? '' : ' held'}`;
-      chip.title = sim ? `${card.def.word} (simulated): drag to move, drag off to remove` : `${card.def.word} (seen by the camera)`;
+      const modifierTarget = targetByModifier.get(card);
+      chip.className = `chip ${sim ? 'sim' : 'camera'}${card.visible ? '' : ' held'}${card.def.modifier ? ' modifier-source' : ''}${modifiers.length ? ' modified' : ''}`;
+      if (modifierTarget) {
+        chip.title = `${card.def.word} → ${modifierTarget.def.word}: expands its local effect radius`;
+      } else if (modifiers.length) {
+        chip.title = `${card.def.word} + ${modifiers.map((modifier) => modifier.def.word).join('+')}: local effect radius ×${radiusMultiplier(modifiers).toFixed(2)}`;
+      } else if (card.def.modifier) {
+        chip.title = `${card.def.word}: place near a card, within ${Math.round(card.def.modifier.maxDistance * 100)}% of the table width`;
+      } else {
+        chip.title = sim ? `${card.def.word} (simulated): drag to move, drag off to remove` : `${card.def.word} (seen by the camera)`;
+      }
+      let badge = chip.querySelector('.modifier-badge');
+      if (modifiers.length) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'modifier-badge';
+          chip.appendChild(badge);
+        }
+        badge.textContent = `+${modifiers.map((modifier) => modifier.def.word).join('+')}`;
+      } else {
+        badge?.remove();
+      }
       // Simulated chips sit exactly under the mouse; camera chips show the smoothed position.
       chip.style.left = `${(sim ? card.tx : card.x) * 100}%`;
       chip.style.top = `${(sim ? card.ty : card.y) * 100}%`;

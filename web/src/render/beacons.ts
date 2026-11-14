@@ -1,17 +1,23 @@
 // A soft pillar of light and an icon above each card's position, so it is
 // obvious which part of the world a scrap on the table is acting on.
 import * as THREE from 'three';
+import { modifierTargets } from '../cards/modifiers';
 import type { LiveCard } from '../cards/store';
 import { sampleField, type WorldFrame } from '../sim/world';
 import { HSCALE, WORLD_D, WORLD_W } from './common';
 
 const ICON_HEIGHT = 3.7;
 
+function titleCase(word: string): string {
+  return word.charAt(0) + word.slice(1).toLowerCase();
+}
+
 interface Beacon {
   group: THREE.Group;
   icon: THREE.Sprite;
   beam: THREE.Mesh;
   ring: THREE.Mesh;
+  label: string;
 }
 
 const iconCache = new Map<string, THREE.Texture>();
@@ -52,10 +58,10 @@ export class Beacons {
   private beamGeometry = new THREE.CylinderGeometry(0.035, 0.035, 1, 8, 1, true).translate(0, 0.5, 0);
   private ringGeometry = new THREE.RingGeometry(0.16, 0.22, 40).rotateX(-Math.PI / 2);
 
-  private make(card: LiveCard): Beacon {
+  private make(card: LiveCard, label: string): Beacon {
     const colour = new THREE.Color(card.def.color);
     const icon = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: iconTexture(card.def.icon, card.def.word, card.def.color), transparent: true, depthTest: false, depthWrite: false }),
+      new THREE.SpriteMaterial({ map: iconTexture(card.def.icon, label, card.def.color), transparent: true, depthTest: false, depthWrite: false }),
     );
     icon.scale.set(0.95, 0.95, 1);
     icon.renderOrder = 20;
@@ -67,16 +73,28 @@ export class Beacons {
     const group = new THREE.Group();
     group.add(icon, beam, ring);
     this.group.add(group);
-    return { group, icon, beam, ring };
+    return { group, icon, beam, ring, label };
   }
 
   update(cards: LiveCard[], frame: WorldFrame, time: number): void {
+    const modifiersByTarget = modifierTargets(cards);
+    const attachedModifiers = new Set([...modifiersByTarget.values()].flat());
     const seen = new Set<string>();
     for (const card of cards) {
+      if (card.def.modifier && attachedModifiers.has(card)) continue;
       seen.add(card.key);
+      const modifiers = modifiersByTarget.get(card) ?? [];
+      const label = modifiers.length
+        ? `${modifiers.map((modifier) => titleCase(modifier.def.word)).join(' ')} ${titleCase(card.def.word)}`
+        : card.def.word;
       let beacon = this.beacons.get(card.key);
+      if (beacon && beacon.label !== label) {
+        this.dispose(beacon);
+        this.beacons.delete(card.key);
+        beacon = undefined;
+      }
       if (!beacon) {
-        beacon = this.make(card);
+        beacon = this.make(card, label);
         this.beacons.set(card.key, beacon);
       }
       const ground = Math.max(sampleField(frame.height, card.x, card.y), sampleField(frame.waterSurface, card.x, card.y)) * HSCALE;
@@ -95,12 +113,16 @@ export class Beacons {
     }
     for (const [key, beacon] of this.beacons) {
       if (!seen.has(key)) {
-        this.group.remove(beacon.group);
-        beacon.icon.material.dispose();
-        (beacon.beam.material as THREE.Material).dispose();
-        (beacon.ring.material as THREE.Material).dispose();
+        this.dispose(beacon);
         this.beacons.delete(key);
       }
     }
+  }
+
+  private dispose(beacon: Beacon): void {
+    this.group.remove(beacon.group);
+    beacon.icon.material.dispose();
+    (beacon.beam.material as THREE.Material).dispose();
+    (beacon.ring.material as THREE.Material).dispose();
   }
 }

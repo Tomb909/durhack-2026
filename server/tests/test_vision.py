@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import json
+import os
+
 import pytest
 
 from deck.vision.pipeline import Vision
-from deck.vision.reader import Reader, match, normalise
+from deck.vision.reader import Reader, load_vocabulary, match, normalise
 from deck.vision.synth import Scrap, render_frame
+from deck.vision.tracker import Track, Tracker
 
 VOCAB = {"MOUNTAIN": "mountain", "WATER": "water", "SUN": "sun", "ICE": "ice", "LIFE": "life"}
 
 
 @pytest.fixture(scope="module")
 def reader() -> Reader:
-    return Reader(VOCAB)
+    return Reader(load_vocabulary())
 
 
 def run(vision: Vision, scraps, frames=4, start=0.0, **kwargs) -> float:
@@ -40,8 +44,39 @@ def test_match_is_forgiving_but_not_ambiguous():
     assert normalise("w4ter!") == "WATERI"
 
 
-def test_reads_all_five_cards_at_any_rotation(reader):
+def test_reader_refreshes_vocabulary_when_card_data_changes(tmp_path):
+    cards_path = tmp_path / "cards.json"
+    cards_path.write_text(json.dumps([{"id": "water", "word": "WATER"}]), encoding="utf-8")
+    reader = Reader.__new__(Reader)
+    reader._vocabulary_path = cards_path
+    reader.vocabulary = load_vocabulary(cards_path)
+    initial_mtime_ns = cards_path.stat().st_mtime_ns
+    reader._vocabulary_mtime_ns = initial_mtime_ns
+
+    cards_path.write_text(json.dumps([{"id": "big", "word": "BIG"}, {"id": "water", "word": "WATER"}]), encoding="utf-8")
+    changed = cards_path.stat()
+    os.utime(cards_path, ns=(changed.st_atime_ns, initial_mtime_ns + 1_000_000_000))
+    reader._refresh_vocabulary()
+
+    assert match("BIG", reader.vocabulary) == ("big", 0)
+
+
+def test_overlay_hides_unrecognized_letter_fragments_inside_known_card():
+    tracker = Tracker()
+    tracker.tracks = [
+        Track(1, 100, 100, 0, 90, 30, 0, 0, card="big"),
+        Track(2, 75, 100, 0, 20, 20, 0, 0, text="B?"),
+        Track(3, 100, 100, 0, 15, 20, 0, 0, text="I?"),
+        Track(4, 200, 100, 0, 20, 20, 0, 0, text="??"),
+    ]
+
+    assert [track.id for track in tracker.display_tracks()] == [1, 4]
+    assert [candidate["text"] for candidate in tracker.candidates()] == ["??"]
+
+
+def test_reads_all_six_cards_at_any_rotation(reader):
     scraps = [
+        Scrap("BIG", 0.1, 0.1),
         Scrap("MOUNTAIN", 0.25, 0.25, angle=0),
         Scrap("WATER", 0.7, 0.25, angle=160),
         Scrap("SUN", 0.2, 0.7, angle=95),
@@ -52,7 +87,7 @@ def test_reads_all_five_cards_at_any_rotation(reader):
     run(vision, scraps, frames=6)
     assert vision.play_area.locked
     cards = by_card(vision)
-    assert set(cards) == {"mountain", "water", "sun", "ice", "life"}
+    assert set(cards) == {"big", "mountain", "water", "sun", "ice", "life"}
     for scrap in scraps:
         (card,) = cards[scrap.word.lower()]
         assert abs(card["x"] - scrap.x) < 0.03, (scrap.word, card)

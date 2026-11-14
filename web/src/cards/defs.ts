@@ -15,6 +15,14 @@ export interface CardEffect {
   global?: boolean;
 }
 
+export interface CardModifier {
+  type: 'radius';
+  multiplier: number;
+  heightMultiplier?: number;
+  /** Maximum center distance to the target, as a fraction of table width. */
+  maxDistance: number;
+}
+
 export interface CardDef {
   id: string;
   word: string;
@@ -22,6 +30,7 @@ export interface CardDef {
   icon: string;
   color: string;
   effects: CardEffect[];
+  modifier?: CardModifier;
 }
 
 export const CARD_DEFS: CardDef[] = raw as CardDef[];

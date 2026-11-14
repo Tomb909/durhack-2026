@@ -114,7 +114,14 @@ class Reader:
         from rapidocr import RapidOCR  # slow import; keep it out of module load
 
         logging.getLogger("RapidOCR").setLevel(logging.ERROR)
-        self.vocabulary = vocabulary if vocabulary is not None else load_vocabulary()
+        if vocabulary is None:
+            self._vocabulary_path: Path | None = CARDS_JSON
+            self.vocabulary = load_vocabulary(CARDS_JSON)
+            self._vocabulary_mtime_ns: int | None = CARDS_JSON.stat().st_mtime_ns
+        else:
+            self._vocabulary_path = None
+            self.vocabulary = vocabulary
+            self._vocabulary_mtime_ns = None
         self.engine = RapidOCR()
         logging.getLogger("RapidOCR").setLevel(logging.ERROR)
         # First call loads the model; do it now rather than on the first card.
@@ -128,8 +135,17 @@ class Reader:
             return "", 0.0
         return str(texts[0]), float(scores[0])
 
+    def _refresh_vocabulary(self) -> None:
+        if self._vocabulary_path is None:
+            return
+        mtime_ns = self._vocabulary_path.stat().st_mtime_ns
+        if mtime_ns != self._vocabulary_mtime_ns:
+            self.vocabulary = load_vocabulary(self._vocabulary_path)
+            self._vocabulary_mtime_ns = mtime_ns
+
     def read(self, crop: np.ndarray, squarish: bool = False) -> Reading:
         """Read an upright-or-upside-down crop, trying each plausible rotation."""
+        self._refresh_vocabulary()
         best = Reading(card=None, text="", confidence=0.0, edits=99, turned=0)
         rotations = [0, 180, 90, 270] if squarish else [0, 180]
         for turned in rotations:

@@ -56,11 +56,13 @@ Nothing needs the internet once it is running.
 
 Drag a card from the tray (bottom left) onto the little table map, or straight onto the world. Drag it off to remove it. They add to whatever the camera sees. If the camera drops out, the real cards stay where they were and become draggable, with no restart.
 
+Place **BIG** near the card it modifies, on any side, with their centers no more than 30% of the table width apart. The nearest card is modified, and the table map marks it with **+BIG**. BIG increases that card's local area of influence by 1.5×; on MOUNTAIN, it also makes the height effect 1.5× stronger. Multiple BIG cards stack. Global effects such as WATER's sea-level rise are unchanged.
+
 ## Making cards and the sheet
 
 - **Sheet:** A3 (or two A4s taped flat). Draw one closed rectangle with a thick black marker, a finger-width in from the edge.
 - **Cards:** one word per scrap of plain white paper, BLOCK CAPITALS, thick black marker, letters 1.5–2.5 cm tall and close together, blank margin all round. Nothing else on the scrap.
-- **Words:** MOUNTAIN, WATER, SUN, ICE, LIFE. Make several of each.
+- **Words:** BIG, MOUNTAIN, WATER, SUN, ICE, LIFE. Make several of each.
 - **Copies** go side by side, never stacked. Turning a card does nothing.
 
 ## If something goes wrong
