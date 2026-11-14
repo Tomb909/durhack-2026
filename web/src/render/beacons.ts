@@ -19,6 +19,33 @@ function titleCase(word: string): string {
   return word.charAt(0) + word.slice(1).toLowerCase();
 }
 
+/**
+ * Copies of the same card that sit close together, as groups (each shares one label).
+ * A card that lands between two groups joins them into one. `skip` cards get no label of their own.
+ */
+export function groupCopies(cards: LiveCard[], skip: ReadonlySet<LiveCard>, aspect: number): LiveCard[][] {
+  const groups: LiveCard[][] = [];
+  for (const card of cards) {
+    if (skip.has(card)) continue;
+    let home: LiveCard[] | undefined;
+    for (const group of groups) {
+      // A group emptied by an earlier join has no first card to compare with.
+      if (!group.length || group[0].def !== card.def) continue;
+      if (group.some((other) => Math.hypot(other.x - card.x, (other.y - card.y) / aspect) < GROUP_RADIUS)) {
+        if (home) {
+          home.push(...group);
+          group.length = 0;
+        } else {
+          home = group;
+        }
+      }
+    }
+    if (home) home.push(card);
+    else groups.push([card]);
+  }
+  return groups.filter((group) => group.length > 0);
+}
+
 interface Mark {
   beam: THREE.Mesh;
   ring: THREE.Mesh;
@@ -101,30 +128,12 @@ export class Beacons {
     }
 
     // --- group nearby copies of the same card; attached modifiers share the target label
-    const groups: LiveCard[][] = [];
-    for (const card of cards) {
-      if (attachedModifiers.has(card)) continue;
-      let home: LiveCard[] | undefined;
-      for (const group of groups) {
-        if (group[0].def !== card.def) continue;
-        if (group.some((other) => Math.hypot(other.x - card.x, (other.y - card.y) / world.aspect) < GROUP_RADIUS)) {
-          if (home) {
-            home.push(...group);
-            group.length = 0;
-          } else {
-            home = group;
-          }
-        }
-      }
-      if (home) home.push(card);
-      else groups.push([card]);
-    }
+    const groups = groupCopies(cards, attachedModifiers, world.aspect);
 
     // --- one label per group
     const live = new Set<string>();
     const placed: Label[] = [];
     const entries = groups
-      .filter((group) => group.length > 0)
       .map((group) => ({ group, key: `${group[0].def.id}:${group.map((c) => c.key).sort()[0]}` }))
       .sort((a, b) => (a.key < b.key ? -1 : 1));
     for (const { group, key } of entries) {

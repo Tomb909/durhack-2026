@@ -108,7 +108,8 @@ export class CardStore {
     const seen = new Set<string>();
     for (const t of tracked) {
       const def = cardDef(t.card);
-      if (!def) continue;
+      // A position that is not a number would spread through every field of the world.
+      if (!def || !Number.isFinite(t.x) || !Number.isFinite(t.y)) continue;
       const key = `cam:${t.id}`;
       seen.add(key);
       let card = this.find(key);
@@ -149,6 +150,7 @@ export class CardStore {
 
   update(dt: number): void {
     dt = Math.min(dt, 0.1);
+    const decay = Math.exp(-SPRING * dt);
     let moving = false;
     for (const card of this.cards) {
       card.age += dt;
@@ -162,13 +164,17 @@ export class CardStore {
         if (card.present) card.age = Math.max(card.age, 99); // no arrival pulse
         continue;
       }
-      // Critically damped spring towards the target position.
-      const ax = SPRING * SPRING * (card.tx - card.x) - 2 * SPRING * card.vx;
-      const ay = SPRING * SPRING * (card.ty - card.y) - 2 * SPRING * card.vy;
-      card.vx += ax * dt;
-      card.vy += ay * dt;
-      card.x += card.vx * dt;
-      card.y += card.vy * dt;
+      // Critically damped spring towards the target position, solved exactly for this step.
+      // (Stepping it by simple addition overshoots further every frame once frames take longer
+      // than about 75 ms: cards fly off the table just when the machine is struggling.)
+      const ex = card.x - card.tx;
+      const ey = card.y - card.ty;
+      const jx = card.vx + SPRING * ex;
+      const jy = card.vy + SPRING * ey;
+      card.x = card.tx + (ex + jx * dt) * decay;
+      card.y = card.ty + (ey + jy * dt) * decay;
+      card.vx = (card.vx - SPRING * jx * dt) * decay;
+      card.vy = (card.vy - SPRING * jy * dt) * decay;
       const target = card.present ? 1 : 0;
       const before = card.fade;
       if (card.fade < target) card.fade = Math.min(target, card.fade + dt / FADE_SECONDS);

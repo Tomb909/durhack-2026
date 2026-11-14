@@ -69,6 +69,16 @@ export function shapesDiffer(a: WorldShape, b: WorldShape, moved = 0.025): boole
   return far(a.outline, b.outline) || far(b.outline, a.outline);
 }
 
+/**
+ * True for a shape a world can be built from. The camera's shape arrives over the network:
+ * proportions of zero or "not a number" would ask for a grid of no size or of endless size.
+ */
+export function usableShape(shape: WorldShape | null | undefined): shape is WorldShape {
+  if (!shape || !Number.isFinite(shape.aspect) || shape.aspect < 0.25 || shape.aspect > 4) return false;
+  if (!Array.isArray(shape.outline) || shape.outline.length < 3) return false;
+  return shape.outline.every((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+}
+
 /** Grid height for a shape's proportions (136 for A3). */
 export const gridHeight = (aspect: number) => Math.round((GW - 1) / aspect) + 1;
 /** Grid height of the default (A3) world. Shaped worlds use `sim.h` / `frame.h` instead. */
@@ -222,6 +232,8 @@ export class WorldSim {
   /** Summed card pushes per property (after the copies ceiling). */
   private push: Record<LocalField, Float32Array>;
   private copies: Float32Array;
+  /** One row of a card's falloff (see addCopies). */
+  private across = new Float64Array(GW);
   private surfaceTarget: Float32Array;
   private riverTarget: Float32Array;
   private nearWater: Float32Array;
@@ -312,9 +324,12 @@ export class WorldSim {
   }
 
   private fellTimer = 0;
+  /** True while any cell has woodcutters at work (set whenever the world is worked out). */
+  private woodcutters = false;
   /** Woodcutters slowly clear the forest they work. Only in running time, never in settleNow. */
   private fell(dt: number): void {
-    if (dt <= 0) return;
+    if (dt <= 0 || !this.woodcutters) return; // nobody is at work: nothing to look through
+
     const { logging, cleared } = this.frame;
     const rate = dt / RULES.people.fellSeconds;
     let any = false;
@@ -467,6 +482,7 @@ export class WorldSim {
     const { n, frame, push, w } = this;
     const { height, temperature, wetness, vegetation, homes, farms, fishing } = frame;
     const P = RULES.people;
+    let woodcutters = false;
     for (let i = 0; i < n; i++) {
       const reach = Math.min(1.2, push.people[i]);
       if (reach <= 0.01 || !this.inside[i]) {
@@ -496,7 +512,9 @@ export class WorldSim {
       // Fields and villages are cleared of forest; woodcutters work what is left nearby.
       vegetation[i] *= 1 - Math.min(1, 0.9 * home + farm);
       frame.logging[i] = smoothstep(P.logStart, P.logFull, reach) * smoothstep(0.25, 0.5, vegetation[i]) * dry;
+      if (frame.logging[i] > 0.01) woodcutters = true;
     }
+    this.woodcutters = woodcutters;
   }
 
   /** Sum of gaussian falloffs for every copy in the group, into `this.copies`. */
@@ -514,13 +532,18 @@ export class WorldSim {
       const x1 = Math.min(GW - 1, Math.ceil(cx + reach * sigmaX));
       const y0 = Math.max(0, Math.floor(cy - reach * sigmaY));
       const y1 = Math.min(GH - 1, Math.ceil(cy + reach * sigmaY));
+      // The falloff across and the falloff down multiply to give the falloff at a cell, so
+      // work out one row of "across" and reuse it: an exp per row and column, not per cell.
+      const across = this.across;
+      for (let i = x0; i <= x1; i++) {
+        const dx = (i - cx) / sigmaX;
+        across[i] = Math.exp(-0.5 * dx * dx);
+      }
       for (let j = y0; j <= y1; j++) {
         const dy = (j - cy) / sigmaY;
+        const down = card.strength * Math.exp(-0.5 * dy * dy);
         const row = j * GW;
-        for (let i = x0; i <= x1; i++) {
-          const dx = (i - cx) / sigmaX;
-          copies[row + i] += card.strength * Math.exp(-0.5 * (dx * dx + dy * dy));
-        }
+        for (let i = x0; i <= x1; i++) copies[row + i] += down * across[i];
       }
     }
   }

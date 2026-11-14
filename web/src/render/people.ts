@@ -2,8 +2,32 @@
 // Like the trees, every house and boat has a fixed site and appears or goes in
 // the vertex shader from the homes / fishing textures, so nothing runs on the CPU.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLSL_COMMON, type SharedUniforms } from './common';
+import { SPARE, Sites, together, type Culled, type SiteTest } from './sites';
+
+// How strongly a place must call for a thing before one appears there: `base + spread x the
+// site's own random number`. The shaders and the CPU tests at the bottom of this file share
+// these numbers: change them here and both follow.
+const HOUSE = { base: 0.25, spread: 1.2 }; // at most about 6 in 10 sites built on
+const PERSON = { base: 0.2, spread: 1.0 };
+const BOAT = { base: 0.2, spread: 0.75 };
+const SHEEP = { base: 0.4, spread: 2.4 };
+/** How much each calling counts for a person: living there, farming, woodcutting, fishing from the bank. */
+const ROLE = { villager: 0.7, farmer: 0.4, logger: 0.55, angler: 0.45 };
+/** Only people whose second random number is at least this fish from the bank. */
+const ANGLERS = 0.6;
+/** The odd farmstead out in the fields: farmland counts this much toward a house. */
+const FARMSTEAD = 0.18;
+/** How far boats and sheep wander from their site, and how far a person looks for water (fractions of the world's width). */
+const WANDER = 0.012;
+const SHORE = 0.018;
+/** Chimneys with the fire lit: those whose fract(random x 13.7) is at most this. */
+const FIRES = 0.5;
+const glsl = (v: number) => v.toFixed(4);
+
+/** Parts share corners: each is worked out once by the GPU, not once per triangle that touches it. */
+const weld = (parts: THREE.BufferGeometry[]) => mergeVertices(mergeGeometries(parts), 1e-5);
 
 /** Flat colour per part. `part`: 0 = walls / hull, 1 = roof / sail (gets the per-instance tint). */
 function paint(geometry: THREE.BufferGeometry, colour: [number, number, number], part: number): THREE.BufferGeometry {
@@ -34,7 +58,7 @@ function gable(length: number, width: number, height: number): THREE.BufferGeome
 
 function house(): THREE.BufferGeometry {
   const walls: [number, number, number] = [0.88, 0.82, 0.70];
-  return mergeGeometries([
+  return weld([
     paint(new THREE.BoxGeometry(0.22, 0.13, 0.16).translate(0, 0.065, 0), walls, 0),
     paint(gable(0.26, 0.21, 0.11).translate(0, 0.13, 0), [1, 1, 1], 1),
     paint(new THREE.BoxGeometry(0.035, 0.07, 0.035).translate(0.06, 0.2, 0.03), [0.45, 0.40, 0.36], 0), // chimney
@@ -47,7 +71,7 @@ function boat(): THREE.BufferGeometry {
   sail.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0.0, 0.05, 0, 0.0, 0.3, 0, 0.13, 0.05, 0]), 3));
   sail.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(9), 3));
   sail.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(6), 2));
-  return mergeGeometries([
+  return weld([
     paint(new THREE.BoxGeometry(0.24, 0.05, 0.09).translate(0, 0.01, 0), hull, 0),
     paint(new THREE.ConeGeometry(0.045, 0.07, 4).rotateZ(-Math.PI / 2).scale(1, 0.55, 1).translate(0.155, 0.012, 0), hull, 0), // bow
     paint(new THREE.CylinderGeometry(0.008, 0.008, 0.28, 4).translate(-0.005, 0.17, 0), [0.30, 0.22, 0.14], 0), // mast
@@ -67,7 +91,7 @@ function boat(): THREE.BufferGeometry {
 const SHOULDER = new THREE.Vector3(0, 0.05, 0.022);
 function person(): THREE.BufferGeometry {
   const s = SHOULDER;
-  return mergeGeometries([
+  return weld([
     paint(new THREE.CylinderGeometry(0.015, 0.022, 0.055, 6).translate(0, 0.0275, 0), [1, 1, 1], 0),
     paint(new THREE.IcosahedronGeometry(0.018, 1).translate(0, 0.073, 0), [1, 1, 1], 1),
     paint(new THREE.CylinderGeometry(0.0035, 0.0035, 0.07, 4).rotateZ(-Math.PI / 2).translate(s.x + 0.035, s.y, s.z), [0.45, 0.32, 0.18], 2),
@@ -101,17 +125,17 @@ void main() {
   vec4 a0 = fieldA(aSite);
   vec4 b0 = fieldB(aSite);
   // Is open water close by (for anglers on the bank)? Which way is it?
-  vec2 e = vec2(0.018, 0.018 * WORLD_W / WORLD_D);
+  vec2 e = vec2(${glsl(SHORE)}, ${glsl(SHORE)} * WORLD_W / WORLD_D);
   float wE = fieldC(aSite + vec2(e.x, 0.0)).b, wW = fieldC(aSite - vec2(e.x, 0.0)).b;
   float wN = fieldC(aSite + vec2(0.0, e.y)).b, wS = fieldC(aSite - vec2(0.0, e.y)).b;
   float shore = max(max(wE, wW), max(wN, wS)) * (1.0 - step(0.0005, b0.r - a0.r));
   vec2 toWater = vec2(wE - wW, wN - wS);
 
   // Each person takes the job that suits where they stand.
-  float villager = c0.r * 0.7;
-  float farmer = c0.g * 0.4;
-  float logger = d0.g * 0.55;
-  float angler = shore * 0.45 * step(0.6, aRand.y);
+  float villager = c0.r * ${glsl(ROLE.villager)};
+  float farmer = c0.g * ${glsl(ROLE.farmer)};
+  float logger = d0.g * ${glsl(ROLE.logger)};
+  float angler = shore * ${glsl(ROLE.angler)} * step(${glsl(ANGLERS)}, aRand.y);
   float best = max(max(villager, farmer), max(logger, angler));
   int role = best == angler ? 3 : best == logger ? 2 : best == farmer ? 1 : 0;
 
@@ -159,7 +183,7 @@ void main() {
   vec2 site = aSite + offset * vec2(1.0, WORLD_W / WORLD_D); // offsets are in widths of the world
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
-  float threshold = 0.2 + 1.0 * aRand.x;
+  float threshold = ${glsl(PERSON.base)} + ${glsl(PERSON.spread)} * aRand.x;
   float dry = 1.0 - smoothstep(0.0, 0.0008, b.r - a.r);
   float show = smoothstep(threshold, threshold + 0.05, best) * dry * step(0.5, b.a);
   float size = uSize * (0.85 + 0.3 * aRand.y) * show;
@@ -210,8 +234,8 @@ void main() {
   vec4 b = fieldB(aSite);
   vec4 c = fieldC(aSite);
   // Villages where people live, plus the odd farmstead out in the fields.
-  float density = max(c.r, c.g * 0.18);
-  float threshold = 0.25 + 1.2 * aRand.x; // at most about 6 in 10 sites built on
+  float density = max(c.r, c.g * ${glsl(FARMSTEAD)});
+  float threshold = ${glsl(HOUSE.base)} + ${glsl(HOUSE.spread)} * aRand.x;
   float dry = 1.0 - smoothstep(0.0, 0.0012, b.r - a.r);
   float grow = smoothstep(threshold, threshold + 0.08, density) * dry * step(0.5, b.a);
   float size = uSize * (0.8 + 0.45 * aRand.y) * grow;
@@ -250,12 +274,12 @@ void main() {
   // Each boat drifts round a small loop near its site, stopping a while to fish.
   float u = uTime * (0.03 + 0.03 * aRand.z) + aRand.w * 9.0;
   float t = (floor(u) + smoothstep(0.5, 1.0, fract(u))) * 1.4 + aRand.w * 6.2832;
-  vec2 drift = vec2(cos(t), sin(t)) * 0.012;
+  vec2 drift = vec2(cos(t), sin(t)) * ${glsl(WANDER)};
   vec2 site = aSite + drift;
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
   vec4 c = fieldC(site);
-  float threshold = 0.2 + 0.75 * aRand.x;
+  float threshold = ${glsl(BOAT.base)} + ${glsl(BOAT.spread)} * aRand.x;
   float afloat = smoothstep(0.002, 0.005, b.r - a.r);
   float grow = smoothstep(threshold, threshold + 0.08, c.b) * afloat * step(0.5, b.a);
   float size = uSize * (0.8 + 0.4 * aRand.y) * grow;
@@ -304,7 +328,7 @@ void main() {
 
 /** Three puffs of chimney smoke per house (part = which puff). Same sites as the houses. */
 function smoke(): THREE.BufferGeometry {
-  return mergeGeometries([0, 1, 2].map((k) => paint(new THREE.IcosahedronGeometry(0.03, 1), [1, 1, 1], k)));
+  return weld([0, 1, 2].map((k) => paint(new THREE.IcosahedronGeometry(0.03, 1), [1, 1, 1], k)));
 }
 
 const smokeVertex = /* glsl */ `
@@ -320,8 +344,8 @@ void main() {
   vec4 a = fieldA(aSite);
   vec4 b = fieldB(aSite);
   vec4 c = fieldC(aSite);
-  float density = max(c.r, c.g * 0.18);
-  float threshold = 0.25 + 1.2 * aRand.x;
+  float density = max(c.r, c.g * ${glsl(FARMSTEAD)});
+  float threshold = ${glsl(HOUSE.base)} + ${glsl(HOUSE.spread)} * aRand.x;
   float dry = 1.0 - smoothstep(0.0, 0.0012, b.r - a.r);
   float grow = smoothstep(threshold, threshold + 0.08, density) * dry * step(0.5, b.a);
   float size = uSize * (0.8 + 0.45 * aRand.y) * grow;
@@ -330,7 +354,7 @@ void main() {
   vec3 chimney = vec3(0.06, 0.24, 0.03);
   chimney = vec3(co * chimney.x - si * chimney.z, chimney.y, si * chimney.x + co * chimney.z) * size;
   // About half the houses have the fire lit. Puffs rise, swell and fade, drifting downwind.
-  float lit = step(fract(aRand.y * 13.7), 0.5) * step(0.01, size);
+  float lit = step(fract(aRand.y * 13.7), ${glsl(FIRES)}) * step(0.01, size);
   float life = fract(uTime * 0.09 + aPart / 3.0 + aRand.y * 5.0);
   vec3 rise = vec3(0.10 * life + 0.02 * sin(uTime * 0.8 + aRand.x * 9.0 + life * 4.0), 0.32 * life, 0.04 * life);
   float puff = (0.45 + 1.6 * life) * lit;
@@ -355,7 +379,7 @@ void main() {
 
 /** A sheep: woolly body (part 0) and dark face (part 1). */
 function sheep(): THREE.BufferGeometry {
-  return mergeGeometries([
+  return weld([
     paint(new THREE.IcosahedronGeometry(0.03, 1).scale(1.35, 0.9, 1.0).translate(0, 0.04, 0), [0.93, 0.92, 0.88], 0),
     paint(new THREE.BoxGeometry(0.022, 0.022, 0.02).translate(0.045, 0.05, 0), [0.18, 0.16, 0.15], 1),
     ...[[-0.022, -0.012], [-0.022, 0.012], [0.022, -0.012], [0.022, 0.012]].map(([x, z]) =>
@@ -380,12 +404,12 @@ void main() {
   float t = uTime * (0.02 + 0.02 * aRand.z) + aRand.w * 40.0;
   float u = floor(t) + smoothstep(0.6, 1.0, fract(t));
   vec2 heading = vec2(cos(u * 2.1 + aRand.y * 6.28), sin(u * 2.1 + aRand.y * 6.28));
-  vec2 site = aSite + vec2(cos(u * 1.3), sin(u * 1.7)) * 0.012 * vec2(1.0, WORLD_W / WORLD_D);
+  vec2 site = aSite + vec2(cos(u * 1.3), sin(u * 1.7)) * ${glsl(WANDER)} * vec2(1.0, WORLD_W / WORLD_D);
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
   vec4 c = fieldC(site);
   float pasture = c.g * (1.0 - smoothstep(0.2, 0.5, c.r)) * smoothstep(0.3, 0.6, a.b);
-  float threshold = 0.4 + 2.4 * aRand.x;
+  float threshold = ${glsl(SHEEP.base)} + ${glsl(SHEEP.spread)} * aRand.x;
   float dry = 1.0 - smoothstep(0.0, 0.0008, b.r - a.r);
   float size = uSize * (0.85 + 0.3 * aRand.y) * smoothstep(threshold, threshold + 0.05, pasture) * dry * step(0.5, b.a);
   vec3 q = position;
@@ -408,8 +432,8 @@ void main() {
 
 function makeSites(
   shared: SharedUniforms, base: THREE.BufferGeometry, vertex: string, columns: number, rows: number, seed: number, size: number,
-  frag = fragment, transparent = false,
-): THREE.Mesh {
+  test: SiteTest, frag = fragment, transparent = false,
+): Sites {
   const count = columns * rows;
   const sites = new Float32Array(count * 2);
   const rand = new Float32Array(count * 4);
@@ -430,6 +454,7 @@ function makeSites(
   geometry.setAttribute('position', base.getAttribute('position'));
   geometry.setAttribute('color', base.getAttribute('color'));
   geometry.setAttribute('aPart', base.getAttribute('aPart'));
+  geometry.setIndex(base.getIndex());
   geometry.setAttribute('aSite', new THREE.InstancedBufferAttribute(sites, 2));
   geometry.setAttribute('aRand', new THREE.InstancedBufferAttribute(rand, 4));
   geometry.instanceCount = count;
@@ -444,16 +469,46 @@ function makeSites(
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
   if (transparent) mesh.renderOrder = 5;
-  return mesh;
+  return new Sites(mesh, test);
 }
 
-export function makePeople(shared: SharedUniforms): THREE.Group {
+// --- which sites are worth drawing --------------------------------------------------------
+// Each test mirrors the `threshold` line of its shader, with the largest value the shader could
+// read there. It may keep a site the shader then hides (under water, say); it must never drop
+// one the shader would show. `r[at]`, `r[at + 1]` are the site's aRand.x and aRand.y.
+
+const houseStands: SiteTest = (world, x, y, r, at) =>
+  Math.max(world.most('homes', x, y), world.most('farms', x, y) * FARMSTEAD) > HOUSE.base + HOUSE.spread * r[at] - SPARE;
+
+const fireLit: SiteTest = (world, x, y, r, at) => {
+  const turn = r[at + 1] * 13.7;
+  return turn - Math.floor(turn) <= FIRES + 0.001 && houseStands(world, x, y, r, at);
+};
+
+const sheepGrazes: SiteTest = (world, x, y, r, at) => world.most('farms', x, y, WANDER) > SHEEP.base + SHEEP.spread * r[at] - SPARE;
+
+const boatSails: SiteTest = (world, x, y, r, at) => world.most('fishing', x, y, WANDER) > BOAT.base + BOAT.spread * r[at] - SPARE;
+
+const personWorks: SiteTest = (world, x, y, r, at) => {
+  const needs = PERSON.base + PERSON.spread * r[at] - SPARE;
+  return (
+    world.most('homes', x, y) * ROLE.villager > needs ||
+    world.most('farms', x, y) * ROLE.farmer > needs ||
+    world.most('logging', x, y) * ROLE.logger > needs ||
+    (r[at + 1] >= ANGLERS - 0.001 && world.most('fishing', x, y, SHORE) * ROLE.angler > needs)
+  );
+};
+
+export function makePeople(shared: SharedUniforms): THREE.Object3D & Culled {
+  const kinds = [
+    // Houses and their chimney smoke share sites (same grid and seed), so the smoke finds its chimney.
+    makeSites(shared, house(), houseVertex, 62, 44, 71, 0.75, houseStands),
+    makeSites(shared, smoke(), smokeVertex, 62, 44, 71, 0.75, fireLit, smokeFragment, true),
+    makeSites(shared, sheep(), sheepVertex, 70, 50, 113, 1.1, sheepGrazes),
+    makeSites(shared, boat(), boatVertex, 40, 28, 83, 0.62, boatSails),
+    makeSites(shared, person(), personVertex, 90, 64, 97, 1.25, personWorks),
+  ];
   const group = new THREE.Group();
-  // Houses and their chimney smoke share sites (same grid and seed), so the smoke finds its chimney.
-  group.add(makeSites(shared, house(), houseVertex, 62, 44, 71, 0.75));
-  group.add(makeSites(shared, smoke(), smokeVertex, 62, 44, 71, 0.75, smokeFragment, true));
-  group.add(makeSites(shared, sheep(), sheepVertex, 70, 50, 113, 1.1));
-  group.add(makeSites(shared, boat(), boatVertex, 40, 28, 83, 0.62));
-  group.add(makeSites(shared, person(), personVertex, 90, 64, 97, 1.25));
-  return group;
+  for (const kind of kinds) group.add(kind.mesh);
+  return together(group, kinds);
 }

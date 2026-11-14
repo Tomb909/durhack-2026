@@ -5,7 +5,7 @@ import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { bindCameraInput, MOVE_KEYS, moveWithKeys } from './render/camera';
 import { WorldRenderer } from './render/scene';
-import { SHAPE_PRESETS, WorldSim, shapesDiffer, type WorldShape } from './sim/world';
+import { SHAPE_PRESETS, WorldSim, shapesDiffer, usableShape, type WorldShape } from './sim/world';
 import { Combinations } from './ui/combos';
 import { CardCheck, Guide } from './ui/overlays';
 import { TablePanel } from './ui/table';
@@ -29,6 +29,7 @@ const REBUILD_EVERY_MS = 1500;
 
 /** Ask for the world to take a new shape. Applied in the main loop, at most every 1.5 s. */
 function wantShape(next: WorldShape): void {
+  if (!usableShape(next)) return; // keep the shape we have
   if (shapesDiffer(next, pendingShape ?? shape)) pendingShape = next;
   else if (pendingShape && !shapesDiffer(next, shape)) pendingShape = null;
 }
@@ -295,7 +296,20 @@ window.addEventListener('keydown', (e) => {
 // --- main loop ----------------------------------------------------------------------
 
 let last = performance.now();
+let frameErrors = 0;
 function tick(now: number): void {
+  // Ask for the next frame first: whatever goes wrong below, the picture keeps moving.
+  // (An error that escaped here used to end the loop for good: a frozen world until reload.)
+  requestAnimationFrame(tick);
+  try {
+    drawFrame(now);
+  } catch (error) {
+    // Say so once, then now and again: an error on every frame must not bury the console.
+    if (frameErrors++ % 600 === 0) console.error('Deck of Worlds: a frame failed', error);
+  }
+}
+
+function drawFrame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   applyShape(now);
@@ -313,7 +327,6 @@ function tick(now: number): void {
   if (combos.isOpen) view.advance(dt);
   else if (still !== null) view.renderAt(frame, store.cards, still);
   else view.render(frame, store.cards, dt);
-  requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
 

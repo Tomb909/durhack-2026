@@ -56,7 +56,7 @@ Nothing needs the internet once it is running.
 | T | Developer option: step through play-area shapes (rectangle, circle, blob) when no camera is connected |
 | I | Instant: no fading or easing, the world jumps to its final state |
 | H | Hide the panels |
-| Q | Picture quality |
+| Q | Picture quality: the sharpest it may be (see Staying smooth) |
 
 ### Moving the camera
 
@@ -137,6 +137,20 @@ Cards can also come from the address, already settled, with no dragging and no w
 | `&still=6` | Freeze the picture at second 6: no camera sway, rain stopped mid-fall |
 
 In the browser console, `deck.set('mountain+ice')` swaps the cards at once.
+
+### Staying smooth
+
+The picture looks after its own frame rate, and two rules keep it that way as cards are added.
+
+**It gives up sharpness before it gives up smoothness.** When frames stay slow for about a second, the world is drawn with fewer pixels (softer, otherwise the same); when there has been time to spare for a while, they come back. **Q** sets the sharpest it may be. `deck.view.autoQuality = false` in the console turns this off, and `deck.view.pixelRatio` says what it is drawing at now. The harness and the Combinations view always draw at their full, fixed size.
+
+**Only what can be showing is drawn.** Trees, houses, people, sheep, boats and smoke each stand at thousands of fixed sites, and the GPU works out every one from the world's textures. Before a changed world is drawn, the sites with nothing to show are left out (`web/src/render/sites.ts`): an empty world draws none of them. `deck.view.sitesDrawn` gives the count. Anything new that stands at sites should do the same:
+
+- Build it with `Sites` and give it a test that says whether a site *could* be showing. The test must be safe rather than exact: it may keep a site the shader then hides, never drop one the shader would show. Ask `world.most(field, x, y, wander)` for the largest value near the site and compare it with the same threshold the shader uses; keep that threshold as one constant shared by both (see the top of `people.ts`).
+- `deck.view.cull = false` draws every site again. The picture must not change by a single pixel: if it does, a test is too strict.
+- Weld shapes with `mergeVertices` after merging them, so corners shared by several triangles are worked out once.
+
+The rules of the world (`web/src/sim/`) keep two shortcuts worth knowing when adding to them: the climb inland that decides where water drains is only repeated when the ground or the sea has changed (`Hydrology.compute`), and a card's round patch of influence is worked out from one row and one column, not cell by cell (`addCopies`). `npm --prefix web run harness -- --set all --diff` shows at once whether a change meant to be a pure speed-up moved any world.
 
 ### Harness: every combination, at once
 

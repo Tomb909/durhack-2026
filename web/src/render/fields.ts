@@ -12,6 +12,8 @@ export class FieldTextures {
   private dataC: Float32Array;
   private dataD: Float32Array;
   private version = -1;
+  /** The highest ground in the frame last uploaded (sim height units). */
+  peak = 1e9;
 
   constructor(w: number, h: number, floatLinear: boolean) {
     this.dataA = new Float32Array(w * h * 4);
@@ -49,7 +51,9 @@ export class FieldTextures {
     const { dataA, dataB, dataC, dataD } = this;
     const { homes, farms, fishing, cleared, logging } = frame;
     const { height, temperature, wetness, vegetation, waterSurface, river, precipitation, mask } = frame;
+    let peak = -Infinity;
     for (let i = 0, o = 0; i < n; i++, o += 4) {
+      if (height[i] > peak) peak = height[i];
       dataA[o] = height[i];
       dataA[o + 1] = temperature[i];
       dataA[o + 2] = wetness[i];
@@ -65,6 +69,7 @@ export class FieldTextures {
       dataD[o + 1] = logging[i] * (1 - cleared[i]);
       dataB[o + 3] = Math.min(1, Math.max(0, 0.5 + mask[i]));
     }
+    this.peak = peak;
     this.a.needsUpdate = true;
     this.b.needsUpdate = true;
     this.c.needsUpdate = true;

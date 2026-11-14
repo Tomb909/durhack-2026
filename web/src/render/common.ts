@@ -36,6 +36,8 @@ export interface SharedUniforms {
   /** World width and depth in scene units. */
   uWorld: THREE.IUniform<THREE.Vector2>;
   uSea: THREE.IUniform<number>;
+  /** The highest ground in the world, in scene units (shadow rays stop once clear of it). */
+  uPeak: THREE.IUniform<number>;
   uTime: THREE.IUniform<number>;
   uSunDir: THREE.IUniform<THREE.Vector3>;
   uFreezing: THREE.IUniform<number>;
@@ -59,6 +61,7 @@ export function makeSharedUniforms(): SharedUniforms {
     uGrid: { value: new THREE.Vector2(GW, gridHeight(world.aspect)) },
     uWorld: { value: new THREE.Vector2(world.w, world.d) },
     uSea: { value: RULES.seaBase },
+    uPeak: { value: 1e9 },
     uTime: { value: 0 },
     uSunDir: { value: SUN_DIR.clone() },
     uFreezing: { value: RULES.freezing },
@@ -78,6 +81,7 @@ uniform sampler2D uFieldD;
 uniform vec2 uTexel;
 uniform vec2 uGrid;
 uniform float uSea;
+uniform float uPeak;
 uniform float uTime;
 uniform vec3 uSunDir;
 uniform float uFreezing;

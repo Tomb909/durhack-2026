@@ -39,6 +39,11 @@ export class Hydrology {
   private heapLevel: Float32Array;
   private heapSize = 0;
   private scratch: Float32Array;
+  /** What the last climb inland was worked out for, and how many cells it reached (-1: never yet). */
+  private land: Float32Array;
+  private landSea = Number.NaN;
+  private landInside: Uint8Array | null = null;
+  private count = -1;
 
   constructor(readonly w: number, readonly h: number) {
     this.n = w * h;
@@ -51,6 +56,7 @@ export class Hydrology {
     this.heapCell = new Int32Array(this.n);
     this.heapLevel = new Float32Array(this.n);
     this.scratch = new Float32Array(this.n);
+    this.land = new Float32Array(this.n);
   }
 
   private push(cell: number, level: number): void {
@@ -93,23 +99,12 @@ export class Hydrology {
   }
 
   /**
-   * @param height   land height per cell
-   * @param sea      sea level
-   * @param rain     rainfall per cell (0..1)
-   * @param surface  out: water surface height (just under the ground where dry)
-   * @param river    out: river strength 0..1
-   * @param inside   optional: 1 for cells inside the play area. Outside cells stay dry
-   *                 and the inside cells along the shape's edge drain off the world.
+   * The climb inland from every outlet: fills `filled` (the level each cell would flood to),
+   * `parent` (the cell it drains to) and `order` (cells from the outlets upward).
    */
-  compute(
-    height: Float32Array, sea: number, rain: Float32Array,
-    surface: Float32Array, river: Float32Array, rules: HydrologyRules,
-    inside?: Uint8Array | null,
-  ): void {
-    const { w, h, n, filled, parent, order, visited, flow, lakeFlow } = this;
-    const raw = this.scratch;
+  private flood(height: Float32Array, sea: number, inside: Uint8Array | null): void {
+    const { w, h, n, filled, parent, order, visited } = this;
     visited.fill(0);
-    raw.fill(0);
     this.heapSize = 0;
     if (inside) {
       for (let i = 0; i < n; i++) {
@@ -156,6 +151,42 @@ export class Hydrology {
         this.push(ni, f);
       }
     }
+    this.count = count;
+    this.land.set(height);
+    this.landSea = sea;
+    this.landInside = inside;
+  }
+
+  /** True when the land, the sea and the play area are exactly as they were for the last climb. */
+  private sameLand(height: Float32Array, sea: number, inside: Uint8Array | null): boolean {
+    if (this.count < 0 || sea !== this.landSea || inside !== this.landInside) return false;
+    const land = this.land;
+    for (let i = 0; i < this.n; i++) if (height[i] !== land[i]) return false;
+    return true;
+  }
+
+  /**
+   * @param height   land height per cell
+   * @param sea      sea level
+   * @param rain     rainfall per cell (0..1)
+   * @param surface  out: water surface height (just under the ground where dry)
+   * @param river    out: river strength 0..1
+   * @param inside   optional: 1 for cells inside the play area. Outside cells stay dry
+   *                 and the inside cells along the shape's edge drain off the world.
+   */
+  compute(
+    height: Float32Array, sea: number, rain: Float32Array,
+    surface: Float32Array, river: Float32Array, rules: HydrologyRules,
+    inside?: Uint8Array | null,
+  ): void {
+    const { w, h, n, filled, parent, order, flow, lakeFlow } = this;
+    const raw = this.scratch;
+    raw.fill(0);
+    // Which way water drains depends only on the land and the sea. While those stand still
+    // (a card that does not move the ground is being moved; the water is settling) the
+    // climb inland, the costly part, gives the same answer as last time: keep it.
+    if (!this.sameLand(height, sea, inside ?? null)) this.flood(height, sea, inside ?? null);
+    const count = this.count;
 
     // Rain runs downhill: add each cell's flow to the cell it drains to.
     for (let i = 0; i < n; i++) flow[i] = rain[i];

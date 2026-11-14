@@ -29,7 +29,7 @@ export class TablePanel {
   private border: SVGSVGElement;
 
   constructor(
-    root: HTMLElement,
+    private root: HTMLElement,
     private store: CardStore,
     private canvas: HTMLElement,
     private pickWorld: (clientX: number, clientY: number) => Point | null,
@@ -142,6 +142,9 @@ export class TablePanel {
 
   /** Call every frame. */
   update(): void {
+    // The panel is put away most of the time (Tab brings it out): nothing to keep up to date
+    // then. The first frame after it is shown puts every chip where it should be.
+    if (this.root.hidden) return;
     const modifiersByTarget = modifierTargets(this.store.cards);
     const targetByModifier = new Map<LiveCard, LiveCard>();
     for (const [target, modifiers] of modifiersByTarget) {

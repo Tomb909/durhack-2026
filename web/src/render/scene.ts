@@ -2,23 +2,23 @@
 // outside render/ knows how the picture is made.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { FullScreenQuad, Pass } from 'three/addons/postprocessing/Pass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
 import type { LiveCard } from '../cards/store';
 import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
 import { makeBackdrop } from './backdrop';
 import { Beacons } from './beacons';
 import { CameraRig } from './camera';
-import { MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
+import { HSCALE, MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
 import { CALM, worldMood, type Mood } from './mood';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
 import { makeTerrain } from './terrain';
 import { makePeople } from './people';
+import { QualityGovernor } from './quality';
+import { WorldReach, type Culled } from './sites';
 import { makeTrees } from './trees';
 import { makeWater } from './water';
 import { makeWeather } from './weather';
@@ -27,6 +27,56 @@ const FOV = 30;
 const SWAY = THREE.MathUtils.degToRad(22); // never a full spin: left stays left
 const SWAY_PERIOD = 52;
 const TARGET = new THREE.Vector3(0, 0.55, 0.25);
+/** Never draw at fewer than this many picture pixels per screen pixel, however slow the machine. */
+const LEAST_PIXEL_RATIO = 0.5;
+
+/**
+ * The last step of drawing: darken the corners (a vignette), then turn the picture's light
+ * into screen colours (tone mapping and sRGB). One pass over the screen instead of two.
+ */
+class FinishPass extends Pass {
+  private quad: FullScreenQuad;
+  private material: THREE.ShaderMaterial;
+
+  constructor(offset: number, darkness: number) {
+    super();
+    this.needsSwap = false; // it draws to the screen: there is nothing to hand on
+    this.material = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: null }, uOffset: { value: offset }, uDarkness: { value: darkness } },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform float uOffset;
+        uniform float uDarkness;
+        varying vec2 vUv;
+        void main() {
+          vec4 texel = texture2D(tDiffuse, vUv);
+          vec2 uv = (vUv - 0.5) * uOffset;
+          gl_FragColor = vec4(mix(texel.rgb, vec3(1.0 - uDarkness), dot(uv, uv)), texel.a);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `,
+      depthTest: false,
+      depthWrite: false,
+    });
+    this.quad = new FullScreenQuad(this.material);
+  }
+
+  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
+    this.material.uniforms.tDiffuse.value = readBuffer.texture;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+
+  dispose(): void {
+    this.material.dispose();
+    this.quad.dispose();
+  }
+}
 
 export class WorldRenderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -38,8 +88,20 @@ export class WorldRenderer {
   private shared: SharedUniforms;
   private fields!: FieldTextures;
   private palettes = makePalettes();
+  /** Each card's colour, read from its text once rather than on every frame. */
+  private pulseColours = new WeakMap<object, THREE.Color>();
   /** Meshes that depend on the play area's shape; rebuilt by setShape. */
   private shaped: THREE.Object3D[] = [];
+  /** The last shape's meshes, kept until the new ones have been drawn once (see setShape). */
+  private retired: THREE.Object3D[] = [];
+  /** Things drawn at fixed sites, told before each new world which sites are worth drawing (see sites.ts). */
+  private culled: (THREE.Object3D & Culled)[] = [];
+  private reach = new WorldReach();
+  private reachFrame: WorldFrame | null = null;
+  private reachVersion = -1;
+  private reachCull = true;
+  private governor = new QualityGovernor();
+  private lastDrawn = 0;
   private outline: number[][] = DEFAULT_SHAPE.outline;
   private beacons: Beacons;
   private time = 0;
@@ -50,6 +112,7 @@ export class WorldRenderer {
   private lookAt = new THREE.Vector3();
   /** The conditions the sky is heading for, and the frame they were read from. */
   private mood: Mood = { ...CALM };
+  private moodFrame: WorldFrame | null = null;
   private moodVersion = -1;
   /** Where the camera is and how it moves (see camera.ts for the controls). */
   readonly rig = new CameraRig();
@@ -58,6 +121,13 @@ export class WorldRenderer {
   sway = true;
   /** Above 1 moves the camera closer than "the whole world fits". */
   zoom = 1;
+  /**
+   * True: when frames are slow, draw fewer pixels to stay smooth, and sharpen again when
+   * there is time to spare. Never sharper than the chosen quality (the Q key).
+   */
+  autoQuality = true;
+  /** False draws every tree, house and person site whether or not anything shows there (slow: only to check that leaving them out changes nothing). */
+  cull = true;
 
   constructor(private canvas: HTMLCanvasElement, labelLayer: HTMLElement) {
     this.beacons = new Beacons(labelLayer);
@@ -73,9 +143,8 @@ export class WorldRenderer {
     this.shared = makeSharedUniforms();
     this.scene.add(makeBackdrop(this.shared));
     this.setShape(DEFAULT_SHAPE);
-    this.scene.add(makeTrees(this.shared));
-    this.scene.add(makePeople(this.shared));
-    this.scene.add(makeWeather(this.shared));
+    this.culled = [makeTrees(this.shared), makePeople(this.shared), makeWeather(this.shared)];
+    for (const part of this.culled) this.scene.add(part);
     this.scene.add(this.beacons.group);
 
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
@@ -83,11 +152,7 @@ export class WorldRenderer {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.22, 0.55, 1.6);
     this.composer.addPass(this.bloom);
-    const vignette = new ShaderPass(VignetteShader);
-    vignette.uniforms.offset.value = 1.05;
-    vignette.uniforms.darkness.value = 1.0;
-    this.composer.addPass(vignette);
-    this.composer.addPass(new OutputPass());
+    this.composer.addPass(new FinishPass(1.05, 1.0));
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -99,14 +164,12 @@ export class WorldRenderer {
     const gw = GW;
     const gh = gridHeight(shape.aspect);
     this.outline = shape.outline;
+    // The old meshes go once the new ones have been drawn. Their shaders are the same programs:
+    // letting go of the old first would throw the compiled programs away and build them all
+    // again, a long stall on every change of shape.
     for (const object of this.shaped) {
       this.scene.remove(object);
-      object.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
+      this.retired.push(object);
     }
     if (this.fields) this.fields.dispose();
     this.fields = new FieldTextures(gw, gh, this.renderer.extensions.has('OES_texture_float_linear'));
@@ -121,7 +184,26 @@ export class WorldRenderer {
 
   setQuality(pixelRatio: number): void {
     this.quality = pixelRatio;
+    this.governor.reset();
     this.resize();
+  }
+
+  /** Picture pixels per screen pixel right now (lower than the chosen quality while the machine is struggling). */
+  get pixelRatio(): number {
+    return this.renderer.getPixelRatio();
+  }
+
+  /** How many of the tree, house and people sites are being drawn. */
+  get sitesDrawn(): { all: number; drawn: number } {
+    const total = { all: 0, drawn: 0 };
+    this.scene.traverse((o) => {
+      const geometry = (o as THREE.Mesh).geometry as THREE.InstancedBufferGeometry | undefined;
+      const sites = geometry?.getAttribute?.('aSite');
+      if (!geometry || !sites) return;
+      total.all += sites.count;
+      total.drawn += o.visible ? Math.min(geometry.instanceCount, sites.count) : 0;
+    });
+    return total;
   }
 
   /** Draw at exactly this many pixels, whatever the window or screen (used by the harness). */
@@ -133,7 +215,8 @@ export class WorldRenderer {
   resize(): void {
     const width = this.fixed?.width ?? (this.canvas.clientWidth || window.innerWidth);
     const height = this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight);
-    const ratio = this.fixed ? 1 : Math.min(window.devicePixelRatio || 1, this.quality);
+    const chosen = Math.min(window.devicePixelRatio || 1, this.quality);
+    const ratio = this.fixed ? 1 : Math.max(Math.min(chosen, LEAST_PIXEL_RATIO), chosen * (this.autoQuality ? this.governor.scale : 1));
     this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(width, height, false);
     this.composer.setPixelRatio(ratio);
@@ -187,7 +270,8 @@ export class WorldRenderer {
 
   /** The sky follows the world's conditions: slowly while time runs, at once when the picture is a still. */
   private followMood(frame: WorldFrame, dt: number): void {
-    if (frame.version !== this.moodVersion) {
+    if (frame !== this.moodFrame || frame.version !== this.moodVersion) {
+      this.moodFrame = frame; // a new world starts counting versions again
       this.moodVersion = frame.version;
       this.mood = worldMood(frame);
     }
@@ -210,17 +294,40 @@ export class WorldRenderer {
     this.render(frame, cards, 0);
   }
 
+  /** Leave out the tree, house and people sites with nothing to show. Only when the world has changed. */
+  private cullSites(frame: WorldFrame): void {
+    if (frame === this.reachFrame && frame.version === this.reachVersion && this.cull === this.reachCull) return;
+    this.reachFrame = frame;
+    this.reachVersion = frame.version;
+    this.reachCull = this.cull;
+    this.reach.reset(frame);
+    for (const part of this.culled) part.cull(this.reach, !this.cull);
+  }
+
+  /** While time is running: watch how long frames take and give up or win back sharpness. */
+  private pace(): void {
+    const now = performance.now();
+    const seconds = (now - this.lastDrawn) / 1000;
+    this.lastDrawn = now;
+    if (this.autoQuality && !this.fixed && !document.hidden && this.governor.frame(seconds)) this.resize();
+  }
+
   render(frame: WorldFrame, cards: LiveCard[], dt: number): void {
+    if (dt > 0) this.pace();
     this.time += dt;
     this.shared.uTime.value = this.time;
     this.shared.uSea.value = frame.seaLevel;
     this.fields.update(frame);
+    this.shared.uPeak.value = this.fields.peak * HSCALE;
+    this.cullSites(frame);
     this.followMood(frame, dt);
     const count = Math.min(MAX_PULSES, cards.length);
     for (let i = 0; i < count; i++) {
       const card = cards[i];
       this.shared.uPulse.value[i].set(card.x, card.y, card.age, card.strength);
-      this.shared.uPulseColor.value[i].set(card.def.color);
+      let colour = this.pulseColours.get(card.def);
+      if (!colour) this.pulseColours.set(card.def, (colour = new THREE.Color(card.def.color)));
+      this.shared.uPulseColor.value[i].copy(colour);
     }
     this.shared.uPulseCount.value = count;
     this.placeCamera();
@@ -230,5 +337,16 @@ export class WorldRenderer {
       this.beacons.update(cards, frame, this.time, this.camera, this.canvas.clientWidth, this.canvas.clientHeight);
     }
     this.composer.render(dt);
+    if (this.retired.length) {
+      for (const object of this.retired) {
+        object.traverse((o) => {
+          if (o instanceof THREE.Mesh) {
+            o.geometry.dispose();
+            (o.material as THREE.Material).dispose();
+          }
+        });
+      }
+      this.retired.length = 0;
+    }
   }
 }

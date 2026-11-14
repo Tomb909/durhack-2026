@@ -38,6 +38,10 @@ float sunShadow(vec3 p) {
     vec3 q = p + uSunDir * t;
     vec2 uv = tableUv(q.xz);
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
+    // Clear of the highest ground by enough that nothing further along can shade this
+    // point any more (the ray only climbs): stop walking. Same answer, far fewer steps
+    // over flat country.
+    if (9.0 * (q.y - uPeak) >= t) break;
     float gap = q.y - groundAt(uv) * HSCALE;
     res = min(res, 9.0 * gap / t);
     if (res < 0.0) break;
