@@ -1,0 +1,31 @@
+[project]
+name = "deck-of-worlds"
+version = "0.1.0"
+description = "Handwritten cards on a table reshape a 3D world. DurHack 2026."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "aiohttp>=3.10",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.10",
+    "rapidocr>=3.10",
+    "onnxruntime>=1.20",
+    "rapidfuzz>=3.9",
+    "cryptography>=43",
+    "segno>=1.6",
+]
+
+[project.scripts]
+deck = "deck.app:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["server/deck"]
+
+[tool.pytest.ini_options]
+testpaths = ["server/tests"]

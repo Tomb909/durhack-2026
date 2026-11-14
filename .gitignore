@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Deck of Worlds
+.deck/
+recordings/
+node_modules/
+web/dist/
