@@ -138,6 +138,44 @@ void main() {
 }
 `;
 
+const fallVertex = /* glsl */ `
+${GLSL_COMMON}
+attribute vec2 aUv;
+attribute float aTop;
+attribute float aAlong;
+varying float vDrop;
+varying float vStrength;
+varying float vAlong;
+void main() {
+  vec4 a = fieldA(aUv);
+  vec4 b = fieldB(aUv);
+  float sea = step(a.r, uSea);
+  // Only running water falls; the sea is shown as a clean cut.
+  vStrength = b.g * (1.0 - sea) * step(0.0, b.r - a.r);
+  float top = b.r * HSCALE;
+  float y = top - (1.0 - aTop) * 3.4;
+  vec2 xz = tableXz(aUv) + normal.xz * (0.03 + (1.0 - aTop) * 0.25);
+  vDrop = 1.0 - aTop;
+  vAlong = aAlong;
+  gl_Position = projectionMatrix * viewMatrix * vec4(xz.x, y, xz.y, 1.0);
+}
+`;
+
+const fallFragment = /* glsl */ `
+${GLSL_COMMON}
+varying float vDrop;
+varying float vStrength;
+varying float vAlong;
+void main() {
+  if (vStrength < 0.04) discard;
+  float streaks = vnoise(vec2(vAlong * 34.0, vDrop * 9.0 - uTime * 3.2));
+  float mist = vnoise(vec2(vAlong * 9.0, vDrop * 3.0 - uTime * 1.1));
+  float alpha = vStrength * pow(1.0 - vDrop, 1.6) * (0.35 + 0.75 * streaks) * (0.7 + 0.5 * mist);
+  vec3 col = mix(vec3(0.55, 0.80, 1.0), vec3(1.0), streaks);
+  gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0) * 0.9);
+}
+`;
+
 export function makeSlabSides(shared: SharedUniforms): THREE.Group {
   const group = new THREE.Group();
   const earth = new THREE.Mesh(
@@ -154,6 +192,15 @@ export function makeSlabSides(shared: SharedUniforms): THREE.Group {
   water.renderOrder = 3;
   earth.frustumCulled = false;
   water.frustumCulled = false;
-  group.add(earth, water);
+  const falls = new THREE.Mesh(
+    makeEdgeGeometry(),
+    new THREE.ShaderMaterial({
+      uniforms: { ...shared }, vertexShader: fallVertex, fragmentShader: fallFragment,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    }),
+  );
+  falls.renderOrder = 4;
+  falls.frustumCulled = false;
+  group.add(earth, water, falls);
   return group;
 }

@@ -99,8 +99,8 @@ void main() {
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
   float rain = b.b;
-  float grow = smoothstep(0.10 + aSeed.w * 0.45, 0.35 + aSeed.w * 0.55, rain);
-  float size = (0.55 + 0.55 * aSeed.z) * grow;
+  float grow = smoothstep(0.40 + aSeed.w * 0.45, 0.62 + aSeed.w * 0.45, rain);
+  float size = (0.45 + 0.45 * aSeed.z) * grow;
   float angle = aSeed.w * 6.2832;
   float c = cos(angle), s = sin(angle);
   vec3 p = vec3(c * position.x - s * position.z, position.y, s * position.x + c * position.z) * size;
@@ -128,7 +128,7 @@ void main() {
   vec3 col = mix(bright, storm, smoothstep(0.45, 1.0, vRain));
   col *= 0.62 + 0.55 * ndl;
   col *= 0.85 + 0.3 * smoothstep(-0.1, 0.25, vShade); // darker bellies
-  gl_FragColor = vec4(col, 0.93);
+  gl_FragColor = vec4(col, 0.80);
 }
 `;
 

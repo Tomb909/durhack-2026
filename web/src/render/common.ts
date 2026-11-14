@@ -27,7 +27,13 @@ export interface SharedUniforms {
   uTime: THREE.IUniform<number>;
   uSunDir: THREE.IUniform<THREE.Vector3>;
   uFreezing: THREE.IUniform<number>;
+  /** Per card: table x, table y, seconds since it appeared, strength. */
+  uPulse: THREE.IUniform<THREE.Vector4[]>;
+  uPulseColor: THREE.IUniform<THREE.Color[]>;
+  uPulseCount: THREE.IUniform<number>;
 }
+
+export const MAX_PULSES = 16;
 
 export function makeSharedUniforms(): SharedUniforms {
   return {
@@ -39,6 +45,9 @@ export function makeSharedUniforms(): SharedUniforms {
     uTime: { value: 0 },
     uSunDir: { value: SUN_DIR.clone() },
     uFreezing: { value: RULES.freezing },
+    uPulse: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Vector4(0, 0, 99, 0)) },
+    uPulseColor: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Color(1, 1, 1)) },
+    uPulseCount: { value: 0 },
   };
 }
 

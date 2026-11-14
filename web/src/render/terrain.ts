@@ -23,6 +23,9 @@ const fragment = /* glsl */ `
 ${GLSL_COMMON}
 uniform sampler2D uPaletteBare;
 uniform sampler2D uPaletteGreen;
+uniform vec4 uPulse[16];
+uniform vec3 uPulseColor[16];
+uniform int uPulseCount;
 varying vec2 vUv;
 varying vec3 vWorld;
 
@@ -107,6 +110,17 @@ void main() {
   vec3 lit = col * (sun + sky + bounce);
   // Snow glints.
   lit += snow * shadow * pow(max(dot(reflect(-uSunDir, n), normalize(cameraPosition - vWorld)), 0.0), 30.0) * 0.25;
+  // Hot places glow warm, cold places cool.
+  lit *= mix(vec3(0.90, 0.97, 1.08), vec3(1.08, 1.0, 0.90), smoothstep(-0.7, 0.7, temperature));
+  // A ring of the card's colour sweeps out from where a card has just landed.
+  for (int i = 0; i < 16; i++) {
+    if (i >= uPulseCount) break;
+    float age = uPulse[i].z;
+    if (age > 1.5) continue;
+    float r = length((vUv - uPulse[i].xy) * vec2(WORLD_W, WORLD_D));
+    float ring = smoothstep(0.22, 0.0, abs(r - age * 3.4)) * (1.0 - age / 1.5);
+    lit += uPulseColor[i] * ring * 0.8;
+  }
   gl_FragColor = vec4(lit, 1.0);
 }
 `;

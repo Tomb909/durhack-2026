@@ -13,7 +13,7 @@ import type { LiveCard } from '../cards/store';
 import { GH, GW, type WorldFrame } from '../sim/world';
 import { makeBackdrop } from './backdrop';
 import { Beacons } from './beacons';
-import { WORLD_D, WORLD_W, makeSharedUniforms, type SharedUniforms } from './common';
+import { MAX_PULSES, WORLD_D, WORLD_W, makeSharedUniforms, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
@@ -140,6 +140,13 @@ export class WorldRenderer {
     this.shared.uTime.value = this.time;
     this.shared.uSea.value = frame.seaLevel;
     this.fields.update(frame);
+    const count = Math.min(MAX_PULSES, cards.length);
+    for (let i = 0; i < count; i++) {
+      const card = cards[i];
+      this.shared.uPulse.value[i].set(card.x, card.y, card.age, card.strength);
+      this.shared.uPulseColor.value[i].set(card.def.color);
+    }
+    this.shared.uPulseCount.value = count;
     this.beacons.group.visible = this.showBeacons;
     if (this.showBeacons) this.beacons.update(cards, frame, this.time);
     this.placeCamera();

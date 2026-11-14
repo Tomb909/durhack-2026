@@ -30,6 +30,8 @@ export interface LiveCard {
   present: boolean;
   /** False while the camera cannot see it (held in place under a hand). */
   visible: boolean;
+  /** Seconds since it appeared. */
+  age: number;
 }
 
 const FADE_SECONDS = 0.8;
@@ -49,7 +51,7 @@ export class CardStore {
 
   private add(key: string, def: CardDef, source: 'camera' | 'sim', x: number, y: number): LiveCard {
     const card: LiveCard = {
-      key, def, source, x, y, tx: x, ty: y, vx: 0, vy: 0, strength: 0, fade: 0, present: true, visible: true,
+      key, def, source, x, y, tx: x, ty: y, vx: 0, vy: 0, strength: 0, fade: 0, present: true, visible: true, age: 0,
     };
     this.cards.push(card);
     return card;
@@ -132,6 +134,7 @@ export class CardStore {
     dt = Math.min(dt, 0.1);
     let moving = false;
     for (const card of this.cards) {
+      card.age += dt;
       // Critically damped spring towards the target position.
       const ax = SPRING * SPRING * (card.tx - card.x) - 2 * SPRING * card.vx;
       const ay = SPRING * SPRING * (card.ty - card.y) - 2 * SPRING * card.vy;

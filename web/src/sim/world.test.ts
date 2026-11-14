@@ -6,7 +6,7 @@ import { GH, GW, RULES, WorldSim, sampleField, type WorldFrame } from './world';
 let n = 0;
 function card(id: string, x: number, y: number, strength = 1): LiveCard {
   const def = cardDef(id)!;
-  return { key: `t${n++}`, def, source: 'sim', x, y, tx: x, ty: y, vx: 0, vy: 0, strength, fade: strength, present: true, visible: true };
+  return { key: `t${n++}`, def, source: 'sim', x, y, tx: x, ty: y, vx: 0, vy: 0, strength, fade: strength, present: true, visible: true, age: 9 };
 }
 
 function settle(cards: LiveCard[]): WorldFrame {
