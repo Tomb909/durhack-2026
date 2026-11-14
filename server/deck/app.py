@@ -29,6 +29,8 @@ RECORDINGS = ROOT / "recordings"
 
 SNAPSHOT_MIN_INTERVAL = 0.05  # at most 20 snapshots a second
 HEARTBEAT = 0.5
+CRLF = bytes([13, 10])
+HEADER_END = CRLF + CRLF
 
 
 class Server:
@@ -58,6 +60,8 @@ class Server:
         self.record_dir: Path | None = Path(args.record) if args.record else None
         self._last_record = 0.0
         self._snap_count = 0
+        self._noted: set[tuple[str, str]] = set()
+        self.inner_https_port = args.https_port + 1
 
     # --- plumbing -------------------------------------------------------------
 
@@ -156,6 +160,92 @@ class Server:
                 else:
                     await asyncio.sleep(0.2)
 
+    # --- phone-facing front door ----------------------------------------------
+
+    def _note(self, ip: str, what: str) -> None:
+        """Log each kind of event once per device, so the terminal shows what the phone did."""
+        key = (ip, what)
+        if key not in self._noted:
+            self._noted.add(key)
+            print(f"[link] {ip}: {what}", flush=True)
+
+    async def front_door(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """Accepts phone connections on the public port.
+
+        Secure (TLS) connections are passed straight to the HTTPS server. A plain
+        http:// request (easy to type by mistake) is redirected to https:// instead
+        of being dropped, which Safari reports as "the network connection was lost".
+        """
+        peer = writer.get_extra_info("peername") or ("?", 0)
+        ip = str(peer[0])
+        try:
+            first = await asyncio.wait_for(reader.read(1), timeout=15)
+        except (asyncio.TimeoutError, ConnectionError, OSError):
+            first = b""
+        if not first:
+            self._note(ip, "connected but sent nothing")
+            writer.close()
+            return
+        if first[0] != 0x16:  # not a TLS handshake: plain HTTP
+            try:
+                rest = await asyncio.wait_for(reader.readuntil(HEADER_END), timeout=5)
+            except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError, OSError):
+                rest = b""
+            lines = (first + rest).decode("latin-1", "replace").splitlines()
+            path = "/phone"
+            parts = lines[0].split(" ") if lines else []
+            if len(parts) >= 2 and parts[1].startswith("/"):
+                path = parts[1]
+            host = ""
+            for line in lines[1:]:
+                if line.lower().startswith("host:"):
+                    host = line.split(":", 1)[1].strip()
+            if not host:
+                host = f"{writer.get_extra_info('sockname')[0]}:{self.args.https_port}"
+            self._note(ip, "used http://, redirected to https://")
+            body = f"Redirecting to https://{host}{path}"
+            head = [
+                "HTTP/1.1 307 Temporary Redirect",
+                f"Location: https://{host}{path}",
+                "Content-Type: text/plain",
+                f"Content-Length: {len(body)}",
+                "Connection: close",
+                "",
+                body,
+            ]
+            writer.write(CRLF.join(part.encode("latin-1") for part in head))
+            try:
+                await writer.drain()
+            except (ConnectionError, OSError):
+                pass
+            writer.close()
+            return
+        self._note(ip, "secure connection opened")
+        try:
+            up_reader, up_writer = await asyncio.open_connection("127.0.0.1", self.inner_https_port)
+        except OSError:
+            writer.close()
+            return
+        up_writer.write(first)
+
+        async def pipe(source: asyncio.StreamReader, sink: asyncio.StreamWriter) -> None:
+            try:
+                while True:
+                    data = await source.read(65536)
+                    if not data:
+                        break
+                    sink.write(data)
+                    await sink.drain()
+            except (ConnectionError, OSError):
+                pass
+            finally:
+                try:
+                    sink.close()
+                except OSError:
+                    pass
+
+        await asyncio.gather(pipe(reader, up_writer), pipe(up_reader, writer))
+
     # --- handlers -------------------------------------------------------------
 
     async def index(self, request: web.Request) -> web.StreamResponse:
@@ -165,6 +255,7 @@ class Server:
         raise web.HTTPFound("/debug")
 
     async def phone_page(self, request: web.Request) -> web.StreamResponse:
+        print("[link] phone page loaded", flush=True)
         return web.FileResponse(STATIC / "phone" / "index.html", headers={"Cache-Control": "no-cache"})
 
     async def debug_page(self, request: web.Request) -> web.StreamResponse:
@@ -173,6 +264,8 @@ class Server:
     async def frame(self, request: web.Request) -> web.Response:
         body = await request.read()
         if body:
+            if self.worker.frames_received == 0:
+                print("[link] first camera frame received", flush=True)
             self.submit(body)
         return web.json_response(self.vision.phone_status())
 
@@ -293,7 +386,9 @@ class Server:
         runner = web.AppRunner(self.build_app(), access_log=None)
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", self.args.http_port).start()
-        await web.TCPSite(runner, "0.0.0.0", self.args.https_port, ssl_context=self.certs.context).start()
+        # HTTPS itself listens privately; the public port is the front door above.
+        await web.TCPSite(runner, "127.0.0.1", self.inner_https_port, ssl_context=self.certs.context).start()
+        self._front = await asyncio.start_server(self.front_door, "0.0.0.0", self.args.https_port)
         tasks = [
             asyncio.create_task(self.broadcast_loop()),
             asyncio.create_task(self.network_loop()),

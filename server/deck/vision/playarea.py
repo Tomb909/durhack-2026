@@ -69,19 +69,24 @@ def _refine_with_lines(contour: np.ndarray, quad: np.ndarray) -> np.ndarray:
     return refined
 
 
-def find_quad(gray: np.ndarray) -> np.ndarray | None:
-    """Return the play area's inner corners (4x2, image pixels, ordered) or None."""
+def find_quads(gray: np.ndarray) -> list[np.ndarray]:
+    """Every plausible play-area outline (4x2, image pixels, ordered), innermost first.
+
+    A drawn border gives its inner edge; the edge of the sheet itself (light
+    paper on a darker table) also qualifies, so a thin or broken pen line
+    still leaves the sheet as the play area.
+    """
     h, w = gray.shape
     scale = DETECT_LONG_SIDE / max(h, w)
     small = cv2.resize(gray, (int(round(w * scale)), int(round(h * scale))), interpolation=cv2.INTER_AREA)
-    small = cv2.GaussianBlur(small, (5, 5), 0)
-    dark = cv2.adaptiveThreshold(small, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 51, 12)
+    small = cv2.GaussianBlur(small, (3, 3), 0)
+    dark = cv2.adaptiveThreshold(small, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 51, 9)
     dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
     contours, hierarchy = cv2.findContours(dark, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
     if hierarchy is None:
-        return None
+        return []
     frame_area = small.shape[0] * small.shape[1]
-    best: tuple[float, np.ndarray] | None = None
+    found: list[tuple[float, np.ndarray]] = []
     for contour, info in zip(contours, hierarchy[0]):
         if info[3] == -1:  # only holes: light regions enclosed by a dark line
             continue
@@ -95,12 +100,15 @@ def find_quad(gray: np.ndarray) -> np.ndarray | None:
         sides = [np.linalg.norm(quad[i] - quad[(i + 1) % 4]) for i in range(4)]
         if min(sides) < 0.15 * max(sides):
             continue
-        # Innermost qualifying region wins: the paper's own edge can also form one.
-        if best is None or area < best[0]:
-            best = (area, _order_corners(_refine_with_lines(contour, quad)))
-    if best is None:
-        return None
-    return best[1] / scale
+        found.append((area, _order_corners(_refine_with_lines(contour, quad)) / scale))
+    found.sort(key=lambda item: item[0])
+    return [quad for _, quad in found]
+
+
+def find_quad(gray: np.ndarray) -> np.ndarray | None:
+    """The innermost plausible play-area outline, or None."""
+    quads = find_quads(gray)
+    return quads[0] if quads else None
 
 
 def _long_side_first(quad: np.ndarray) -> np.ndarray:
@@ -137,22 +145,27 @@ class PlayArea:
 
     def update(self, gray: np.ndarray, now: float) -> None:
         self._diag = float(np.hypot(*gray.shape))
-        quad = find_quad(gray)
-        if quad is None:
+        quads = [_long_side_first(q) for q in find_quads(gray)]
+        if not quads:
             self._streak = 0
             return
-        quad = _long_side_first(quad)
         if self.corners is None:
-            self.corners = quad
+            self.corners = quads[0]
             self._streak = 1
             return
-        # Keep the same corner numbering as before (the ordering can flip by
-        # 180 degrees when the phone is close to square-on).
-        turned = np.roll(quad, 2, axis=0)
-        if np.max(np.linalg.norm(turned - self.corners, axis=1)) < np.max(
-            np.linalg.norm(quad - self.corners, axis=1)
-        ):
-            quad = turned
+
+        def aligned(q: np.ndarray) -> np.ndarray:
+            # Keep the same corner numbering as before (the ordering can flip
+            # by 180 degrees when the phone is close to square-on).
+            turned = np.roll(q, 2, axis=0)
+            if np.max(np.linalg.norm(turned - self.corners, axis=1)) < np.max(np.linalg.norm(q - self.corners, axis=1)):
+                return turned
+            return q
+
+        # Several outlines can qualify (pen border, sheet edge). Stay with the
+        # one we are already following rather than hopping between them.
+        quads = [aligned(q) for q in quads]
+        quad = min(quads, key=lambda q: self._distance(q, self.corners))
         distance = self._distance(quad, self.corners)
         if not self.locked:
             if distance < FOLLOW_DISTANCE:

@@ -18,6 +18,8 @@
   #banner.bad { background: #b91c1c; }
   #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px); display: flex; gap: 8px; align-items: center; background: rgba(11,13,18,.72); font-size: 13px; }
   #bar select { flex: 1; min-width: 0; font-size: 14px; padding: 6px; background: #1c212b; color: inherit; border: 1px solid #394150; border-radius: 6px; }
+  #torch { font-size: 14px; padding: 6px 10px; background: #1c212b; color: inherit; border: 1px solid #394150; border-radius: 6px; }
+  #torch.on { background: #ca8a04; border-color: #facc15; color: #111; }
   #stats { white-space: nowrap; font-variant-numeric: tabular-nums; color: #aab3c2; }
   #start { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 18px; align-items: center; justify-content: center; padding: 28px; text-align: center; background: #0b0d12; z-index: 5; }
   #start button { font-size: 22px; font-weight: 700; padding: 18px 34px; border: 0; border-radius: 14px; background: #2563eb; color: white; }
@@ -30,7 +32,7 @@
 <body>
 <div id="stage"><div id="wrap"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div></div>
 <div id="banner">Starting…</div>
-<div id="bar"><select id="camera" aria-label="Camera"></select><span id="stats"></span></div>
+<div id="bar"><select id="camera" aria-label="Camera"></select><button id="torch" hidden>Light</button><span id="stats"></span></div>
 <div id="start">
   <h1 style="margin:0">Deck of Worlds</h1>
   <p>Prop this phone 40–60 cm above the sheet so the whole black border is in view, then start.</p>
@@ -75,7 +77,25 @@
     stream = await navigator.mediaDevices.getUserMedia({ video: video_, audio: false });
     video.srcObject = stream;
     await video.play();
+    setupTorch();
   }
+
+  // The phone's light, where the browser allows it (it removes the phone's own shadow).
+  const torchButton = document.getElementById('torch');
+  let torchOn = false;
+  function setupTorch() {
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    torchButton.hidden = !caps.torch;
+    torchOn = false; torchButton.classList.remove('on');
+  }
+  torchButton.addEventListener('click', async () => {
+    try {
+      torchOn = !torchOn;
+      await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: torchOn }] });
+      torchButton.classList.toggle('on', torchOn);
+    } catch (e) { torchOn = false; torchButton.classList.remove('on'); }
+  });
 
   async function listCameras() {
     const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');

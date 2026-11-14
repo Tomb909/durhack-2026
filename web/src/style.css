@@ -1,0 +1,47 @@
+:root {
+  color-scheme: dark;
+  --panel: rgba(14, 18, 28, 0.72);
+  --line: rgba(160, 180, 220, 0.22);
+  --text: #eef2f8;
+  --muted: #9aa6ba;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #05060a; color: var(--text); font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+#world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#ui { position: fixed; inset: 0; pointer-events: none; user-select: none; }
+#ui > * { pointer-events: auto; }
+body.bare #ui > :not(#toast) { display: none; }
+
+#status { position: absolute; left: 18px; top: 16px; display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); }
+#status .dot { width: 10px; height: 10px; border-radius: 50%; background: #7c8698; box-shadow: 0 0 0 0 transparent; }
+#status.live .dot { background: #34d17a; box-shadow: 0 0 10px #34d17a; }
+#status.warn .dot { background: #f5a524; box-shadow: 0 0 10px #f5a524; }
+
+#table-panel { position: absolute; left: 18px; bottom: 18px; width: min(300px, 26vw); padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); backdrop-filter: blur(10px); }
+#tray { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 9px; }
+.tray-card { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 4px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); cursor: grab; touch-action: none; font-size: 9px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); }
+.tray-card:hover { background: rgba(255, 255, 255, 0.12); color: var(--text); }
+.tray-card .icon { font-size: 20px; line-height: 1.15; }
+#table { position: relative; width: 100%; aspect-ratio: 420 / 297; border-radius: 6px; background: #e9e6dd; box-shadow: inset 0 0 0 4px #15171c, inset 0 0 0 5px rgba(255, 255, 255, 0.25); overflow: visible; }
+#table .edge { position: absolute; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(20, 22, 28, 0.38); pointer-events: none; }
+#table .edge.far { top: 7px; }
+#table .edge.near { bottom: 7px; }
+.chip { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; display: grid; place-items: center; border-radius: 7px; background: #fff; border: 2px solid var(--c, #333); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); font-size: 17px; line-height: 1; cursor: grab; touch-action: none; will-change: left, top, opacity; }
+.chip.camera { cursor: default; border-style: solid; }
+.chip.camera::after { content: ""; position: absolute; right: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #34d17a; border: 1.5px solid #fff; }
+.chip.held { filter: grayscale(0.7); }
+.chip.held::after { background: #9aa6ba; }
+.maybe { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; display: grid; place-items: center; border-radius: 50%; background: rgba(245, 165, 36, 0.9); color: #111; font-size: 11px; font-weight: 800; pointer-events: none; }
+.ghost { position: fixed; z-index: 20; width: 34px; height: 34px; margin: -17px 0 0 -17px; display: grid; place-items: center; border-radius: 8px; background: #fff; font-size: 19px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5); pointer-events: none; }
+
+#connect { position: absolute; left: 18px; top: 62px; width: 290px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(14, 18, 28, 0.92); backdrop-filter: blur(10px); }
+#connect h2 { margin: 0 0 10px; font-size: 15px; }
+#connect img { width: 100%; border-radius: 8px; background: #fff; display: block; }
+#connect code { display: block; margin: 8px 0; font-size: 12px; color: #9ecbff; word-break: break-all; user-select: text; }
+#connect ol { margin: 8px 0; padding-left: 1.3em; color: var(--muted); }
+#connect button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer; }
+
+#toast { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); padding: 9px 16px; border-radius: 99px; background: rgba(14, 18, 28, 0.9); border: 1px solid var(--line); font-weight: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+#toast.show { opacity: 1; }
+#keys { position: absolute; right: 18px; bottom: 14px; font-size: 11px; color: rgba(154, 166, 186, 0.7); }
+#keys b { color: rgba(238, 242, 248, 0.8); }

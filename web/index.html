@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deck of Worlds</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="world"></canvas>
+    <div id="ui">
+      <button id="status" type="button" title="Phone camera status. Click for connection help.">
+        <span class="dot"></span><span id="status-text">Simulated cards</span>
+      </button>
+
+      <section id="table-panel" aria-label="Table map and simulated cards">
+        <div id="tray" aria-label="Drag a card onto the table or the world"></div>
+        <div id="table">
+          <span class="edge far">far side</span>
+          <span class="edge near">your side</span>
+        </div>
+      </section>
+
+      <section id="connect" hidden>
+        <h2>Connect the phone camera</h2>
+        <div id="connect-body"></div>
+        <button type="button" id="connect-close">Close</button>
+      </section>
+
+      <div id="toast" role="status"></div>
+      <div id="keys"><b>F</b> fullscreen · <b>P</b> phone · <b>R</b> rotate table · <b>L</b> re-find border · <b>B</b> beacons · <b>H</b> hide panels</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

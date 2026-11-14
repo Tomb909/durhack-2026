@@ -15,7 +15,7 @@
     "color": "#3aa0ff",
     "effects": [
       { "field": "wetness", "amount": 0.5, "radius": 0.2 },
-      { "field": "seaLevel", "amount": 0.028, "global": true }
+      { "field": "seaLevel", "amount": 0.017, "global": true }
     ]
   },
   {
