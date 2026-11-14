@@ -19,6 +19,11 @@ export class TablePanel {
   private chips = new Map<string, HTMLElement>();
   private maybes: HTMLElement[] = [];
   private drag: Drag | null = null;
+
+  /** True while a card is being carried by the pointer (the camera should leave that press alone). */
+  get dragging(): boolean {
+    return this.drag !== null;
+  }
   private aspect = DEFAULT_SHAPE.aspect;
   private border: SVGSVGElement;
 

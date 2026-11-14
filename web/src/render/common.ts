@@ -18,7 +18,8 @@ export function setWorldAspect(aspect: number): void {
 }
 /** Scene units per unit of sim height. */
 export const HSCALE = 4.2;
-export const SLAB_BOTTOM = -1.7;
+/** How far down the world goes before it is lost in the dark. Deep enough that it never reads as a thin slab. */
+export const SLAB_BOTTOM = -9;
 
 export const SUN_DIR = new THREE.Vector3(-0.55, 0.62, 0.56).normalize();
 
@@ -34,6 +35,8 @@ export interface SharedUniforms {
   uTime: THREE.IUniform<number>;
   uSunDir: THREE.IUniform<THREE.Vector3>;
   uFreezing: THREE.IUniform<number>;
+  /** The world's conditions, for the sky: how hot, cold, wet and alive (each 0..1). See mood.ts. */
+  uMood: THREE.IUniform<THREE.Vector4>;
   /** Per card: table x, table y, seconds since it appeared, strength. */
   uPulse: THREE.IUniform<THREE.Vector4[]>;
   uPulseColor: THREE.IUniform<THREE.Color[]>;
@@ -53,6 +56,7 @@ export function makeSharedUniforms(): SharedUniforms {
     uTime: { value: 0 },
     uSunDir: { value: SUN_DIR.clone() },
     uFreezing: { value: RULES.freezing },
+    uMood: { value: new THREE.Vector4(0, 0, 0, 0) },
     uPulse: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Vector4(0, 0, 99, 0)) },
     uPulseColor: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Color(1, 1, 1)) },
     uPulseCount: { value: 0 },
@@ -69,6 +73,7 @@ uniform float uSea;
 uniform float uTime;
 uniform vec3 uSunDir;
 uniform float uFreezing;
+uniform vec4 uMood;
 
 uniform vec2 uWorld;
 #define WORLD_W uWorld.x

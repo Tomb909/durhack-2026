@@ -13,8 +13,10 @@ import type { LiveCard } from '../cards/store';
 import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
 import { makeBackdrop } from './backdrop';
 import { Beacons } from './beacons';
+import { CameraRig } from './camera';
 import { MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
+import { CALM, worldMood, type Mood } from './mood';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
 import { makeTerrain } from './terrain';
@@ -23,7 +25,6 @@ import { makeWater } from './water';
 import { makeWeather } from './weather';
 
 const FOV = 30;
-const ELEVATION = THREE.MathUtils.degToRad(37);
 const SWAY = THREE.MathUtils.degToRad(22); // never a full spin: left stays left
 const SWAY_PERIOD = 52;
 const TARGET = new THREE.Vector3(0, 0.55, 0.25);
@@ -50,7 +51,14 @@ export class WorldRenderer {
   private raycaster = new THREE.Raycaster();
   private plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.25);
   private fixed: { width: number; height: number } | null = null;
+  private lookAt = new THREE.Vector3();
+  /** The conditions the sky is heading for, and the frame they were read from. */
+  private mood: Mood = { ...CALM };
+  private moodVersion = -1;
+  /** Where the camera is and how it moves (see camera.ts for the controls). */
+  readonly rig = new CameraRig();
   showBeacons = true;
+  /** The gentle side-to-side drift while nobody is holding the camera. */
   sway = true;
   /** Above 1 moves the camera closer than "the whole world fits". */
   zoom = 1;
@@ -67,7 +75,7 @@ export class WorldRenderer {
     this.gpuName = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unknown GPU';
 
     this.shared = makeSharedUniforms();
-    this.scene.add(makeBackdrop(this.shared.uTime));
+    this.scene.add(makeBackdrop(this.shared));
     this.setShape(DEFAULT_SHAPE);
     this.scene.add(makeTrees(this.shared));
     this.scene.add(makeWeather(this.shared));
@@ -146,12 +154,29 @@ export class WorldRenderer {
   private placeCamera(): void {
     const half = THREE.MathUtils.degToRad(FOV / 2);
     const halfH = Math.atan(Math.tan(half) * this.camera.aspect);
+    const sway = this.sway ? SWAY * Math.sin((this.time * Math.PI * 2) / SWAY_PERIOD) : 0;
+    // Real time, not the world's: the camera still answers the hand when the picture is frozen.
+    const pose = this.rig.step(sway, performance.now() / 1000);
     // Far enough back that the whole chunk fits, whatever the window shape.
-    const distance = Math.max((world.w / 2 + 0.9) / Math.tan(halfH), (world.d / 2 + 1.9) / Math.tan(half)) / this.zoom;
-    const azimuth = this.sway ? SWAY * Math.sin((this.time * Math.PI * 2) / SWAY_PERIOD) : 0;
-    const flat = Math.cos(ELEVATION) * distance;
-    this.camera.position.set(TARGET.x + Math.sin(azimuth) * flat, TARGET.y + Math.sin(ELEVATION) * distance, TARGET.z + Math.cos(azimuth) * flat);
-    this.camera.lookAt(TARGET);
+    const distance = Math.max((world.w / 2 + 0.9) / Math.tan(halfH), (world.d / 2 + 1.9) / Math.tan(half)) / (this.zoom * pose.zoom);
+    const viewHeight = this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight);
+    this.rig.frameInfo(world.w / 2, world.d / 2, (2 * distance * Math.tan(half)) / viewHeight);
+    const flat = Math.cos(pose.elevation) * distance;
+    this.lookAt.set(TARGET.x + pose.panX, TARGET.y, TARGET.z + pose.panZ);
+    this.camera.position.set(
+      this.lookAt.x + Math.sin(pose.azimuth) * flat, this.lookAt.y + Math.sin(pose.elevation) * distance, this.lookAt.z + Math.cos(pose.azimuth) * flat,
+    );
+    this.camera.lookAt(this.lookAt);
+  }
+
+  /** The ground point under a screen position, relative to the looked-at middle of the world (for zooming toward the pointer). */
+  groundPoint(clientX: number, clientY: number): { x: number; z: number } | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hit = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(this.plane, hit)) return null;
+    return { x: hit.x - TARGET.x, z: hit.z - TARGET.z };
   }
 
   /** Where on the table (0..1, 0..1) a screen point lands, or null if it misses the world. */
@@ -167,6 +192,20 @@ export class WorldRenderer {
     const near = outlineDistance(this.outline, x, y);
     if (!near.inside && near.distance > 0.03) return null;
     return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+  }
+
+  /** The sky follows the world's conditions: slowly while time runs, at once when the picture is a still. */
+  private followMood(frame: WorldFrame, dt: number): void {
+    if (frame.version !== this.moodVersion) {
+      this.moodVersion = frame.version;
+      this.mood = worldMood(frame);
+    }
+    const k = dt > 0 ? 1 - Math.exp(-dt / 1.6) : 1;
+    const now = this.shared.uMood.value;
+    now.x += (this.mood.hot - now.x) * k;
+    now.y += (this.mood.cold - now.y) * k;
+    now.z += (this.mood.wet - now.z) * k;
+    now.w += (this.mood.life - now.w) * k;
   }
 
   /** Let time pass without drawing (the world is hidden behind something). */
@@ -185,6 +224,7 @@ export class WorldRenderer {
     this.shared.uTime.value = this.time;
     this.shared.uSea.value = frame.seaLevel;
     this.fields.update(frame);
+    this.followMood(frame, dt);
     const count = Math.min(MAX_PULSES, cards.length);
     for (let i = 0; i < count; i++) {
       const card = cards[i];

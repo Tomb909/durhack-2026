@@ -37,6 +37,7 @@ const HELP = `Deck of Worlds harness
   --cols N           tiles per row (default: a roughly square sheet)
   --time N           the moment drawn, in seconds (default 6)
   --zoom N           how close the camera is (default 1.3; 1 = as in the app)
+  --az N, --el N     look from N degrees round the world, and N degrees above the table (default 0 and 37)
   --no-beacons       hide the card markers
   --png              save PNG instead of JPEG
   --tiles            also save each tile as its own file
@@ -45,7 +46,7 @@ const HELP = `Deck of Worlds harness
 
 function parseArgs(argv) {
   const options = { codes: [], set: null, layout: 'cluster', view: '3d' };
-  const valued = new Set(['set', 'layout', 'view', 'tile', 'cols', 'time', 'zoom']);
+  const valued = new Set(['set', 'layout', 'view', 'tile', 'cols', 'time', 'zoom', 'az', 'el']);
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith('--')) options.codes.push(arg);
@@ -107,7 +108,7 @@ async function shots(options, codes) {
   const query = new URLSearchParams({ save: '1', layout: options.layout, view: options.view });
   if (options.set) query.set('set', options.set);
   if (codes) query.set('c', codes);
-  for (const key of ['tile', 'cols', 'zoom']) if (options[key]) query.set(key, options[key]);
+  for (const key of ['tile', 'cols', 'zoom', 'az', 'el']) if (options[key]) query.set(key, options[key]);
   if (options.time) query.set('t', options.time);
   if (options.noBeacons) query.set('beacons', '0');
   if (options.png) query.set('fmt', 'png');

@@ -1,6 +1,11 @@
-// The cut sides of the floating chunk: layered earth, and water in cross-section.
+// The cut sides of the world: a deep section through the ground (soil, bedded rock,
+// bedrock, and molten cracks far below, fading into the dark) and water in cross-section.
 import * as THREE from 'three';
+import { DOME_RADIUS, GLSL_VOID } from './backdrop';
 import { GLSL_COMMON, world, type SharedUniforms } from './common';
+
+/** The bottom of the world is this much narrower than the top. */
+const TAPER = 0.86;
 
 /** Corners sharper than this get a crease (separate normals) instead of a smooth turn. */
 const CREASE_COS = Math.cos((35 * Math.PI) / 180);
@@ -104,6 +109,7 @@ function makeEdgeGeometry(outline: number[][], gw: number): THREE.BufferGeometry
 
 const earthVertex = /* glsl */ `
 ${GLSL_COMMON}
+const float TAPER = ${TAPER.toFixed(3)};
 attribute vec2 aUv;
 attribute float aTop;
 attribute float aAlong;
@@ -111,48 +117,79 @@ varying float vY;
 varying float vTopY;
 varying float vAlong;
 varying vec3 vNormal;
+varying vec3 vWorld;
 void main() {
   vec4 a = fieldA(aUv);
   float top = (a.r - 0.004 * fieldB(aUv).g) * HSCALE;
   float y = mix(SLAB_BOTTOM, top, aTop);
-  vec2 xz = tableXz(aUv);
+  // The ground narrows a little with depth, like a root: the walls lean in under the surface.
+  vec2 xz = tableXz(aUv) * mix(TAPER, 1.0, aTop);
   vY = y;
   vTopY = top;
   vAlong = aAlong;
   vNormal = normal;
-  gl_Position = projectionMatrix * viewMatrix * vec4(xz.x, y, xz.y, 1.0);
+  vWorld = vec3(xz.x, y, xz.y);
+  gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
 }
 `;
 
 const earthFragment = /* glsl */ `
 ${GLSL_COMMON}
+const float DOME = ${DOME_RADIUS.toFixed(1)};
 varying float vY;
 varying float vTopY;
 varying float vAlong;
 varying vec3 vNormal;
+varying vec3 vWorld;
+${GLSL_VOID}
+
+// One family of rock beds: each bed gets its own shade, with a darker seam between beds.
+vec3 beds(float layer, float seed, vec3 lo, vec3 hi, vec3 odd) {
+  float band = fract(layer);
+  float pick = hash21(vec2(floor(layer), seed));
+  vec3 c = mix(lo, hi, pick);
+  c = mix(c, odd, step(0.7, pick));
+  return c * (0.86 + 0.14 * smoothstep(0.0, 0.12, band) * smoothstep(1.0, 0.85, band));
+}
+
 void main() {
-  // Ragged underside.
-  float bottom = SLAB_BOTTOM + 0.15 + 0.55 * fbm2(vec2(vAlong * 1.7, 3.0));
+  // Ragged underside, far below.
+  float bottom = SLAB_BOTTOM + 0.1 + 0.9 * fbm2(vec2(vAlong * 1.7, 3.0));
   if (vY < bottom) discard;
 
+  float below = vTopY - vY; // how far under the surface
   float wobble = fbm2(vec2(vAlong * 0.9, vY * 1.5));
-  float layer = vY * 2.6 + wobble * 0.9;
-  float band = fract(layer);
-  float which = floor(layer);
-  float pick = hash21(vec2(which, 7.0));
-  vec3 strata = mix(vec3(0.26, 0.16, 0.10), vec3(0.40, 0.26, 0.16), pick);
-  strata = mix(strata, vec3(0.22, 0.20, 0.20), step(0.7, pick));
-  strata *= 0.86 + 0.14 * smoothstep(0.0, 0.12, band) * smoothstep(1.0, 0.85, band);
-  strata *= 0.9 + 0.2 * vnoise(vec2(vAlong * 30.0, vY * 30.0));
 
-  float below = vTopY - vY;
+  // Near the surface: thin, warm beds of sediment. Deeper: thick, cold bedrock.
+  vec3 upper = beds(vY * 2.6 + wobble * 0.9, 7.0, vec3(0.26, 0.16, 0.10), vec3(0.40, 0.26, 0.16), vec3(0.22, 0.20, 0.20));
+  vec3 lower = beds(vY * 0.8 + wobble * 1.4 + 0.37, 3.0, vec3(0.115, 0.11, 0.125), vec3(0.20, 0.185, 0.195), vec3(0.16, 0.12, 0.10));
+  vec3 rock = mix(upper, lower, smoothstep(1.3, 3.0, below + wobble * 0.9));
+  rock *= 0.9 + 0.2 * vnoise(vec2(vAlong * 30.0, vY * 30.0));
+
   vec3 soil = vec3(0.13, 0.085, 0.05);
-  vec3 col = mix(soil, strata, smoothstep(0.05, 0.16, below + wobble * 0.05));
+  vec3 col = mix(soil, rock, smoothstep(0.05, 0.16, below + wobble * 0.05));
 
   float ndl = max(dot(normalize(vNormal), uSunDir), 0.0);
-  vec3 lit = col * (vec3(1.0, 0.93, 0.80) * 1.2 * ndl + vec3(0.50, 0.62, 0.85) * 0.36);
-  // Sink into the dark toward the underside.
-  lit *= mix(0.25, 1.0, smoothstep(bottom, bottom + 1.1, vY));
+  // Less daylight reaches the depths.
+  float daylight = mix(1.0, 0.42, smoothstep(0.4, 5.0, below));
+  vec3 lit = col * (vec3(1.0, 0.93, 0.80) * 1.2 * ndl + vec3(0.50, 0.62, 0.85) * 0.36) * daylight;
+
+  // Far down the rock is hot: molten seams run through it and the whole face glows faintly.
+  float heat = smoothstep(4.2, 7.2, below);
+  float seam = fbm2(vec2(vAlong * 1.25, vY * 1.05 + 5.0));
+  float crack = smoothstep(0.03, 0.0, abs(seam - 0.47)) + 0.5 * smoothstep(0.02, 0.0, abs(fbm2(vec2(vAlong * 3.1 + 9.0, vY * 2.7)) - 0.5));
+  float pulse = 0.75 + 0.25 * sin(uTime * 0.7 + vAlong * 1.9 + vY * 1.3);
+  lit += vec3(2.0, 0.56, 0.11) * crack * heat * pulse;
+  lit += vec3(0.50, 0.12, 0.03) * heat * heat * 0.22;
+
+  // And at the very bottom it is lost in the void: it takes exactly the colour of the sky behind it,
+  // so there is no underside and no edge to see.
+  vec3 dir = normalize(vWorld - cameraPosition);
+  float along = dot(cameraPosition, dir);
+  float reach = -along + sqrt(max(along * along - dot(cameraPosition, cameraPosition) + DOME * DOME, 0.0));
+  vec3 behind = voidColour(normalize(cameraPosition + dir * reach));
+  float lost = 1.0 - smoothstep(SLAB_BOTTOM + 0.7, SLAB_BOTTOM + 4.6, vY);
+  lit = mix(lit, behind, lost * lost * (3.0 - 2.0 * lost));
   gl_FragColor = vec4(lit, 1.0);
 }
 `;

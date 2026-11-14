@@ -3,6 +3,7 @@
 import { CardStore } from './cards/store';
 import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
+import { bindCameraInput } from './render/camera';
 import { WorldRenderer } from './render/scene';
 import { SHAPE_PRESETS, WorldSim, shapesDiffer, type WorldShape } from './sim/world';
 import { Combinations } from './ui/combos';
@@ -126,6 +127,14 @@ link.onDown = () => {
 link.connect();
 setStatus('off', 'Simulated cards');
 
+// --- the camera: drag, scroll and pinch (see render/camera.ts) -----------------------
+
+// After the table panel, so a press that picks up a card is seen as taken.
+bindCameraInput(canvas, view, () => table.dragging);
+const viewReset = document.getElementById('view-reset') as HTMLElement;
+viewReset.addEventListener('click', () => view.rig.reset());
+let cameraHintShown = false;
+
 // --- cards by code, with no waiting -------------------------------------------------
 //   ?cards=water*3+life@0.8,0.6   start with these cards, already settled
 //   ?instant                      no fading or easing at all (also the I key)
@@ -223,6 +232,27 @@ window.addEventListener('keydown', (e) => {
     case 'x':
       store.clearSim();
       break;
+    case 'arrowleft':
+    case 'arrowright':
+      e.preventDefault();
+      view.rig.orbit(e.key === 'ArrowLeft' ? 60 : -60, 0);
+      break;
+    case 'arrowup':
+    case 'arrowdown':
+      e.preventDefault();
+      view.rig.orbit(0, e.key === 'ArrowUp' ? 45 : -45);
+      break;
+    case '+':
+    case '=':
+      view.rig.zoomBy(1.25);
+      break;
+    case '-':
+    case '_':
+      view.rig.zoomBy(0.8);
+      break;
+    case '0':
+      view.rig.reset();
+      break;
     case 'v':
       combos.open();
       break;
@@ -256,6 +286,12 @@ function tick(now: number): void {
   store.update(dt);
   const frame = store.instant && store.moving ? sim.settleNow(store.cards) : sim.step(store.cards, store.moving, dt);
   table.update();
+  if (view.rig.moved && viewReset.hidden && !cameraHintShown) {
+    // The first time someone takes the camera, say what else it does (once: after that it is noise).
+    cameraHintShown = true;
+    toast('Drag to turn · scroll or pinch to zoom · Shift + drag to move · double-click to reset', 7);
+  }
+  viewReset.hidden = !view.rig.moved;
   // Behind the Combinations view nothing can be seen: do not spend the GPU drawing it.
   if (combos.isOpen) view.advance(dt);
   else if (still !== null) view.renderAt(frame, store.cards, still);

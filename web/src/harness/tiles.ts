@@ -21,6 +21,9 @@ export interface TileOptions {
   zoom: number;
   /** Pillars of light where the cards are. */
   beacons: boolean;
+  /** Where the camera looks from, in degrees: round the world (0 = the near side) and above the table (the app's usual is 37). */
+  azimuth?: number;
+  elevation?: number;
 }
 
 /** A tile's height for its width: the map keeps the table's shape, 3D is 16:10. */
@@ -76,6 +79,7 @@ export class TileRenderer {
       const { renderer, gl } = this.renderer3d(o.width, o.height);
       renderer.showBeacons = o.beacons;
       renderer.zoom = o.zoom;
+      if (o.azimuth !== undefined || o.elevation !== undefined) renderer.rig.lookFrom(o.azimuth ?? 0, o.elevation ?? 37);
       renderer.renderAt(frame, live, o.time);
       g.drawImage(gl, x, y, o.width, o.height);
     }

@@ -51,9 +51,23 @@ Nothing needs the internet once it is running.
 | Tab | Developer option: the table map and the tray of simulated cards |
 | V | Combinations: every mix of cards side by side (also the button, top right) |
 | X | Remove all simulated cards |
+| Arrows, + −, 0 | Turn the view, zoom, reset it (see Moving the camera) |
 | I | Instant: no fading or easing, the world jumps to its final state |
 | H | Hide the panels |
 | Q | Picture quality |
+
+### Moving the camera
+
+Left alone, the view sways gently from side to side. Touch it and it is yours: a single click is enough to stop the sway.
+
+| To | Mouse | Trackpad (Mac and others) | Touch screen | Keys |
+|---|---|---|---|---|
+| Turn the view | Drag | Two-finger scroll, or click and drag | One finger | Arrow keys |
+| Zoom, toward the pointer | Wheel | Pinch, or ⌘/Ctrl + two-finger scroll | Pinch | **+** and **−** |
+| Slide the view | Right-drag, middle-drag, or Shift + drag | Shift + two-finger scroll, or Shift + drag | Two fingers | |
+| Back to the usual view | Double-click | Double-click | | **0** |
+
+A **Reset view** button also appears at the top right whenever the view has been moved; resetting brings the sway back. Pressing on a simulated card still picks the card up rather than turning the view. On a Mac, an ordinary mouse wheel can look like a trackpad to the browser: if the wheel tilts the view instead of zooming, hold ⌘ while you scroll.
 
 ### Simulated cards
 
@@ -88,6 +102,7 @@ web/src/cards (smoothing) ─► web/src/sim (world rules, no graphics) ─► w
 - `web/src/cards/cards.json` defines the cards as data: a word, an icon, and what it pushes on (height, temperature, wetness, life, sea level). A new card is a new entry.
 - `web/src/sim/world.ts` holds every rule and every tunable number (`RULES`). Nothing in it knows about graphics.
 - `web/src/render/` only draws. It receives the world as two textures and can be restyled freely; `palette.ts` holds the climate colours.
+- The sky follows the world. `web/src/render/mood.ts` reads four numbers off the world (how hot, cold, wet and alive it is) and `backdrop.ts` paints from them: amber dusk over a hot world, teal and aurora over a frozen one, grey overcast in the rain, green and fireflies where things grow.
 - `server/deck/vision/` is the tracking: `playarea.py`, `detect.py`, `reader.py`, `tracker.py`.
 
 ### Developing
@@ -176,6 +191,7 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | `--view` / `view=` | `3d`, `map` (flat top-down, no GPU needed), `both` (3D with a map inset) |
 | `--tile` / `tile=` | Tile width in pixels (default 400). `--tile 1200 --cols 1` for a close look at a few worlds. |
 | `--cols`, `--time`, `--zoom` / `cols=`, `t=`, `zoom=` | Tiles per row, the moment drawn (default 6 s), how close the camera is (default 1.3) |
+| `--az`, `--el` / `az=`, `el=` | Look from this many degrees round the world, and this many above the table (default 0 and 37). `--zoom 0.45 --el 14 --az 35` shows the whole depth of the world from the side. |
 | `--no-beacons`, `--png`, `--tiles` / `beacons=0`, `fmt=png`, `tiles=1` | Hide the card pillars, lossless files, one file per world as well |
 
 Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for a position, and any unambiguous start of an id (`m+w*2`). Ids come from `cards.json`, so a new card works in codes and in every set straight away. Chrome is found automatically; set `CHROME_PATH` if it is somewhere unusual, or use `--serve` to open the sheet in a browser yourself.
