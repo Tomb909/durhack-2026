@@ -4,6 +4,7 @@
 import { CARD_DEFS, onCardsChanged } from '../cards/defs';
 import { modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { CardStore, LiveCard } from '../cards/store';
+import { resolveWord } from '../cards/words';
 import type { Candidate } from '../net/link';
 import { DEFAULT_SHAPE, type WorldShape } from '../sim/world';
 
@@ -46,6 +47,7 @@ export class TablePanel {
     this.fillTray();
     // Cards made from typed words join the tray as soon as they exist.
     onCardsChanged(() => this.fillTray());
+    this.bindWordBox(root);
     // Pick up a simulated card by grabbing it in the world itself.
     canvas.addEventListener('pointerdown', (e) => {
       const at = this.pickWorld(e.clientX, e.clientY);
@@ -93,6 +95,58 @@ export class TablePanel {
       });
       this.tray.appendChild(el);
     }
+  }
+
+  /** The box under the tray: type any word, and its card joins the tray and lands on the table. */
+  private bindWordBox(root: HTMLElement): void {
+    const form = root.querySelector('#tray-add') as HTMLFormElement | null;
+    const input = root.querySelector('#tray-word') as HTMLInputElement | null;
+    const status = root.querySelector('#tray-status') as HTMLElement | null;
+    if (!form || !input || !status) return;
+    const button = form.querySelector('button') as HTMLButtonElement;
+    // Typing a word must not steer the camera or open other panels: the page's keys stop here.
+    for (const type of ['keydown', 'keyup'] as const) {
+      form.addEventListener(type, (e) => {
+        e.stopPropagation();
+        if (type === 'keydown' && e.key === 'Escape') input.blur();
+      });
+    }
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text || button.disabled) return;
+      button.disabled = input.disabled = true;
+      status.className = '';
+      status.textContent = `Reading ${text.toUpperCase()}…`;
+      try {
+        const { def, source, why, ms } = await resolveWord(text);
+        const seconds = `${(ms / 1000).toFixed(1)} s`;
+        status.textContent =
+          source === 'built-in' ? `${def.word} is a built-in card.`
+          : source === 'stored' ? `${def.word}: made before, so straight away.`
+          : source === 'model' ? `${def.word}: read in ${seconds}. ${def.reading ?? ''}`
+          : source === 'near' ? `Read as ${def.word}, a guess (${why}).`
+          : `${def.word}: a guess from its sound, because ${why}.`;
+        status.className = source === 'near' || source === 'fallback' ? 'guess' : '';
+        this.placeNew(def.id);
+        input.value = '';
+      } catch (error) {
+        status.textContent = (error as Error).message;
+        status.className = 'guess';
+      } finally {
+        button.disabled = input.disabled = false;
+        input.focus();
+      }
+    });
+  }
+
+  private placed = 0;
+  /** Put a newly made card on the table, each one somewhere new, unless it is already there. */
+  private placeNew(cardId: string): void {
+    if (this.store.cards.some((card) => card.present && card.def.id === cardId)) return;
+    const spots = [[0.5, 0.5], [0.34, 0.4], [0.66, 0.4], [0.4, 0.66], [0.64, 0.64], [0.5, 0.3]];
+    const [x, y] = spots[this.placed++ % spots.length];
+    this.store.addSim(cardId, x, y);
   }
 
   /** Match the map to the play area's proportions and outline. */

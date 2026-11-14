@@ -12,6 +12,14 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from deck.words import CARD_SCHEMA, PROMPT, Unavailable, WordService, WordStore, card_from_reply, normalise_word, word_id
+import deck.words as words
+
+
+@pytest.fixture(autouse=True)
+def claude_unless_asked(monkeypatch):
+    """Whatever keys the machine has, these tests start from the same provider."""
+    monkeypatch.setattr(words, "PROVIDER", "anthropic")
+    monkeypatch.setattr(words, "MODEL", "claude-opus-5-5")
 
 REPLY = {
     "reading": "A stone keep with four corner towers. Stands on land.",
@@ -204,3 +212,87 @@ def test_bad_requests(tmp_path: Path):
         return a.status, b.status, c.status
 
     assert asyncio.run(with_client(service, run)) == (400, 400, 400)
+
+
+# --- Gemini (the Interactions API), stubbed the same way --------------------------------
+
+
+class StubInteractions:
+    def __init__(self, reply: dict, status: str = "completed", error: Exception | None = None) -> None:
+        self.reply, self.status, self.error = reply, status, error
+        self.calls: list[dict] = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return SimpleNamespace(status=self.status, output_text=json.dumps(self.reply))
+
+
+def gemini_stub(**kwargs) -> tuple[StubInteractions, object]:
+    interactions = StubInteractions(REPLY, **kwargs)
+    return interactions, SimpleNamespace(aio=SimpleNamespace(interactions=interactions))
+
+
+def test_gemini_makes_a_card(tmp_path: Path):
+    interactions, client = gemini_stub()
+    service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client, provider="gemini")
+    assert service.model == "gemini-4-hydrogen"
+
+    async def run(http):
+        reply = await http.post("/api/word", json={"text": "castle"})
+        assert reply.status == 200
+        body = await reply.json()
+        assert body["source"] == "model" and body["model"] == "gemini-4-hydrogen"
+        assert body["card"]["id"] == "castle" and body["card"]["prop"]["parts"][0]["shape"] == "box"
+
+    asyncio.run(with_client(service, run))
+    (call,) = interactions.calls
+    assert call["model"] == "gemini-4-hydrogen" and call["input"] == "<word>CASTLE</word>"
+    assert call["system_instruction"] == PROMPT
+    assert call["response_format"] == {"type": "text", "mime_type": "application/json", "schema": CARD_SCHEMA}
+    assert call["generation_config"] == {"thinking_level": "low"}
+
+
+def test_gemini_failures_are_no_card(tmp_path: Path):
+    from google.genai import errors
+
+    busy = errors.ClientError(429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}})
+    for name, kwargs, expected in [
+        ("unfinished", {"status": "incomplete"}, "did not finish"),
+        ("busy", {"error": busy}, "rate limited"),
+        ("offline", {"error": OSError("no route")}, "could not reach"),
+    ]:
+        _, client = gemini_stub(**kwargs)
+        service = WordService(WordStore(tmp_path / f"{name}.json"), client_factory=lambda: client, provider="gemini")
+
+        async def run(http):
+            reply = await http.post("/api/word", json={"text": "castle"})
+            assert reply.status == 503
+            assert expected in (await reply.json())["reason"]
+
+        asyncio.run(with_client(service, run))
+        assert service.store.all() == []
+
+
+def test_gemini_without_a_key_is_503(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    service = WordService(WordStore(tmp_path / "words.json"), provider="gemini")  # the real client factory
+
+    async def run(http):
+        reply = await http.post("/api/word", json={"text": "castle"})
+        assert reply.status == 503
+        assert "no credentials for gemini" in (await reply.json())["reason"]
+
+    asyncio.run(with_client(service, run))
+
+
+def test_provider_follows_the_keys(monkeypatch):
+    for name in ("DECK_WORD_PROVIDER", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    assert words._provider() == "anthropic"
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    assert words._provider() == "gemini"
+    monkeypatch.setenv("DECK_WORD_PROVIDER", "Anthropic")
+    assert words._provider() == "anthropic"
