@@ -4,6 +4,7 @@ import { CardStore } from './cards/store';
 import { Link, type Snapshot } from './net/link';
 import { WorldRenderer } from './render/scene';
 import { WorldSim } from './sim/world';
+import { CardCheck, Guide } from './ui/overlays';
 import { TablePanel } from './ui/table';
 
 const canvas = document.getElementById('world') as HTMLCanvasElement;
@@ -97,6 +98,8 @@ setStatus('off', 'Simulated cards');
 
 // --- keys -------------------------------------------------------------------------
 
+const guide = new Guide();
+const cardCheck = new CardCheck(() => lastSnapshot);
 const qualities = [1, 1.5, 2];
 let quality = 1;
 window.addEventListener('keydown', (e) => {
@@ -133,6 +136,19 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'x':
       store.clearSim();
+      break;
+    case 'g':
+      cardCheck.hide();
+      guide.toggle();
+      break;
+    case 'c':
+      guide.hide();
+      cardCheck.toggle();
+      break;
+    case 'escape':
+      guide.hide();
+      cardCheck.hide();
+      connectPanel.hidden = true;
       break;
   }
 });

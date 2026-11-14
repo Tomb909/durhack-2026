@@ -45,3 +45,25 @@ body.bare #ui > :not(#toast) { display: none; }
 #toast.show { opacity: 1; }
 #keys { position: absolute; right: 18px; bottom: 14px; font-size: 11px; color: rgba(154, 166, 186, 0.7); }
 #keys b { color: rgba(238, 242, 248, 0.8); }
+
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(4, 6, 12, 0.62); backdrop-filter: blur(6px); z-index: 30; }
+.overlay[hidden] { display: none; }
+.overlay .sheet { width: min(980px, 92vw); max-height: 88vh; overflow: auto; padding: 20px 24px 22px; border-radius: 16px; border: 1px solid var(--line); background: rgba(16, 20, 31, 0.96); user-select: text; }
+.overlay header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.overlay h2 { margin: 0; font-size: 20px; }
+.overlay .close { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer; }
+.overlay .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.overlay figure { margin: 0; }
+.overlay figure svg { width: 100%; border-radius: 10px; background: #2a3040; display: block; }
+.overlay figcaption { margin-top: 9px; color: var(--muted); font-size: 13.5px; }
+.overlay figcaption b { color: var(--text); }
+.overlay .words { margin: 18px 0 6px; font-weight: 600; }
+.overlay .word { display: inline-block; margin: 0 8px 6px 0; padding: 4px 10px; border-radius: 8px; background: #f4f1e8; color: #111; font-weight: 800; letter-spacing: 0.04em; }
+.overlay .hint { color: var(--muted); margin: 6px 0; }
+.overlay .hint b { color: var(--text); }
+.overlay table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.overlay th, .overlay td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.overlay td img { height: 44px; max-width: 320px; border-radius: 4px; background: #fff; display: block; }
+.overlay td.ok { color: #4ade80; font-weight: 800; font-size: 18px; }
+.overlay td.no { color: #fbbf24; font-weight: 700; }
+@media (max-width: 900px) { .overlay .steps { grid-template-columns: repeat(2, 1fr); } }
