@@ -144,6 +144,20 @@ const viewReset = document.getElementById('view-reset') as HTMLElement;
 viewReset.addEventListener('click', () => view.rig.reset());
 let cameraHintShown = false;
 
+// The red Reset button: after a warning, clear the simulated cards and start the world from empty.
+const resetConfirm = document.getElementById('reset-confirm') as HTMLDialogElement;
+document.getElementById('world-reset')!.addEventListener('click', () => {
+  resetConfirm.returnValue = 'cancel';
+  resetConfirm.showModal();
+});
+resetConfirm.addEventListener('close', () => {
+  if (resetConfirm.returnValue !== 'reset') return;
+  store.setSim([]);
+  sim = new WorldSim(shape);
+  view.rig.reset();
+  toast('World reset');
+});
+
 // W A S D walk the view while held (Shift to go faster). Held keys are tracked here and applied every frame.
 const moveKeys = new Set<string>();
 let moveFast = false;
@@ -206,7 +220,7 @@ let quality = 1;
 window.addEventListener('keydown', (e) => {
   moveFast = e.shiftKey;
   // ⌘, Ctrl and Alt belong to the browser. (A Mac also never reports a key let go while ⌘ is down.)
-  if (e.ctrlKey || e.metaKey || e.altKey || combos.isOpen) return void moveKeys.clear();
+  if (e.ctrlKey || e.metaKey || e.altKey || combos.isOpen || resetConfirm.open) return void moveKeys.clear();
   if (isMoveKey(e.key.toLowerCase())) return void moveKeys.add(e.key.toLowerCase());
   if (e.key === 'Tab') {
     // Developer option: the table map and the tray of simulated cards.
