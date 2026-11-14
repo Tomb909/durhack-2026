@@ -24,6 +24,19 @@ export interface Metrics {
 
 export const METRIC_KEYS = ['sea', 'peak', 'flooded', 'fresh', 'rain', 'snow', 'forest', 'frozen', 'desert'] as const;
 
+/** Plain names for the numbers, for people. `share` ones are percentages of the map. */
+export const METRIC_LABELS: Record<(typeof METRIC_KEYS)[number], { label: string; share: boolean }> = {
+  sea: { label: 'Sea level', share: false },
+  peak: { label: 'Highest peak', share: false },
+  flooded: { label: 'Sea', share: true },
+  fresh: { label: 'Rivers and lakes', share: true },
+  rain: { label: 'Rain', share: true },
+  snow: { label: 'Snow', share: true },
+  forest: { label: 'Forest', share: true },
+  frozen: { label: 'Frozen', share: true },
+  desert: { label: 'Desert', share: true },
+};
+
 export function liveCards(cards: Placement[], prefix = 'h'): LiveCard[] {
   return cards.map((p, k) => settledCard(`${prefix}:${k}`, cardDef(p.id)!, p.x, p.y));
 }

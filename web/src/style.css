@@ -73,3 +73,95 @@ body.bare #ui > :not(#toast) { display: none; }
 .world-label .i { font-size: 19px; line-height: 1; }
 .world-label::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 2px; height: 7px; margin-left: -1px; background: var(--c, #fff); }
 #table-panel[hidden] { display: none; }
+
+/* --- Combinations view (ui/combos.ts) --------------------------------------------- */
+:root { --focus: #9ecbff; }
+#combos-open { position: absolute; right: 18px; top: 16px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); }
+#combos-open:hover { background: rgba(40, 50, 74, 0.8); }
+#combos-open svg { width: 14px; height: 14px; fill: currentColor; opacity: 0.85; }
+.combos kbd { font: inherit; font-size: 11px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+#status:focus-visible, #combos-open:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.combos { --raised: #151b2a; --well: #0c101a; position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #080b13; color: var(--text); }
+.combos[hidden], .combos [hidden] { display: none; }
+.combos ::selection { background: rgba(158, 203, 255, 0.35); }
+.combos :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.combos h2:focus-visible { outline: none; }
+.combos-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* One row: title, how many, a switch per card, picture, tile size, close. */
+.combos-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 16px; background: var(--raised); border-bottom: 1px solid var(--line); }
+.combos-bar h2 { margin: 0; font-size: 18px; }
+.combos-count { margin: 0 6px 0 -4px; min-width: 2ch; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.combos-cards { display: flex; flex-wrap: wrap; gap: 6px; margin-right: auto; }
+/* The row is tight on a laptop: there the switch, colour and word carry the card, and the icon goes. */
+@media (max-width: 1439px) { .combos-icon { display: none; } }
+/* Narrower still: the heading is read out but not shown (the count stays), so everything keeps to one row. */
+@media (max-width: 1340px) { .combos-bar h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .combos-count { margin-left: 0; } .combos-count::after { content: " worlds"; } }
+.combos-options { display: flex; gap: 8px; }
+.combos-btn { font: inherit; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.07); color: var(--text); cursor: pointer; white-space: nowrap; }
+.combos-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.combos-btn:active { background: rgba(255, 255, 255, 0.2); }
+.combos-btn.primary, .combos-btn[aria-pressed="true"] { background: #eef2f8; border-color: #eef2f8; color: #0b0f18; }
+.combos-btn.primary:hover, .combos-btn[aria-pressed="true"]:hover { background: #ffffff; }
+.combos-x { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; }
+.combos-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+/* A card: a real on/off switch, and (while on) its number of copies with − and +. */
+.combos-card { display: inline-flex; align-items: stretch; border-radius: 99px; border: 1.5px solid var(--c, var(--line)); background: color-mix(in srgb, var(--c, #fff) 16%, var(--well)); overflow: hidden; }
+.combos-card button { font: inherit; border: 0; background: none; color: var(--text); cursor: pointer; }
+.combos-card button:focus-visible { outline-offset: -3px; border-radius: 99px; }
+.combos-toggle { display: flex; align-items: center; gap: 6px; padding: 5px 9px 5px 7px; font-size: 12.5px; font-weight: 800; letter-spacing: 0.03em; }
+.combos-toggle:hover, .combos-copies button:not(:disabled):hover { background: rgba(255, 255, 255, 0.12); }
+.combos-switch { position: relative; flex: none; width: 28px; height: 16px; border-radius: 99px; background: var(--c, #9aa6ba); transition: background 0.15s ease-out; }
+.combos-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #0b0f18; transform: translateX(12px); transition: transform 0.15s ease-out; }
+.combos-copies { display: flex; align-items: center; border-left: 1px solid color-mix(in srgb, var(--c, #fff) 45%, transparent); }
+.combos-copies button { width: 22px; align-self: stretch; padding: 0; font-size: 15px; font-weight: 700; line-height: 1; }
+.combos-copies button:last-child { padding-right: 3px; width: 25px; }
+.combos-copies button:disabled { color: #68738a; cursor: default; }
+.combos-copies output { min-width: 19px; text-align: center; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.combos-card.off { border-color: var(--line); background: none; }
+.combos-card.off .combos-toggle { padding-right: 12px; color: #97a3b9; }
+.combos-card.off .combos-switch { background: #343d52; }
+.combos-card.off .combos-switch::after { background: #97a3b9; transform: none; }
+.combos-card.off .combos-icon { filter: grayscale(1); opacity: 0.55; }
+
+.combos-seg { display: inline-flex; margin: 0; padding: 2px; gap: 2px; min-width: 0; border-radius: 9px; background: var(--well); border: 1px solid var(--line); }
+.combos-seg label { position: relative; display: block; cursor: pointer; }
+.combos-seg input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.combos-seg span { display: block; min-width: 30px; padding: 4px 9px; border-radius: 7px; text-align: center; font-size: 13px; font-weight: 600; color: #b3bdd0; }
+.combos-seg label:hover span { color: var(--text); background: rgba(255, 255, 255, 0.07); }
+.combos-seg input:checked + span { background: #eef2f8; color: #0b0f18; }
+.combos-seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.combo-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 6px; border-radius: 99px; border: 1.5px solid var(--c, var(--line)); background: rgba(8, 11, 19, 0.6); color: var(--text); font-size: 12px; font-weight: 800; letter-spacing: 0.05em; white-space: nowrap; }
+.combo-chip.none { padding-left: 9px; border-style: dashed; font-weight: 600; letter-spacing: 0; color: var(--muted); }
+
+.combos-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 28px; scrollbar-color: #2d3750 transparent; }
+.combos-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--tile, 380px), 100%), 1fr)); gap: 14px; }
+.combo { position: relative; display: flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--well); }
+.combo:hover { border-color: rgba(190, 208, 240, 0.6); }
+.combo-open { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: zoom-in; }
+.combo-open:focus-visible { outline-offset: -3px; border-radius: 12px; }
+.combo canvas { display: block; width: 100%; height: auto; background: #05060a; opacity: 0.25; transition: opacity 0.18s ease-out; }
+.combo.ready canvas { opacity: 1; }
+.combo-caption { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 9px 11px 10px; border-top: 1px solid var(--line); background: var(--raised); }
+.combo-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.combo-numbers { color: #a9b4c8; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+/* The tile's own switch: these cards together, or spaced apart. */
+.combo-spaced { position: absolute; top: 8px; right: 8px; padding: 4px 11px; border-radius: 99px; border: 1px solid rgba(200, 214, 240, 0.4); background: rgba(8, 11, 19, 0.78); color: #dbe3f1; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.combo-spaced:hover { background: rgba(40, 50, 74, 0.92); color: #ffffff; }
+.combo-spaced[aria-pressed="true"] { background: #eef2f8; border-color: #eef2f8; color: #0b0f18; }
+
+.combos-detail-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.combos-pos { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.combos-detail-main { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 20px; align-items: start; }
+.combos-picture canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100vh - 160px); margin: 0 auto; border-radius: 12px; border: 1px solid var(--line); background: #05060a; }
+.combos-numbers { margin: 0; }
+.combos-numbers div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(160, 180, 220, 0.14); }
+.combos-numbers dt { color: #a9b4c8; }
+.combos-numbers dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.combos-code { margin: 14px 0 0; color: var(--muted); font-size: 12.5px; }
+.combos-code code { display: block; margin-top: 4px; padding: 6px 8px; border-radius: 6px; background: var(--well); border: 1px solid var(--line); color: #cfe1ff; font-size: 12.5px; word-break: break-all; user-select: all; }
+@media (max-width: 900px) { .combos-detail-main { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .combo canvas, .combos-switch, .combos-switch::after { transition: none; } }

@@ -145,6 +145,11 @@ export class WorldRenderer {
     return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
   }
 
+  /** Let time pass without drawing (the world is hidden behind something). */
+  advance(dt: number): void {
+    this.time += dt;
+  }
+
   /** Draw the world as it looks at one fixed moment: same inputs, same picture. */
   renderAt(frame: WorldFrame, cards: LiveCard[], time: number): void {
     this.time = time;

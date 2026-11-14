@@ -5,6 +5,7 @@ import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { WorldRenderer } from './render/scene';
 import { WorldSim } from './sim/world';
+import { Combinations } from './ui/combos';
 import { CardCheck, Guide } from './ui/overlays';
 import { TablePanel } from './ui/table';
 
@@ -127,6 +128,15 @@ if (params.has('cards')) {
   }
 }
 
+// --- every combination, side by side (the button, V, or ?combos in the address) -----
+
+const combos = new Combinations([document.getElementById('ui')!, canvas], (code, layout) => {
+  setCards(code, layout);
+  tablePanel.hidden = false; // you asked to see it live: have the cards to hand
+});
+document.getElementById('combos-open')!.addEventListener('click', () => combos.open());
+if (params.has('combos')) combos.open();
+
 // --- keys -------------------------------------------------------------------------
 
 const guide = new Guide();
@@ -135,6 +145,7 @@ const qualities = [1, 1.5, 2];
 let quality = 1;
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (combos.isOpen) return; // that view has its own keys
   if (e.key === 'Tab') {
     // Developer option: the table map and the tray of simulated cards.
     e.preventDefault();
@@ -174,6 +185,9 @@ window.addEventListener('keydown', (e) => {
     case 'x':
       store.clearSim();
       break;
+    case 'v':
+      combos.open();
+      break;
     case 'i':
       store.instant = !store.instant;
       toast(store.instant ? 'Instant: no fading, the world jumps to its final state' : 'Animated');
@@ -203,7 +217,9 @@ function tick(now: number): void {
   store.update(dt);
   const frame = store.instant && store.moving ? sim.settleNow(store.cards) : sim.step(store.cards, store.moving, dt);
   table.update();
-  if (still !== null) view.renderAt(frame, store.cards, still);
+  // Behind the Combinations view nothing can be seen: do not spend the GPU drawing it.
+  if (combos.isOpen) view.advance(dt);
+  else if (still !== null) view.renderAt(frame, store.cards, still);
   else view.render(frame, store.cards, dt);
   requestAnimationFrame(tick);
 }

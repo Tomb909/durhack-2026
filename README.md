@@ -49,6 +49,7 @@ Nothing needs the internet once it is running.
 | L | Find the border again |
 | B | Show or hide the card labels |
 | Tab | Developer option: the table map and the tray of simulated cards |
+| V | Combinations: every mix of cards side by side (also the button, top right) |
 | X | Remove all simulated cards |
 | I | Instant: no fading or easing, the world jumps to its final state |
 | H | Hide the panels |
@@ -120,15 +121,34 @@ In the browser console, `deck.set('mountain+ice')` swaps the cards at once.
 
 ### Harness: every combination, at once
 
-The same cards always settle to the same world, so there is no need to place cards and wait. The harness jumps each world straight to its settled state (about 10 ms) and draws it at one fixed moment.
+The same cards always settle to the same world, so there is no need to place cards and wait. The harness jumps each world straight to its settled state (about 10 ms) and draws it at one frozen moment. There are three ways in: a view inside the app for looking, a command for numbers, and a picture sheet for files.
 
-**Numbers only** (no browser, under a second for every combination):
+#### Combinations view (in the app)
+
+Press the **Combinations** button at the top right of the world page, or **V**. It works on the built page (`uv run deck`) and the dev page alike; `/?combos` in the address opens it straight away. **Esc** closes it.
+
+Every combination of the cards appears as a tile, with what is on the table and the main numbers underneath (share of the map that is sea, rain, forest and so on). One row of controls along the top:
+
+| Control | Does |
+|---|---|
+| **A switch per card** | Switch a card off to leave it out, on to bring it back. The view shows every combination of the cards that are on: five cards is 32 worlds, four is 16. The number beside the title is how many are showing. |
+| **− ×1 +** beside a card | How many copies of that card, wherever it appears, from 1 to 3. Three Waters flood the lowlands; three Mountains make a far taller range. |
+| **3D / Map / Both** | The world as the app draws it, flat from above (nothing hidden behind clouds), or 3D with the map in the corner. |
+| **S / M / L** | Tile size: small to see many at once, large to look closely. |
+
+Each tile with two or more kinds of card has its own **Spaced** switch in its top right corner. It places those cards apart instead of on the same ground, for that tile only, so you can see where they meet.
+
+Click a tile (or Tab to it and press Enter) to see it large with all its numbers. There, **←** and **→** step through the combinations, **Show in the live world** puts those cards on the real table so you can move them, and **Esc** goes back. The **✕** at the top right (or **Esc** again) closes the view. The card switches, copies, picture and tile size are remembered for next time; changing them never moves your place in the list.
+
+#### Numbers from the command line
+
+No browser, under a second for every combination:
 
 ```bash
 npm --prefix web run harness -- --set subsets
 ```
 
-One line per world: sea level, highest peak, and the share of the map that is flooded, river or lake, raining, snowing, forest, frozen, desert, plus a fingerprint of the whole world. To see what a rule change did:
+One line per world: sea level, highest peak, and the share of the map that is flooded, river or lake, raining, snowing, forest, frozen, desert, plus a fingerprint of the whole world. To see what a rule change did, save the numbers before and compare after:
 
 ```bash
 npm --prefix web run harness -- --set all --baseline
@@ -138,7 +158,9 @@ npm --prefix web run harness -- --set all --baseline
 npm --prefix web run harness -- --set all --diff
 ```
 
-**Pictures** (one sheet of small tiles, drawn by headless Chrome in about two seconds):
+#### Picture sheet as a file
+
+One image of small tiles, drawn by headless Chrome in about two seconds (handy for sharing, or for an AI assistant to look at):
 
 ```bash
 npm --prefix web run harness -- --set subsets --shots --view both
@@ -157,3 +179,10 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | `--no-beacons`, `--png`, `--tiles` / `beacons=0`, `fmt=png`, `tiles=1` | Hide the card pillars, lossless files, one file per world as well |
 
 Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for a position, and any unambiguous start of an id (`m+w*2`). Ids come from `cards.json`, so a new card works in codes and in every set straight away. Chrome is found automatically; set `CHROME_PATH` if it is somewhere unusual, or use `--serve` to open the sheet in a browser yourself.
+
+#### Keeping the harness current
+
+- **A new card** in `cards.json` needs nothing: it gets its own switch in the Combinations view, joins every set, and works in codes.
+- **A new thing the world can have** (a new array on the world's frame in `sim/world.ts`): add it to `measure()` in `web/src/harness/metrics.ts` so the fingerprint covers it, give it a number there if it is worth comparing (`METRIC_KEYS` and `METRIC_LABELS`), and a colour in `web/src/harness/map.ts`.
+- **A change to how the app draws** shows up in the tiles by itself: they use the app's own renderer. Anything drawn as a page element rather than in the 3D picture (the card labels, for one) does not appear in tiles.
+- `npm --prefix web test` checks that the settled world depends on the cards alone and that the animated world ends up there. If a rule change breaks that, the harness would stop matching the app.

@@ -3,6 +3,7 @@ import { CARD_DEFS } from '../cards/defs';
 import { CardStore } from '../cards/store';
 import { WorldSim } from '../sim/world';
 import { nameOf, parseCode, resolveScenarios, tidyCode } from './codes';
+import { combinations, defaultFilter } from './filter';
 import { liveCards, measure } from './metrics';
 
 describe('combination codes', () => {
@@ -33,6 +34,32 @@ describe('combination codes', () => {
     expect(new Set(subsets.map((s) => s.code)).size).toBe(subsets.length);
     expect(resolveScenarios({}).length).toBeGreaterThan(10); // the showcase
     expect(resolveScenarios({ codes: 'flood=water*3; life+sun' }).map((s) => s.name)).toEqual(['flood', 'life_sun']);
+  });
+});
+
+describe('the Combinations view filter', () => {
+  const ids = ['mountain', 'water', 'sun', 'ice', 'life'];
+  it('shows every combination when every card is on', () => {
+    const all = combinations(defaultFilter(), ids);
+    expect(all.length).toBe(32);
+    expect(all[0].code).toBe('empty');
+    expect(new Set(all.map((s) => s.code)).size).toBe(32);
+  });
+  it('halves the list for each card switched off', () => {
+    const list = combinations({ off: ['ice', 'sun'], copies: {} }, ids);
+    expect(list.length).toBe(8);
+    expect(list.some((s) => s.cards.some((c) => c.id === 'ice' || c.id === 'sun'))).toBe(false);
+    expect(combinations({ off: ids, copies: {} }, ids).map((s) => s.code)).toEqual(['empty']);
+  });
+  it('gives a card its own number of copies', () => {
+    const list = combinations({ off: ['mountain', 'sun', 'ice'], copies: { water: 3 } }, ids);
+    expect(list.map((s) => s.code)).toEqual(['empty', 'water*3', 'life', 'water*3+life']);
+    expect(list[3].cards.filter((c) => c.id === 'water').length).toBe(3);
+  });
+  it('ignores a remembered choice for a card that no longer exists', () => {
+    const list = combinations({ off: ['lava'], copies: { lava: 3 } }, ids);
+    expect(list.length).toBe(32);
+    expect(list.some((s) => s.code.includes('lava'))).toBe(false);
   });
 });
 
