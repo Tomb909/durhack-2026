@@ -65,6 +65,7 @@ class Server:
         self.inner_https_port = args.https_port + 1
         # Typed words made into cards by the model, stored in .deck/words.json.
         self.words = WordService(WordStore(DATA / "words.json"))
+        print(self.words.describe(), flush=True)
 
     # --- plumbing -------------------------------------------------------------
 

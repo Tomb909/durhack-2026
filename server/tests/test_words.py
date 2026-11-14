@@ -288,6 +288,26 @@ def test_gemini_without_a_key_is_503(tmp_path: Path, monkeypatch):
     asyncio.run(with_client(service, run))
 
 
+def test_keys_file_fills_only_what_is_missing(tmp_path: Path, monkeypatch):
+    for name in ("GEMINI_API_KEY", "ANTHROPIC_API_KEY", "DECK_WORD_MODEL", "DECK_WORD_EFFORT", "PATH_TEST"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("DECK_WORD_EFFORT", "high")  # set in the terminal: the file must not replace it
+    path = tmp_path / "keys.env"
+    path.write_text(
+        "# a comment\n\nGEMINI_API_KEY=abc123\nexport DECK_WORD_MODEL=\"gemini-3.5-flash-lite\"\n"
+        "ANTHROPIC_API_KEY=\nDECK_WORD_EFFORT=low\nPATH_TEST=/nope\nnot a line\n",
+        encoding="utf-8",
+    )
+    assert words.load_keys(path) == ["GEMINI_API_KEY", "DECK_WORD_MODEL"]
+    env = words.os.environ
+    assert env["GEMINI_API_KEY"] == "abc123" and env["DECK_WORD_MODEL"] == "gemini-3.5-flash-lite"
+    assert env["DECK_WORD_EFFORT"] == "high"
+    assert "ANTHROPIC_API_KEY" not in env and "PATH_TEST" not in env  # empty, and not a name we read
+    monkeypatch.delenv("GEMINI_API_KEY")  # load_keys wrote these itself: take them out again
+    monkeypatch.delenv("DECK_WORD_MODEL")
+    assert words.load_keys(tmp_path / "missing.env") == []
+
+
 def test_provider_follows_the_keys(monkeypatch):
     for name in ("DECK_WORD_PROVIDER", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(name, raising=False)
