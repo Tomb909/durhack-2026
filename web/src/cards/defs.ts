@@ -92,7 +92,9 @@ export interface Atmosphere {
   particles: Particles | null;
 }
 
-export const PART_SHAPES = ['box', 'cylinder', 'cone', 'pyramid', 'prism', 'sphere'] as const;
+export const PART_SHAPES = ['box', 'cylinder', 'cone', 'pyramid', 'prism', 'sphere', 'capsule', 'dome', 'ring'] as const;
+/** Copies of a part across the object's middle: left and right (x), front and back (z), or all four. */
+export const PART_MIRRORS = ['x', 'z', 'xz'] as const;
 export type PartShape = (typeof PART_SHAPES)[number];
 export const PROP_SCALES = ['small', 'medium', 'large', 'landmark'] as const;
 export const PROP_COUNTS = ['one', 'few', 'many'] as const;
@@ -111,12 +113,20 @@ export interface PropPart {
   /** Degrees about x, y, z. */
   rotate: [number, number, number];
   color: string;
+  /** Width and depth at the top as a share of the bottom (1 straight, 0 a point, above 1 flaring). Box and cylinder. */
+  taper?: number;
+  /** Also drawn mirrored across the object's middle: four legs are one part with `xz`. */
+  mirror?: (typeof PART_MIRRORS)[number];
+  /** Drawn this many times, evenly round the object's upright axis (spokes, petals, battlements). */
+  repeat?: number;
 }
 
 /** An object made of primitives that the card stands in the world. */
 export interface Prop {
   parts: PropPart[];
   scale: (typeof PROP_SCALES)[number];
+  /** The real thing's longest side in metres. When given it sets the drawn size (see propSize) and `scale` follows it. */
+  metres?: number;
   count: (typeof PROP_COUNTS)[number];
   habitat: Habitat;
   motion: PropMotion;

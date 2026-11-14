@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUILT_IN_IDS, CARD_DEFS, cardDef } from './defs';
-import { cleanCard, fallbackCard, findCard, nearMatch, normaliseWord, register, removeWord, resolveWord, wordId, wordSound, type AskServer } from './words';
+import { cleanCard, fallbackCard, findCard, nearMatch, normaliseWord, register, removeWord, resolveWord, wordId, wordSound, type AskServer, MAX_PRIMITIVES, copiesOf } from './words';
 
 describe('words and ids', () => {
   it('normalises what was typed', () => {
@@ -75,7 +75,7 @@ describe('cleanCard, the one gate', () => {
     expect(def.atmosphere!.tint).toBe('#ffffff');
     expect(def.atmosphere!.particles).toBeNull();
     const prop = def.prop!;
-    expect(prop.parts.length).toBeLessThanOrEqual(24);
+    expect(prop.parts.length).toBeLessThanOrEqual(40);
     for (const part of prop.parts) {
       expect(part.shape).toBe('box');
       expect(part.color).toMatch(/^#[0-9a-f]{6}$/);
@@ -86,6 +86,24 @@ describe('cleanCard, the one gate', () => {
     }
     expect([prop.scale, prop.count, prop.habitat, prop.motion, prop.glow]).toEqual(['medium', 'one', 'land', 'still', false]);
     expect(Object.keys(def)).not.toContain('polluted');
+  });
+  it('keeps a taper, a mirror and a repeat only where they mean something, and bounds what they draw', () => {
+    const part = (extra: object) => ({ shape: 'cylinder', at: [0.2, 0.3, 0.2], size: [0.1, 0.6, 0.1], rotate: [0, 0, 0], color: '#808080', ...extra });
+    const def = cleanCard({ word: 'gate', origin: 'llm', prop: { metres: 1e9, scale: 'small', parts: [
+      part({ taper: 0.6, mirror: 'xz', repeat: 3.4 }), part({ taper: 9, mirror: 'y', repeat: -2 }), part({ shape: 'sphere', taper: 0.5, repeat: 500 }), part({ taper: 1 }),
+    ] } })!;
+    const [a, b, c, d] = def.prop!.parts;
+    expect([a.taper, a.mirror, a.repeat]).toEqual([0.6, 'xz', 3]);
+    expect([b.taper, b.mirror, b.repeat]).toEqual([2, undefined, undefined]);
+    expect([c.taper, c.repeat]).toEqual([undefined, 12]);
+    expect('taper' in d).toBe(false);
+    expect(copiesOf(a)).toBe(12);
+    // A real size wins over the scale word, and is bounded.
+    expect([def.prop!.metres, def.prop!.scale]).toEqual([400, 'landmark']);
+    // Forty parts each drawn 48 times would be 1920 shapes: the later ones lose their copies.
+    const many = cleanCard({ word: 'swarm', origin: 'llm', prop: { parts: Array.from({ length: 40 }, () => part({ mirror: 'xz', repeat: 12 })) } })!;
+    expect(many.prop!.parts.reduce((n, p) => n + copiesOf(p), 0)).toBeLessThanOrEqual(MAX_PRIMITIVES);
+    expect(many.prop!.parts).toHaveLength(40);
   });
   it('turns away nonsense, and never replaces a built-in card', () => {
     for (const bad of [null, undefined, 5, 'castle', [], {}, { word: '' }, { word: '   ' }, { word: 42 }]) expect(cleanCard(bad)).toBeNull();

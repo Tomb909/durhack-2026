@@ -10,14 +10,23 @@
 // the one gate between untrusted data and the sim, the shaders and the page.
 // Guesses are kept in this browser only, so trying again later can replace them.
 import {
-  BUILT_IN_IDS, CARD_DEFS, HABITATS, PART_SHAPES, PARTICLE_MOTIONS, PROP_COUNTS, PROP_MOTIONS, PROP_SCALES,
+  BUILT_IN_IDS, CARD_DEFS, HABITATS, PART_MIRRORS, PART_SHAPES, PARTICLE_MOTIONS, PROP_COUNTS, PROP_MOTIONS, PROP_SCALES,
   cardDef, cardsChanged, registerCard, unregisterCard,
   type Atmosphere, type CardDef, type CardEffect, type FieldName, type Particles, type Prop, type PropPart,
 } from './defs';
 
 export const MAX_WORD = 40;
 const MAX_READING = 200;
-const MAX_PARTS = 24;
+/** Parts as written, and primitives once mirrors and repeats are drawn out. */
+export const MAX_PARTS = 40;
+export const MAX_PRIMITIVES = 160;
+const MAX_REPEAT = 12;
+
+/** How many primitives a part draws: itself, round the axis, and mirrored. */
+export const copiesOf = (part: PropPart): number => (part.repeat ?? 1) * (part.mirror === 'xz' ? 4 : part.mirror ? 2 : 1);
+
+/** The scale word for a real size in metres (keep in step with scale_for in server/deck/words.py). */
+export const scaleForMetres = (m: number): Prop['scale'] => (m < 4 ? 'small' : m < 15 ? 'medium' : m < 45 ? 'large' : 'landmark');
 const MAX_EFFECTS = 4;
 const LOCAL_STORE = 'deck.words.1';
 
@@ -141,13 +150,20 @@ function cleanPart(v: unknown): PropPart | null {
   const r = v as Record<string, unknown>;
   if (!PART_SHAPES.includes(r.shape as never)) return null;
   const size = triple(r.size, 0.01, 1, 0.2);
-  return {
+  const part: PropPart = {
     shape: r.shape as PropPart['shape'],
     at: [num((r.at as unknown[] | undefined)?.[0], -0.5, 0.5, 0), num((r.at as unknown[] | undefined)?.[1], 0, 1, size[1] / 2), num((r.at as unknown[] | undefined)?.[2], -0.5, 0.5, 0)],
     size,
     rotate: triple(r.rotate, -180, 180, 0),
     color: colour(r.color, '#9a8f80'),
   };
+  // Only the shapes with a flat top take a taper; left out when it would change nothing.
+  const taper = num(r.taper, 0, 2, 1);
+  if (taper !== 1 && (part.shape === 'box' || part.shape === 'cylinder')) part.taper = taper;
+  if (PART_MIRRORS.includes(r.mirror as never)) part.mirror = r.mirror as PropPart['mirror'];
+  const repeat = Math.round(num(r.repeat, 1, MAX_REPEAT, 1));
+  if (repeat > 1) part.repeat = repeat;
+  return part;
 }
 
 function cleanProp(v: unknown): Prop | undefined {
@@ -155,9 +171,17 @@ function cleanProp(v: unknown): Prop | undefined {
   const r = v as Record<string, unknown>;
   const parts = (Array.isArray(r.parts) ? r.parts.slice(0, 64) : []).map(cleanPart).filter((p): p is PropPart => !!p).slice(0, MAX_PARTS);
   if (!parts.length) return undefined;
+  // Mirrors and repeats multiply. Every part is kept; past the limit, the later ones lose their copies.
+  let drawn = 0;
+  parts.forEach((part, k) => {
+    if (drawn + copiesOf(part) > MAX_PRIMITIVES - (parts.length - k - 1)) { delete part.mirror; delete part.repeat; }
+    drawn += copiesOf(part);
+  });
+  const metres = typeof r.metres === 'number' && Number.isFinite(r.metres) ? Math.min(400, Math.max(0.1, r.metres)) : undefined;
   return {
     parts,
-    scale: oneOf(r.scale, PROP_SCALES, 'medium'),
+    scale: metres === undefined ? oneOf(r.scale, PROP_SCALES, 'medium') : scaleForMetres(metres),
+    ...(metres === undefined ? {} : { metres }),
     count: oneOf(r.count, PROP_COUNTS, 'one'),
     habitat: oneOf(r.habitat, HABITATS, 'land'),
     motion: oneOf(r.motion, PROP_MOTIONS, 'still'),

@@ -73,7 +73,7 @@ async function run(): Promise<Result> {
   g.fillRect(0, 0, sheet.width, sheet.height);
 
   const tiles = new TileRenderer();
-  const options = { width: tileW, height: tileH, view, time, zoom: number('zoom', 1.3, 0.3, 4), beacons: flag('beacons', true),
+  const options = { width: tileW, height: tileH, view, time, zoom: number('zoom', 1.3, 0.3, 16), beacons: flag('beacons', true),
     azimuth: params.has('az') ? number('az', 0, -360, 360) : undefined,
     elevation: params.has('el') ? number('el', 37, 0, 90) : undefined,
   };

@@ -39,14 +39,16 @@ REPLY = {
     "particle_density": 0,
     "particle_glow": False,
     "has_object": True,
-    "scale": "large",
+    "metres": 60,
     "count": "one",
     "habitat": "land",
     "motion": "still",
     "glow": False,
+    "palette": ["#8f8a80", "#a83232"],
     "parts": [
-        {"shape": "box", "x": 0, "y": 0.3, "z": 0, "width": 0.5, "height": 0.6, "depth": 0.5,
-         "rx": 0, "ry": 0, "rz": 0, "color": "#8f8a80"},
+        {"s": "box", "p": [0, 30, 0], "d": [50, 60, 50], "c": 0},
+        {"s": "cylinder", "p": [25, 35, 25], "d": [15, 70, 15], "c": 0, "t": 85, "m": "xz"},
+        {"s": "box", "p": [20, 62, 0], "d": [4, 5, 4], "c": 1, "r": [0, 45, 0], "n": 8},
     ],
 }
 
@@ -131,12 +133,27 @@ def test_reply_becomes_a_card_entry():
     assert card["atmosphere"]["particles"]["motion"] == "drift"
 
 
+def test_parts_are_written_shortly_and_stored_plainly():
+    prop = card_from_reply("CASTLE", REPLY, 10)["prop"]
+    assert prop["metres"] == 60 and prop["scale"] == "landmark"
+    keep, tower, merlon = prop["parts"]
+    assert keep == {"shape": "box", "at": [0, 0.3, 0], "size": [0.5, 0.6, 0.5], "rotate": [0, 0, 0], "color": "#8f8a80"}
+    assert tower["taper"] == 0.85 and tower["mirror"] == "xz" and "repeat" not in tower
+    assert merlon["repeat"] == 8 and merlon["rotate"] == [0, 45, 0] and merlon["color"] == "#a83232"
+    # Nonsense in a part is left for the page's gate to replace, never an error here.
+    odd = card_from_reply("X", {**REPLY, "metres": "big", "parts": [{"s": "box", "p": "no", "d": [1], "c": 9, "m": "y", "n": True}, 7]}, 1)["prop"]
+    assert odd["scale"] == "medium" and "metres" not in odd
+    assert odd["parts"] == [{"shape": "box", "at": [0, 0, 0], "size": [0.01, 0.2, 0.2], "rotate": [0, 0, 0], "color": ""}]
+
+
 def test_schema_is_strict_everywhere():
     def walk(node):
         if isinstance(node, dict):
             if node.get("type") == "object":
                 assert node["additionalProperties"] is False
-                assert set(node["required"]) == set(node["properties"])
+                # Everything is required except what a part may leave out to stay short.
+                optional = {"r", "t", "m", "n"} if "s" in node["properties"] else set()
+                assert set(node["required"]) == set(node["properties"]) - optional
             for value in node.values():
                 walk(value)
         elif isinstance(node, list):

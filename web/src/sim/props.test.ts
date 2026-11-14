@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cardDef, type CardDef } from '../cards/defs';
 import { settledCard, type LiveCard } from '../cards/store';
 import { cleanCard } from '../cards/words';
-import { placeProps } from './props';
+import { PROP_SIZE, placeProps, propSize } from './props';
 import { WorldSim, sampleField, type WorldFrame } from './world';
 
 const part = { shape: 'box', at: [0, 0.2, 0], size: [0.6, 0.4, 0.3], rotate: [0, 0, 0], color: '#7a4e2e' };
@@ -92,5 +92,14 @@ describe('where objects stand', () => {
     expect(placeProps(world([card]), [card]).every((o) => o.grow === 0.4)).toBe(true);
     const gone = { ...card, strength: 0 };
     expect(placeProps(world([gone]), [gone])).toEqual([]);
+  });
+  it('a real size in metres sets how big an object is drawn, in order and within bounds', () => {
+    const sized = (metres?: number) => propSize({ ...hut.prop!, scale: 'large', ...(metres === undefined ? {} : { metres }) });
+    expect(sized()).toBe(PROP_SIZE.large); // an older card: by its scale word
+    const sizes = [0.1, 0.5, 2.5, 9, 30, 60, 400].map(sized);
+    expect([...sizes].sort((a, b) => a - b)).toEqual(sizes);
+    expect(sizes[0]).toBe(0.02);
+    expect(sizes[6]).toBe(0.15);
+    expect(sizes[3]).toBeCloseTo(PROP_SIZE.medium, 2); // a house is still about a house
   });
 });

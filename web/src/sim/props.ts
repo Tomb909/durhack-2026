@@ -5,7 +5,7 @@
 // habitat. A boat finds water because its habitat is water, the way LIFE only grows
 // where it is warm and wet. Placement is seeded from the card's id and position, so
 // the same cards on the same world always put the same objects in the same places.
-import type { CardDef, Habitat } from '../cards/defs';
+import type { CardDef, Habitat, Prop } from '../cards/defs';
 import type { LiveCard } from '../cards/store';
 import { hashText, seeded } from '../cards/words';
 import { sampleField, type WorldFrame } from './world';
@@ -16,6 +16,16 @@ import { sampleField, type WorldFrame } from './world';
  * life, because they are seen small and from far away and have to read as what they are.
  */
 export const PROP_SIZE = { small: 0.028, medium: 0.05, large: 0.085, landmark: 0.14 } as const;
+/**
+ * The same edge from the real thing's size in metres. Small things are drawn much larger than
+ * life and huge ones smaller, or a cat would be a speck and a cathedral would cover the world:
+ * a cat (0.5 m) 0.021, a cow (2.5 m) 0.032, a house (8 m) 0.051, a lighthouse (30 m) 0.086,
+ * a castle (60 m) 0.113, and nothing past 0.15.
+ */
+export function propSize(prop: Prop): number {
+  if (prop.metres === undefined) return PROP_SIZE[prop.scale];
+  return Math.min(0.15, Math.max(0.02, 0.022 * prop.metres ** 0.4));
+}
 /** How many objects a card puts down. */
 const COUNT = { one: [1, 1], few: [3, 4], many: [7, 10] } as const;
 /** How far an object will move to find its habitat, as a fraction of the world's width. */
@@ -131,7 +141,7 @@ export function placeProps(frame: WorldFrame, cards: LiveCard[]): PlacedObject[]
   for (const card of order) {
     const prop = card.def.prop!;
     const random = seeded(seedFor(card));
-    const size = PROP_SIZE[prop.scale];
+    const size = propSize(prop);
     const [lo, hi] = COUNT[prop.count];
     let count = lo + Math.floor(random() * (hi - lo + 1));
     if (prop.scale === 'landmark') count = Math.min(count, 3); // a landmark is rare by nature
