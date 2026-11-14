@@ -9,11 +9,8 @@ web/src/cards/words.ts) before any reaches the world.
 With no credentials, no network or a refusal there is no card and the endpoint
 answers 503; the page then makes its own guess, so everything else still works.
 
-Two model providers, chosen when the server starts:
-  anthropic  Claude, through the `anthropic` SDK (ANTHROPIC_API_KEY or `ant auth login`)
-  gemini     Gemini, through the `google-genai` SDK (GEMINI_API_KEY)
-DECK_WORD_PROVIDER picks one by name. Left unset, a Gemini key in the environment
-means Gemini, and anything else means Claude.
+The model is Gemini, through the `google-genai` SDK and its Interactions API. It needs
+GEMINI_API_KEY: in the terminal, or in the keys file (see "keys" below).
 """
 
 from __future__ import annotations
@@ -30,14 +27,14 @@ from typing import Any, Callable
 
 from aiohttp import web
 
-DEFAULT_MODELS = {"anthropic": "claude-opus-5-5", "gemini": "gemini-4-hydrogen"}
+DEFAULT_MODEL = "gemini-4-hydrogen"
 
 # --- keys ----------------------------------------------------------------------------------
 #
 # One file in the home folder, outside every checkout, so the key is written once and found from
 # any terminal, worktree or session, and can never be committed. Lines are NAME=value.
 KEYS_FILE = Path(os.environ.get("DECK_KEYS_FILE") or Path.home() / ".config" / "deck-of-worlds" / "keys.env")
-_KEY_NAMES = re.compile(r"(GEMINI_API_KEY|GOOGLE_API_KEY|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|DECK_[A-Z0-9_]+)\Z")
+_KEY_NAMES = re.compile(r"(GEMINI_API_KEY|GOOGLE_API_KEY|DECK_[A-Z0-9_]+)\Z")
 
 
 def load_keys(path: Path = KEYS_FILE) -> list[str]:
@@ -66,16 +63,13 @@ def load_keys(path: Path = KEYS_FILE) -> list[str]:
 KEYS_FOUND = load_keys()
 
 
-def _provider() -> str:
-    named = os.environ.get("DECK_WORD_PROVIDER", "").strip().lower()
-    if named:
-        return named
-    return "gemini" if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") else "anthropic"
+def has_key() -> bool:
+    """True when a Gemini key is in the environment (the SDK reads either name)."""
+    return bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
 
 
-PROVIDER = _provider()
-MODEL = os.environ.get("DECK_WORD_MODEL") or DEFAULT_MODELS.get(PROVIDER, "")
-# How hard the model thinks: Claude's effort, Gemini's thinking level. Both take low, medium and high.
+MODEL = os.environ.get("DECK_WORD_MODEL") or DEFAULT_MODEL
+# How hard the model thinks (Gemini's thinking level): minimal, low, medium or high.
 EFFORT = os.environ.get("DECK_WORD_EFFORT", "low")
 TIMEOUT = 20.0  # seconds: past this the page has long since shown its own guess
 MAX_WORD = 40
@@ -382,17 +376,31 @@ def card_from_reply(word: str, data: dict[str, Any], ms: int) -> dict[str, Any]:
     return card
 
 
-def default_client(provider: str) -> Any:
-    """The provider's SDK client. Each finds its own credentials in the environment."""
-    if provider == "gemini":
-        from google import genai
+def default_client() -> Any:
+    """The Gemini SDK's client. It finds GEMINI_API_KEY in the environment itself."""
+    from google import genai
 
-        return genai.Client()  # GEMINI_API_KEY
-    if provider == "anthropic":
-        import anthropic
+    return genai.Client()
 
-        return anthropic.AsyncAnthropic(timeout=TIMEOUT, max_retries=0)  # ANTHROPIC_API_KEY or `ant auth login`
-    raise ValueError(f"unknown provider {provider!r}")
+
+def why_not(error: Exception) -> str:
+    """Plain words for whatever the SDK raised.
+
+    The SDK has more than one family of error classes (the Interactions API raises its own, not
+    `google.genai.errors`), so this goes by what the error carries: an HTTP status as
+    `status_code` or `code`, sometimes a status name, and a message.
+    """
+    status = getattr(error, "status_code", None) or getattr(error, "code", None)
+    name = str(getattr(error, "status", "") or "")
+    detail = " ".join(str(getattr(error, "message", "") or error).split())[:160]
+    if status in (401, 403) or name in ("UNAUTHENTICATED", "PERMISSION_DENIED") or "API key not valid" in detail:
+        return "the Gemini key was refused"
+    if status == 429 or name == "RESOURCE_EXHAUSTED":
+        return "the model is busy or over its quota (rate limited)"
+    if isinstance(status, int):
+        # Say what it said: a wrong model name or thinking level is the usual cause, and worth reading.
+        return f"the model answered with an error ({status}: {detail})"
+    return f"could not reach the model ({error.__class__.__name__})"
 
 
 class WordService:
@@ -405,12 +413,10 @@ class WordService:
         model: str | None = None,
         effort: str | None = None,
         timeout: float = TIMEOUT,
-        provider: str | None = None,
     ) -> None:
         self.store = store
-        self.provider = provider or PROVIDER
-        self.client_factory = client_factory or (lambda: default_client(self.provider))
-        self.model = model or (MODEL if self.provider == PROVIDER else DEFAULT_MODELS.get(self.provider, ""))
+        self.client_factory = client_factory or default_client
+        self.model = model or MODEL
         self.effort = effort or EFFORT
         self.timeout = timeout
         self._client: Any = None
@@ -420,57 +426,20 @@ class WordService:
     def describe(self) -> str:
         """One line for the server's start-up: who will read new words, and where the key came from."""
         from_file = f", {' and '.join(KEYS_FOUND)} from {KEYS_FILE}" if KEYS_FOUND else ""
-        return f"[words] new words are read by {self.provider} ({self.model}, {self.effort} effort){from_file}"
+        if not has_key():
+            return f"[words] no GEMINI_API_KEY: new words will be guessed in the page (put the key in {KEYS_FILE})"
+        return f"[words] new words are read by Gemini ({self.model}, {self.effort} thinking){from_file}"
 
     def _get_client(self) -> Any:
-        if self.provider not in DEFAULT_MODELS:
-            raise Unavailable(f"DECK_WORD_PROVIDER is {self.provider!r}; use anthropic or gemini")
         if self._client is None:
             try:
                 self._client = self.client_factory()
-            except Exception as error:  # the SDK found no way to authenticate
-                raise Unavailable(f"no credentials for {self.provider} ({error.__class__.__name__})") from error
+            except Exception as error:  # the SDK found no key
+                raise Unavailable(f"no Gemini key (set GEMINI_API_KEY, or put it in {KEYS_FILE})") from error
         return self._client
-
-    async def _call_anthropic(self, client: Any, word: str) -> str:
-        """Ask Claude. Returns the JSON text of its answer."""
-        import anthropic
-
-        try:
-            response = await client.beta.messages.create(
-                model=self.model,
-                max_tokens=16000,
-                system=PROMPT,
-                messages=[{"role": "user", "content": f"<word>{word}</word>"}],
-                output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": CARD_SCHEMA}},
-                # If a safety classifier declines, the API retries on its recommended model in the same call.
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-            )
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as error:
-            raise Unavailable("the model's credentials were refused") from error
-        except anthropic.RateLimitError as error:
-            raise Unavailable("the model is busy (rate limited)") from error
-        except anthropic.APIStatusError as error:
-            raise Unavailable(f"the model answered with an error ({error.status_code})") from error
-        except anthropic.APIConnectionError as error:
-            raise Unavailable("could not reach the model") from error
-        except (anthropic.CredentialsError, TypeError) as error:
-            # The SDK raises TypeError when it can resolve no way to authenticate.
-            if isinstance(error, anthropic.CredentialsError) or "authentication" in str(error).lower():
-                raise Unavailable("no credentials for the model") from error
-            raise
-        # Check why it stopped before reading anything: a refusal or a cut-off reply is no card.
-        if response.stop_reason == "refusal":
-            raise Unavailable("the model declined this word")
-        if response.stop_reason == "max_tokens":
-            raise Unavailable("the model's answer was cut off")
-        return next((block.text for block in response.content if block.type == "text"), None) or ""
 
     async def _call_gemini(self, client: Any, word: str) -> str:
         """Ask Gemini (the Interactions API). Returns the JSON text of its answer."""
-        from google.genai import errors
-
         try:
             interaction = await client.aio.interactions.create(
                 model=self.model,
@@ -481,17 +450,8 @@ class WordService:
                 store=False,  # a one-off question: nothing to keep on their side
                 timeout=self.timeout,
             )
-        except errors.APIError as error:
-            status = getattr(error, "status", None) or getattr(error, "code", None)
-            if status in (401, 403, "UNAUTHENTICATED", "PERMISSION_DENIED"):
-                raise Unavailable("the model's credentials were refused") from error
-            if status in (429, "RESOURCE_EXHAUSTED"):
-                raise Unavailable("the model is busy or over its quota (rate limited)") from error
-            # Say what it said: a wrong model name or thinking level is the usual cause, and worth reading.
-            detail = " ".join(str(getattr(error, "message", "") or error).split())[:160]
-            raise Unavailable(f"the model answered with an error ({status}: {detail})") from error
-        except Exception as error:  # the network: the SDK lets its HTTP library's errors through
-            raise Unavailable(f"could not reach the model ({error.__class__.__name__})") from error
+        except Exception as error:  # an answer with an error status, or no answer at all
+            raise Unavailable(why_not(error)) from error
         status = getattr(interaction, "status", "completed")
         if status != "completed":
             raise Unavailable(f"the model did not finish its answer ({status})")
@@ -501,9 +461,8 @@ class WordService:
         client = self._get_client()
         self.calls += 1
         started = time.monotonic()
-        call = self._call_gemini if self.provider == "gemini" else self._call_anthropic
         try:
-            text = await asyncio.wait_for(call(client, word), timeout=self.timeout)
+            text = await asyncio.wait_for(self._call_gemini(client, word), timeout=self.timeout)
         except asyncio.TimeoutError as error:
             raise Unavailable(f"no answer from the model in {self.timeout:.0f} s") from error
         ms = round((time.monotonic() - started) * 1000)

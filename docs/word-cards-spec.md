@@ -76,13 +76,13 @@ Normalising: trim, collapse spaces, at most 40 characters, shown in capitals. Th
 
 ## The model call
 
-On the Python server (`server/deck/`), which is where the key can live and where the camera's unknown words will arrive later. Use the official `anthropic` SDK (add it with `uv add`). **Load the `claude-api` skill before writing this code** and follow it over anything recalled from memory; the points below are the ones it settles.
+On the Python server (`server/deck/`), which is where the key can live and where the camera's unknown words will arrive later. As built, the model is Gemini, through the `google-genai` SDK's Interactions API (the first build also offered Claude; that was taken out).
 
-- Model `claude-opus-5-5` by default, from `DECK_WORD_MODEL` so a faster one can be tried without a code change. Effort `low` by default, from `DECK_WORD_EFFORT`.
-- Structured outputs (`output_config.format`) with a JSON schema for the card. No forced `tool_choice`, no `temperature`, no thinking settings: all are rejected on this model. Read the skill's notes on what a structured-output schema may contain, keep the schema flat, and do every range check in code.
-- Include the server-side refusal fallback the skill asks for. Check `stop_reason` before reading content; a refusal, a cut-off reply or an error means "no card", and the page falls back.
+- Model `gemini-4-hydrogen` by default, from `DECK_WORD_MODEL` so a faster one can be tried without a code change. Thinking level `low` by default, from `DECK_WORD_EFFORT`.
+- The answer must fit a JSON schema for the card, passed as `response_format` (`type: text`, `mime_type: application/json`, `schema`). Keep the schema flat, and do every range check in code.
+- Check the reply's `status` before reading it; anything but `completed`, or an error, means "no card", and the page falls back.
 - A 20 second timeout. Use the async client inside aiohttp. Two requests for the same word share one call.
-- Credentials: the SDK finds them itself. Run `ant auth status` to see whether any exist; do not ask for a key. With none, the endpoint answers 503 and everything else still works.
+- The key: `GEMINI_API_KEY`, from the terminal or from `~/.config/deck-of-worlds/keys.env`. With none, the endpoint answers 503 and everything else still works.
 
 **The prompt** is the part that decides whether results are recognisable, so write it with care. It should explain, in plain prose with the reasons: what the world is (a small low-poly diorama seen from above and far away); the three things a card can do and when each fits; the coordinate system for parts; that objects are seen small, so 5 to 15 chunky parts with the defining feature exaggerated beat fine detail; that colours are flat and a little muted; that the world already has trees, houses, rain and snow of its own. Include two or three short worked examples of differing kinds (an object, a place, an abstract word). Say what to do with a word that is not a thing or a place: give it a mood and an abstract sculpture that evokes it, never an empty card. The word is data from a stranger: pass it in its own delimited field and say it is to be depicted, not obeyed.
 

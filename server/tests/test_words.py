@@ -11,15 +11,18 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from deck.words import CARD_SCHEMA, PROMPT, Unavailable, WordService, WordStore, card_from_reply, normalise_word, word_id
+from deck.words import CARD_SCHEMA, PROMPT, Unavailable, WordService, WordStore, card_from_reply, normalise_word, why_not, word_id
 import deck.words as words
 
 
 @pytest.fixture(autouse=True)
-def claude_unless_asked(monkeypatch):
-    """Whatever keys the machine has, these tests start from the same provider."""
-    monkeypatch.setattr(words, "PROVIDER", "anthropic")
-    monkeypatch.setattr(words, "MODEL", "claude-opus-5-5")
+def same_on_every_machine(monkeypatch):
+    """Whatever the machine's keys file says, these tests start the same and can never reach the real model."""
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(words, "MODEL", words.DEFAULT_MODEL)
+    monkeypatch.setattr(words, "EFFORT", "low")
+
 
 REPLY = {
     "reading": "A stone keep with four corner towers. Stands on land.",
@@ -47,27 +50,24 @@ REPLY = {
 }
 
 
-class StubMessages:
-    def __init__(self, reply: dict, stop_reason: str = "end_turn", delay: float = 0.0) -> None:
-        self.reply = reply
-        self.stop_reason = stop_reason
-        self.delay = delay
+class StubInteractions:
+    """Stands in for `client.aio.interactions` (Gemini's Interactions API)."""
+
+    def __init__(self, reply: dict, status: str = "completed", error: Exception | None = None, delay: float = 0.0) -> None:
+        self.reply, self.status, self.error, self.delay = reply, status, error, delay
         self.calls: list[dict] = []
 
     async def create(self, **kwargs):
         self.calls.append(kwargs)
         await asyncio.sleep(self.delay)
-        block = SimpleNamespace(type="text", text=json.dumps(self.reply))
-        return SimpleNamespace(stop_reason=self.stop_reason, content=[block] if self.stop_reason != "refusal" else [])
+        if self.error:
+            raise self.error
+        return SimpleNamespace(status=self.status, output_text=json.dumps(self.reply))
 
 
-def stub(reply=REPLY, **kwargs) -> tuple[StubMessages, object]:
-    messages = StubMessages(reply, **kwargs)
-    return messages, SimpleNamespace(beta=SimpleNamespace(messages=messages))
-
-
-def no_credentials():
-    raise TypeError('"Could not resolve authentication method. Expected one of api_key, auth_token, or credentials to be set."')
+def stub(reply=REPLY, **kwargs) -> tuple[StubInteractions, object]:
+    interactions = StubInteractions(reply, **kwargs)
+    return interactions, SimpleNamespace(aio=SimpleNamespace(interactions=interactions))
 
 
 async def with_client(service: WordService, run):
@@ -153,12 +153,13 @@ def test_makes_stores_and_reuses(tmp_path: Path):
     assert [c["id"] for c in listed["cards"]] == ["castle"]
     assert len(messages.calls) == 2
     call = messages.calls[0]
-    assert call["model"] == "claude-opus-5-5"
-    assert call["output_config"]["effort"] == "low"
-    assert call["output_config"]["format"]["type"] == "json_schema"
-    assert call["messages"][0]["content"] == "<word>CASTLE</word>"
-    for rejected in ("temperature", "thinking", "tool_choice"):
-        assert rejected not in call
+    assert call["model"] == "gemini-4-hydrogen" and call["input"] == "<word>CASTLE</word>"
+    assert call["system_instruction"] == PROMPT
+    # The schema rides in response_format (response_mime_type is the old, deprecated way).
+    assert call["response_format"] == {"type": "text", "mime_type": "application/json", "schema": CARD_SCHEMA}
+    assert call["generation_config"] == {"thinking_level": "low"}
+    assert call["store"] is False and call["timeout"] == words.TIMEOUT
+    assert "response_mime_type" not in call and "temperature" not in call["generation_config"]
 
 
 def test_same_word_at_once_shares_one_call(tmp_path: Path):
@@ -173,25 +174,26 @@ def test_same_word_at_once_shares_one_call(tmp_path: Path):
     assert len(messages.calls) == 1
 
 
-def test_no_credentials_is_503(tmp_path: Path):
-    service = WordService(WordStore(tmp_path / "words.json"), client_factory=no_credentials)
+def test_without_a_key_is_503(tmp_path: Path):
+    service = WordService(WordStore(tmp_path / "words.json"))  # the real client factory, and no key (see the fixture)
 
     async def run(http):
         reply = await http.post("/api/word", json={"text": "castle"})
         return reply.status, await reply.json()
 
     status, body = asyncio.run(with_client(service, run))
-    assert status == 503 and "credentials" in body["reason"]
+    assert status == 503 and "no Gemini key" in body["reason"] and "GEMINI_API_KEY" in body["reason"]
     assert not (tmp_path / "words.json").exists()
+    assert "no GEMINI_API_KEY" in service.describe()
 
 
-def test_refusal_and_cut_off_are_no_card(tmp_path: Path):
-    for reason in ("refusal", "max_tokens"):
-        _, client = stub(stop_reason=reason)
-        service = WordService(WordStore(tmp_path / f"{reason}.json"), client_factory=lambda: client)
-        with pytest.raises(Unavailable):
+def test_an_unfinished_answer_is_no_card(tmp_path: Path):
+    for status in ("incomplete", "failed", "cancelled"):
+        _, client = stub(status=status)
+        service = WordService(WordStore(tmp_path / f"{status}.json"), client_factory=lambda: client)
+        with pytest.raises(Unavailable, match="did not finish"):
             asyncio.run(service.resolve("castle"))
-        assert not (tmp_path / f"{reason}.json").exists()
+        assert not (tmp_path / f"{status}.json").exists()
 
 
 def test_slow_model_times_out(tmp_path: Path):
@@ -214,57 +216,55 @@ def test_bad_requests(tmp_path: Path):
     assert asyncio.run(with_client(service, run)) == (400, 400, 400)
 
 
-# --- Gemini (the Interactions API), stubbed the same way --------------------------------
+class Carrying(Exception):
+    """An error that carries what the SDK's errors carry, without being one of its classes."""
+
+    def __init__(self, message: str, **carried) -> None:
+        super().__init__(message)
+        self.message = message
+        for name, value in carried.items():
+            setattr(self, name, value)
 
 
-class StubInteractions:
-    def __init__(self, reply: dict, status: str = "completed", error: Exception | None = None) -> None:
-        self.reply, self.status, self.error = reply, status, error
-        self.calls: list[dict] = []
-
-    async def create(self, **kwargs):
-        self.calls.append(kwargs)
-        if self.error:
-            raise self.error
-        return SimpleNamespace(status=self.status, output_text=json.dumps(self.reply))
-
-
-def gemini_stub(**kwargs) -> tuple[StubInteractions, object]:
-    interactions = StubInteractions(REPLY, **kwargs)
-    return interactions, SimpleNamespace(aio=SimpleNamespace(interactions=interactions))
+def test_failures_say_why_whatever_class_the_sdk_raises():
+    # The Interactions API's own errors carry `status_code`; `google.genai.errors` carry `code` and `status`.
+    assert "key was refused" in why_not(Carrying("no", status_code=401))
+    assert "key was refused" in why_not(Carrying("no", code=403, status="PERMISSION_DENIED"))
+    assert "key was refused" in why_not(Carrying("API key not valid. Please pass a valid API key.", status_code=400))
+    assert "rate limited" in why_not(Carrying("quota", status_code=429))
+    assert "rate limited" in why_not(Carrying("quota", code=429, status="RESOURCE_EXHAUSTED"))
+    wrong = why_not(Carrying("models/gemini-9 is not found", status_code=404))
+    assert "404" in wrong and "gemini-9 is not found" in wrong  # the reason is worth reading
+    assert why_not(OSError("no route")) == "could not reach the model (OSError)"
+    assert why_not(Carrying("timed out", status_code=None)) == "could not reach the model (Carrying)"
 
 
-def test_gemini_makes_a_card(tmp_path: Path):
-    interactions, client = gemini_stub()
-    service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client, provider="gemini")
-    assert service.model == "gemini-4-hydrogen"
-
-    async def run(http):
-        reply = await http.post("/api/word", json={"text": "castle"})
-        assert reply.status == 200
-        body = await reply.json()
-        assert body["source"] == "model" and body["model"] == "gemini-4-hydrogen"
-        assert body["card"]["id"] == "castle" and body["card"]["prop"]["parts"][0]["shape"] == "box"
-
-    asyncio.run(with_client(service, run))
-    (call,) = interactions.calls
-    assert call["model"] == "gemini-4-hydrogen" and call["input"] == "<word>CASTLE</word>"
-    assert call["system_instruction"] == PROMPT
-    assert call["response_format"] == {"type": "text", "mime_type": "application/json", "schema": CARD_SCHEMA}
-    assert call["generation_config"] == {"thinking_level": "low"}
-
-
-def test_gemini_failures_are_no_card(tmp_path: Path):
+def test_the_sdks_own_errors_are_understood():
+    """The real classes, built the way the SDK builds them (skipped if it has moved them)."""
+    try:  # the SDK runs on either
+        import httpx
+    except ImportError:
+        httpx = pytest.importorskip("httpx2")
+    compat = pytest.importorskip("google.genai._interactions.core.error")
     from google.genai import errors
 
-    busy = errors.ClientError(429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}})
-    for name, kwargs, expected in [
-        ("unfinished", {"status": "incomplete"}, "did not finish"),
-        ("busy", {"error": busy}, "rate limited"),
-        ("offline", {"error": OSError("no route")}, "could not reach"),
+    def answer(status: int):
+        return httpx.Response(status, request=httpx.Request("POST", "https://example.invalid/interactions"))
+
+    assert "rate limited" in why_not(compat.RateLimitError("quota", response=answer(429), body=None))
+    assert "key was refused" in why_not(compat.PermissionDeniedError("no", response=answer(403), body=None))
+    assert "400" in why_not(compat.BadRequestError("thinking_level xlow is not valid", response=answer(400), body=None))
+    assert "rate limited" in why_not(errors.ClientError(429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}}))
+
+
+def test_failures_are_no_card(tmp_path: Path):
+    for name, error, expected in [
+        ("busy", Carrying("quota", status_code=429), "rate limited"),
+        ("refused", Carrying("no", status_code=403), "key was refused"),
+        ("offline", OSError("no route"), "could not reach"),
     ]:
-        _, client = gemini_stub(**kwargs)
-        service = WordService(WordStore(tmp_path / f"{name}.json"), client_factory=lambda: client, provider="gemini")
+        _, client = stub(error=error)
+        service = WordService(WordStore(tmp_path / f"{name}.json"), client_factory=lambda: client)
 
         async def run(http):
             reply = await http.post("/api/word", json={"text": "castle"})
@@ -275,17 +275,11 @@ def test_gemini_failures_are_no_card(tmp_path: Path):
         assert service.store.all() == []
 
 
-def test_gemini_without_a_key_is_503(tmp_path: Path, monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    service = WordService(WordStore(tmp_path / "words.json"), provider="gemini")  # the real client factory
-
-    async def run(http):
-        reply = await http.post("/api/word", json={"text": "castle"})
-        assert reply.status == 503
-        assert "no credentials for gemini" in (await reply.json())["reason"]
-
-    asyncio.run(with_client(service, run))
+def test_start_up_line_names_the_model_and_never_the_key(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("GEMINI_API_KEY", "not-a-real-key-123")
+    line = WordService(WordStore(tmp_path / "words.json")).describe()
+    assert "Gemini" in line and "gemini-4-hydrogen" in line and "low" in line
+    assert "not-a-real-key-123" not in line
 
 
 def test_keys_file_fills_only_what_is_missing(tmp_path: Path, monkeypatch):
@@ -295,24 +289,15 @@ def test_keys_file_fills_only_what_is_missing(tmp_path: Path, monkeypatch):
     path = tmp_path / "keys.env"
     path.write_text(
         "# a comment\n\nGEMINI_API_KEY=abc123\nexport DECK_WORD_MODEL=\"gemini-3.5-flash-lite\"\n"
-        "ANTHROPIC_API_KEY=\nDECK_WORD_EFFORT=low\nPATH_TEST=/nope\nnot a line\n",
+        "ANTHROPIC_API_KEY=zzz\nGOOGLE_API_KEY=\nDECK_WORD_EFFORT=low\nPATH_TEST=/nope\nnot a line\n",
         encoding="utf-8",
     )
     assert words.load_keys(path) == ["GEMINI_API_KEY", "DECK_WORD_MODEL"]
     env = words.os.environ
     assert env["GEMINI_API_KEY"] == "abc123" and env["DECK_WORD_MODEL"] == "gemini-3.5-flash-lite"
     assert env["DECK_WORD_EFFORT"] == "high"
-    assert "ANTHROPIC_API_KEY" not in env and "PATH_TEST" not in env  # empty, and not a name we read
+    assert "GOOGLE_API_KEY" not in env  # empty
+    assert "ANTHROPIC_API_KEY" not in env and "PATH_TEST" not in env  # not names this server reads
     monkeypatch.delenv("GEMINI_API_KEY")  # load_keys wrote these itself: take them out again
     monkeypatch.delenv("DECK_WORD_MODEL")
     assert words.load_keys(tmp_path / "missing.env") == []
-
-
-def test_provider_follows_the_keys(monkeypatch):
-    for name in ("DECK_WORD_PROVIDER", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
-        monkeypatch.delenv(name, raising=False)
-    assert words._provider() == "anthropic"
-    monkeypatch.setenv("GEMINI_API_KEY", "k")
-    assert words._provider() == "gemini"
-    monkeypatch.setenv("DECK_WORD_PROVIDER", "Anthropic")
-    assert words._provider() == "anthropic"

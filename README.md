@@ -164,16 +164,9 @@ A prototype: type any word or phrase in the Combinations view and it becomes a w
 
 The same box is under the card tray on the world page (**Tab**): type a word there and its card joins the tray and lands on the table.
 
-For the model, start the server with a key in its environment, then `uv run deck`. Two providers work:
+For the model, the server needs a Gemini key (from <https://aistudio.google.com/apikey>). Put it in `~/.config/deck-of-worlds/keys.env` as `GEMINI_API_KEY=...`, then `uv run deck`. The file is read when the server starts, from any terminal, worktree or session; it lives outside the repository, so the key cannot be committed. One `NAME=value` per line; a value set in the terminal wins over the file. The server's first lines say which model will read new words, or that it found no key.
 
-| Provider | Key | Default model |
-|---|---|---|
-| Gemini | `GEMINI_API_KEY` (from <https://aistudio.google.com/apikey>) | `gemini-4-hydrogen` |
-| Claude | `ANTHROPIC_API_KEY`, or `ant auth login` | `claude-opus-5-5` |
-
-To set a key once for every terminal, worktree and session, put it in `~/.config/deck-of-worlds/keys.env` as `GEMINI_API_KEY=...` (one `NAME=value` per line; the same file takes `ANTHROPIC_API_KEY` and the `DECK_WORD_*` settings below). The server reads it when it starts and says so. It lives outside the repository, so it cannot be committed. A value set in the terminal wins over the file.
-
-A Gemini key in the environment means Gemini; otherwise Claude. `DECK_WORD_PROVIDER` (`gemini` or `anthropic`) picks one by name, `DECK_WORD_MODEL` names another model (`gemini-3.5-flash-lite` is the fastest Gemini), and `DECK_WORD_EFFORT` (default `low`; also `medium`, `high`) sets how hard it thinks, all without a code change. With no server, no credentials or no network the word still becomes a card at once: a guess, drawn with a dashed border, with **Try again**.
+The same file (or the terminal) takes two settings, neither needing a code change: `DECK_WORD_MODEL` names another model (default `gemini-4-hydrogen`; `gemini-3.5-flash-lite` is the fastest), and `DECK_WORD_EFFORT` sets how hard it thinks (default `low`; also `minimal`, `medium`, `high`). With no server, no key or no network the word still becomes a card at once: a guess, drawn with a dashed border, with **Try again**. When the model cannot be asked, the reason is shown and logged (the key was refused, over quota, a model name it does not know).
 
 **How it works.** A card is data, never code. A generated card is a `CardDef` like those in `cards.json`, and may do any mix of three things (all optional, see `web/src/cards/defs.ts`):
 
@@ -189,7 +182,7 @@ The **abstract fallback** runs in the page and knows nothing about meaning, so i
 
 Every card, from any source, passes through one gate, `cleanCard` in `web/src/cards/words.ts`: every number is clamped, every list limited, colours must be `#rrggbb`, unknown shapes and fields are dropped, and text loses its markup characters. The id comes from the word (`haunted house` → `haunted-house`; a word with no Latin letters gets `w-` and a hash), so a made card can never replace a built-in one. Where objects stand is worked out in `web/src/sim/props.ts` from the world and the cards alone: a boat floats on the nearest open water within reach, or sits beached at the card when there is none; land objects never stand in water; shore objects keep to the waterline; nothing stands outside the play area.
 
-The server side is `server/deck/words.py`: the prompt, the JSON schema for structured outputs, the store, and one shared call when two requests ask for the same word. `GET /api/words` lists the stored cards. A stored card has the shape of an entry in `cards.json`, so a good one can be promoted by pasting it there.
+The server side is `server/deck/words.py`: the prompt, the JSON schema the answer must fit, the call to Gemini (the `google-genai` SDK's Interactions API), the store, and one shared call when two requests ask for the same word. `GET /api/words` lists the stored cards. A stored card has the shape of an entry in `cards.json`, so a good one can be promoted by pasting it there.
 
 **Limits.** The camera does not make cards yet: an unknown handwritten word still shows "?". Objects are simple shapes and loop gently; nothing walks. Tint and light are one grade over the whole picture, so two cards with strong, different tints average out. The model is asked once per new word, so a new word takes as long as one call; a word seen before is instant.
 
