@@ -4,18 +4,41 @@ import { CardStore } from './cards/store';
 import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { WorldRenderer } from './render/scene';
-import { WorldSim } from './sim/world';
+import { SHAPE_PRESETS, WorldSim, shapesDiffer, type WorldShape } from './sim/world';
 import { Combinations } from './ui/combos';
 import { CardCheck, Guide } from './ui/overlays';
 import { TablePanel } from './ui/table';
 
 const canvas = document.getElementById('world') as HTMLCanvasElement;
 const store = new CardStore();
-const sim = new WorldSim();
+let sim = new WorldSim();
 const view = new WorldRenderer(canvas, document.getElementById('labels')!);
 const table = new TablePanel(document.getElementById('table-panel')!, store, canvas, (x, y) => view.pickTable(x, y));
 const link = new Link();
 const tablePanel = document.getElementById('table-panel') as HTMLElement;
+
+// --- play-area shape ----------------------------------------------------------------
+
+let shape: WorldShape = sim.shape;
+let pendingShape: WorldShape | null = null;
+let lastRebuild = -Infinity;
+const REBUILD_EVERY_MS = 1500;
+
+/** Ask for the world to take a new shape. Applied in the main loop, at most every 1.5 s. */
+function wantShape(next: WorldShape): void {
+  if (shapesDiffer(next, pendingShape ?? shape)) pendingShape = next;
+  else if (pendingShape && !shapesDiffer(next, shape)) pendingShape = null;
+}
+
+function applyShape(now: number): void {
+  if (!pendingShape || now - lastRebuild < REBUILD_EVERY_MS) return;
+  shape = pendingShape;
+  pendingShape = null;
+  lastRebuild = now;
+  sim = new WorldSim(shape);
+  view.setShape(shape);
+  table.setShape(shape);
+}
 
 // --- status, toast, connect panel -------------------------------------------------
 
@@ -83,6 +106,8 @@ link.onSnapshot = (snapshot) => {
       connectPanel.hidden = true;
       toast('Phone camera connected');
     }
+    // Keep the last shape when the border is hidden or the camera drops.
+    if (snapshot.playArea.shape) wantShape(snapshot.playArea.shape);
     store.setTracked(snapshot.cards);
     table.setCandidates(snapshot.candidates);
     if (snapshot.playArea.found) setStatus('live', `Camera · play area found · ${snapshot.cards.length} cards`);
@@ -182,6 +207,19 @@ window.addEventListener('keydown', (e) => {
       view.setQuality(qualities[quality]);
       toast(`Quality ${qualities[quality]}× · ${view.gpuName}`);
       break;
+    case 's': {
+      if (cameraLive) {
+        toast('The camera sets the shape: draw a different border');
+        break;
+      }
+      const names = Object.keys(SHAPE_PRESETS) as (keyof typeof SHAPE_PRESETS)[];
+      const current = names.findIndex((name) => !shapesDiffer(SHAPE_PRESETS[name], pendingShape ?? shape));
+      const name = names[(current + 1) % names.length];
+      wantShape(SHAPE_PRESETS[name]);
+      lastRebuild = -Infinity;
+      toast(`Play area: ${name}`);
+      break;
+    }
     case 'x':
       store.clearSim();
       break;
@@ -214,6 +252,7 @@ let last = performance.now();
 function tick(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  applyShape(now);
   store.update(dt);
   const frame = store.instant && store.moving ? sim.settleNow(store.cards) : sim.step(store.cards, store.moving, dt);
   table.update();
@@ -234,4 +273,10 @@ async function shot(): Promise<string> {
 }
 
 // Handy when poking around in the browser console.
-Object.assign(window, { deck: { store, sim, view, link, shot, set: setCards } });
+Object.assign(window, {
+  deck: {
+    store, view, link, shot, set: setCards,
+    get sim() { return sim; },
+    get shape() { return shape; },
+  },
+});

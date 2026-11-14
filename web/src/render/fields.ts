@@ -26,12 +26,18 @@ export class FieldTextures {
     this.b = make(this.dataB);
   }
 
+  dispose(): void {
+    this.a.dispose();
+    this.b.dispose();
+  }
+
   update(frame: WorldFrame): void {
     if (frame.version === this.version) return;
+    if (frame.w * frame.h * 4 !== this.dataA.length) return; // a frame from before a shape change
     this.version = frame.version;
     const n = frame.w * frame.h;
     const { dataA, dataB } = this;
-    const { height, temperature, wetness, vegetation, waterSurface, river, precipitation } = frame;
+    const { height, temperature, wetness, vegetation, waterSurface, river, precipitation, mask } = frame;
     for (let i = 0, o = 0; i < n; i++, o += 4) {
       dataA[o] = height[i];
       dataA[o + 1] = temperature[i];
@@ -40,6 +46,8 @@ export class FieldTextures {
       dataB[o] = waterSurface[i];
       dataB[o + 1] = river[i];
       dataB[o + 2] = precipitation[i];
+      // Inside mask: 0.5 exactly on the outline, so filtering gives a smooth edge.
+      dataB[o + 3] = Math.min(1, Math.max(0, 0.5 + mask[i]));
     }
     this.a.needsUpdate = true;
     this.b.needsUpdate = true;

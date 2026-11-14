@@ -184,8 +184,9 @@
     const W = rect.width, H = rect.height;
     if (s.corners) {
       g.lineWidth = 4; g.strokeStyle = s.found ? '#22c55e' : '#f59e0b'; g.lineJoin = 'round';
+      // The play area's own shape (circle, blob...) when it is not four-sided.
       g.beginPath();
-      s.corners.forEach(([x, y], i) => i ? g.lineTo(x * W, y * H) : g.moveTo(x * W, y * H));
+      (s.outline || s.corners).forEach(([x, y], i) => i ? g.lineTo(x * W, y * H) : g.moveTo(x * W, y * H));
       g.closePath(); g.stroke();
       // Mark the near edge (far-left, far-right, near-right, near-left order).
       const [nr, nl] = [s.corners[2], s.corners[3]];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cardDef } from '../cards/defs';
 import type { LiveCard } from '../cards/store';
-import { GH, GW, RULES, WorldSim, sampleField, type WorldFrame } from './world';
+import { RULES, WorldSim, gridHeight, sampleField, type WorldFrame, type WorldShape } from './world';
 
 let n = 0;
 function card(id: string, x: number, y: number, strength = 1): LiveCard {
@@ -15,13 +15,14 @@ function settle(cards: LiveCard[]): WorldFrame {
 
 /** Copy the numbers we compare, since each sim owns its arrays. */
 function at(frame: WorldFrame, field: Float32Array, x: number, y: number): number {
-  return sampleField(field, x, y);
+  return sampleField(field, frame.w, frame.h, x, y);
 }
 
 const fractionWhere = (frame: WorldFrame, test: (i: number) => boolean) => {
   let count = 0;
-  for (let i = 0; i < GW * GH; i++) if (test(i)) count++;
-  return count / (GW * GH);
+  const n = frame.w * frame.h;
+  for (let i = 0; i < n; i++) if (test(i)) count++;
+  return count / n;
 };
 const flooded = (f: WorldFrame) => fractionWhere(f, (i) => f.height[i] < f.seaLevel);
 
@@ -135,5 +136,50 @@ describe('smoothness', () => {
     expect(lift(half)).toBeGreaterThan(lift(full) * 0.35);
     expect(lift(half)).toBeLessThan(lift(full) * 0.65);
     expect(lift(none)).toBeCloseTo(0, 5);
+  });
+});
+
+const CIRCLE: WorldShape = {
+  aspect: 1,
+  outline: Array.from({ length: 72 }, (_, k) => {
+    const a = (k / 72) * Math.PI * 2;
+    return [0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a)];
+  }),
+};
+
+describe('shape', () => {
+  it('defaults to the A3 rectangle with every cell inside', () => {
+    const sim = new WorldSim();
+    expect([sim.frame.w, sim.frame.h]).toEqual([192, 136]);
+    expect(gridHeight(420 / 297)).toBe(136);
+    expect(Math.min(...sim.frame.mask)).toBeGreaterThan(-0.01);
+  });
+
+  it('a circle world is square, with the corners outside', () => {
+    const f = new WorldSim(CIRCLE).frame;
+    expect([f.w, f.h]).toEqual([192, 192]);
+    expect(at(f, f.mask, 0.5, 0.5)).toBeGreaterThan(90);
+    expect(at(f, f.mask, 0.02, 0.02)).toBeLessThan(0);
+  });
+
+  it('nothing grows or rains outside the circle', () => {
+    const cards = [0.08, 0.5, 0.92].flatMap((x) => [0.08, 0.5, 0.92].map((y) => card('life', x, y)));
+    cards.push(card('water', 0.08, 0.08), card('water', 0.5, 0.5));
+    const f = new WorldSim(CIRCLE).settleNow(cards);
+    const outside = (i: number) => f.mask[i] < -0.5;
+    expect(fractionWhere(f, (i) => outside(i) && (f.vegetation[i] > 0 || f.precipitation[i] > 0 || f.river[i] > 0))).toBe(0);
+    expect(fractionWhere(f, (i) => !outside(i) && f.vegetation[i] > 0.1)).toBeGreaterThan(0.01);
+  });
+
+  it('rivers drain off the edge of the circle', () => {
+    const cards = [0.35, 0.45, 0.55].flatMap((x) => [card('water', x, 0.4), card('mountain', x, 0.3)]);
+    const f = new WorldSim(CIRCLE).settleNow(cards);
+    expect(fractionWhere(f, (i) => f.river[i] > 0.5)).toBeGreaterThan(0.002);
+    // Some river reaches the rim (or the sea) instead of stopping inside.
+    const atRim = fractionWhere(f, (i) => f.river[i] > 0.3 && f.mask[i] >= 0 && f.mask[i] < 2);
+    const intoSea = fractionWhere(f, (i) => f.river[i] > 0.3 && f.height[i] < f.seaLevel + 0.01);
+    expect(atRim + intoSea).toBeGreaterThan(0);
+    // Outside the circle the land stays dry.
+    expect(fractionWhere(f, (i) => f.mask[i] < -0.5 && f.waterSurface[i] > f.height[i])).toBe(0);
   });
 });

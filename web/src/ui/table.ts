@@ -4,6 +4,7 @@
 import { CARD_DEFS } from '../cards/defs';
 import type { CardStore, LiveCard } from '../cards/store';
 import type { Candidate } from '../net/link';
+import { DEFAULT_SHAPE, type WorldShape } from '../sim/world';
 
 type Point = { x: number; y: number };
 
@@ -18,6 +19,8 @@ export class TablePanel {
   private chips = new Map<string, HTMLElement>();
   private maybes: HTMLElement[] = [];
   private drag: Drag | null = null;
+  private aspect = DEFAULT_SHAPE.aspect;
+  private border: SVGSVGElement;
 
   constructor(
     root: HTMLElement,
@@ -26,6 +29,12 @@ export class TablePanel {
     private pickWorld: (clientX: number, clientY: number) => Point | null,
   ) {
     this.table = root.querySelector('#table') as HTMLElement;
+    this.border = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    this.border.classList.add('border');
+    this.border.setAttribute('viewBox', '0 0 1 1');
+    this.border.setAttribute('preserveAspectRatio', 'none');
+    this.table.prepend(this.border);
+    this.setShape(DEFAULT_SHAPE);
     const tray = root.querySelector('#tray') as HTMLElement;
     for (const def of CARD_DEFS) {
       const el = document.createElement('div');
@@ -51,7 +60,7 @@ export class TablePanel {
       let bestDistance = 0.07;
       for (const card of this.store.cards) {
         if (card.source !== 'sim' || !card.present) continue;
-        const d = Math.hypot(card.tx - at.x, (card.ty - at.y) / 1.414);
+        const d = Math.hypot(card.tx - at.x, (card.ty - at.y) / this.aspect);
         if (d < bestDistance) {
           best = card;
           bestDistance = d;
@@ -62,6 +71,14 @@ export class TablePanel {
     window.addEventListener('pointermove', (e) => this.move(e));
     window.addEventListener('pointerup', (e) => this.drop(e));
     window.addEventListener('pointercancel', (e) => this.drop(e));
+  }
+
+  /** Match the map to the play area's proportions and outline. */
+  setShape(shape: WorldShape): void {
+    this.aspect = shape.aspect;
+    this.table.style.aspectRatio = String(shape.aspect);
+    const points = shape.outline.map(([x, y]) => `${x.toFixed(4)},${y.toFixed(4)}`).join(' ');
+    this.border.innerHTML = `<polygon points="${points}" vector-effect="non-scaling-stroke"/>`;
   }
 
   /** Table position under the pointer: on the map, or on the 3D world. */

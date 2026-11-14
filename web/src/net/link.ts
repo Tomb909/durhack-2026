@@ -11,7 +11,7 @@ export interface Candidate {
 
 export interface Snapshot {
   camera: { connected: boolean; fps: number; processMs: number };
-  playArea: { found: boolean; locked: boolean; flip: boolean };
+  playArea: { found: boolean; locked: boolean; flip: boolean; shape?: { aspect: number; outline: number[][] } | null };
   cards: TrackedCard[];
   candidates: Candidate[];
   phoneUrls: string[];

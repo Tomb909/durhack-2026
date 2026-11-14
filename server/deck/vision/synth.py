@@ -52,17 +52,61 @@ def _scrap_image(scrap: Scrap) -> tuple[np.ndarray, np.ndarray]:
     return canvas, mask
 
 
-def render_sheet(scraps: list[Scrap]) -> np.ndarray:
+def border_line(border: str) -> np.ndarray | None:
+    """Centre line of a non-rectangular border, sheet pixels (None for the rectangle).
+
+    "circle": as wide as the sheet allows. "blob": an irregular, wider-than-tall
+    shape with bulges and dents.
+    """
+    if border == "rect":
+        return None
+    s = SHEET_PX_PER_MM
+    w, h = 420 * s, 297 * s
+    reach = PAPER_MARGIN_MM * s + BORDER_MM * s / 2  # keep the line this far from the sheet edge
+    theta = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+    if border == "circle":
+        r = h / 2 - reach
+        x, y = r * np.cos(theta), r * np.sin(theta)
+    elif border == "blob":
+        r = 1 + 0.16 * np.sin(3 * theta + 0.4) + 0.08 * np.cos(5 * theta)
+        x, y = r * np.cos(theta), r * np.sin(theta)
+        x *= (w / 2 - reach) / np.abs(x).max()
+        y *= (h / 2 - reach) / np.abs(y).max()
+    else:
+        raise ValueError(f"unknown border {border!r}")
+    return np.column_stack((x + w / 2, y + h / 2)).astype(np.float32)
+
+
+def inner_box(border: str = "rect") -> tuple[float, float, float, float]:
+    """The play area's bounding box on the sheet (x, y, w, h in sheet pixels): scrap positions are fractions of it."""
+    s = SHEET_PX_PER_MM
+    w, h = int(420 * s), int(297 * s)
+    m0, b = int(PAPER_MARGIN_MM * s), int(BORDER_MM * s)
+    line = border_line(border)
+    if line is None:
+        return m0 + b, m0 + b, w - 2 * (m0 + b), h - 2 * (m0 + b)
+    hole = np.zeros((h, w), np.uint8)
+    pts = np.round(line).astype(np.int32)
+    cv2.fillPoly(hole, [pts], 255)
+    cv2.polylines(hole, [pts], True, 0, b, cv2.LINE_AA)
+    ys, xs = np.nonzero(hole > 127)
+    return float(xs.min()), float(ys.min()), float(xs.max() - xs.min()), float(ys.max() - ys.min())
+
+
+def render_sheet(scraps: list[Scrap], border: str = "rect") -> np.ndarray:
     """Top-down image of the A3 sheet with its border and scraps."""
     s = SHEET_PX_PER_MM
     w, h = int(420 * s), int(297 * s)
     sheet = np.full((h, w, 3), 238, np.uint8)
     m0 = int(PAPER_MARGIN_MM * s)
     b = int(BORDER_MM * s)
-    cv2.rectangle(sheet, (m0, m0), (w - m0, h - m0), (20, 20, 20), -1)
-    cv2.rectangle(sheet, (m0 + b, m0 + b), (w - m0 - b, h - m0 - b), (238, 238, 238), -1)
-    inner_x, inner_y = m0 + b, m0 + b
-    inner_w, inner_h = w - 2 * (m0 + b), h - 2 * (m0 + b)
+    line = border_line(border)
+    if line is None:
+        cv2.rectangle(sheet, (m0, m0), (w - m0, h - m0), (20, 20, 20), -1)
+        cv2.rectangle(sheet, (m0 + b, m0 + b), (w - m0 - b, h - m0 - b), (238, 238, 238), -1)
+    else:
+        cv2.polylines(sheet, [np.round(line).astype(np.int32)], True, (20, 20, 20), b, cv2.LINE_AA)
+    inner_x, inner_y, inner_w, inner_h = inner_box(border)
     for scrap in scraps:
         img, mask = _scrap_image(scrap)
         cx = inner_x + scrap.x * inner_w
@@ -87,17 +131,18 @@ def render_frame(
     hand: tuple[float, float] | None = None,
     seed: int = 0,
     shadow: float | None = None,
+    border: str = "rect",
 ) -> np.ndarray:
     """A camera frame: the sheet on a wooden table, seen at a slight angle.
 
     `tilt` narrows the far edge (perspective). `shift` moves the sheet in the
     frame (a nudged phone). `shadow` dims the left half of the picture to that
     fraction of its brightness, with a soft edge (the phone's own shadow). `hand` puts an arm reaching to that play-area
-    position (0..1, 0..1).
+    position (0..1, 0..1). `border` is the drawn play area: "rect", "circle" or "blob".
     """
     rng = np.random.default_rng(seed)
     fw, fh = size
-    sheet = render_sheet(scraps)
+    sheet = render_sheet(scraps, border)
     sh, sw = sheet.shape[:2]
     frame = np.empty((fh, fw, 3), np.uint8)
     frame[:] = (70, 105, 140)  # BGR wood
@@ -120,9 +165,8 @@ def render_frame(
     frame[mask > 127] = warped[mask > 127]
 
     if hand is not None:
-        s = SHEET_PX_PER_MM
-        inner0 = (PAPER_MARGIN_MM + BORDER_MM) * s
-        tip_sheet = np.array([[[inner0 + hand[0] * PLAY_W_MM * s, inner0 + hand[1] * PLAY_H_MM * s]]], dtype=np.float32)
+        ix, iy, iw, ih = inner_box(border)
+        tip_sheet = np.array([[[ix + hand[0] * iw, iy + hand[1] * ih]]], dtype=np.float32)
         tip = cv2.perspectiveTransform(tip_sheet, m).reshape(2)
         base = np.array([tip[0] + 0.1 * fw, fh + 40.0])
         cv2.line(frame, tuple(int(v) for v in base), tuple(int(v) for v in tip), (40, 40, 45), 150)  # sleeve

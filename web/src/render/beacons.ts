@@ -7,8 +7,8 @@
 // would collide on screen are stacked instead.
 import * as THREE from 'three';
 import type { LiveCard } from '../cards/store';
-import { ASPECT, sampleField, type WorldFrame } from '../sim/world';
-import { HSCALE, WORLD_D, WORLD_W } from './common';
+import { sampleField, type WorldFrame } from '../sim/world';
+import { HSCALE, world } from './common';
 
 const LABEL_HEIGHT = 3.5; // scene units above the base of the world
 const GROUP_RADIUS = 0.14; // copies closer than this (fraction of the world's width) share a label
@@ -69,11 +69,11 @@ export class Beacons {
         mark = this.makeMark(card);
         this.marks.set(card.key, mark);
       }
-      const g = Math.max(sampleField(frame.height, card.x, card.y), sampleField(frame.waterSurface, card.x, card.y)) * HSCALE;
+      const g = Math.max(sampleField(frame.height, frame.w, frame.h, card.x, card.y), sampleField(frame.waterSurface, frame.w, frame.h, card.x, card.y)) * HSCALE;
       ground.set(card, g);
       const top = Math.max(LABEL_HEIGHT, g + 1.3);
-      const x = (card.x - 0.5) * WORLD_W;
-      const z = (card.y - 0.5) * WORLD_D;
+      const x = (card.x - 0.5) * world.w;
+      const z = (card.y - 0.5) * world.d;
       mark.beam.position.set(x, g, z);
       mark.beam.scale.set(1, Math.max(0.01, top - g), 1);
       const pulse = 1 + 0.12 * Math.sin(time * 2.2 + card.y * 7);
@@ -98,7 +98,7 @@ export class Beacons {
       let home: LiveCard[] | undefined;
       for (const group of groups) {
         if (group[0].def !== card.def) continue;
-        if (group.some((other) => Math.hypot(other.x - card.x, (other.y - card.y) / ASPECT) < GROUP_RADIUS)) {
+        if (group.some((other) => Math.hypot(other.x - card.x, (other.y - card.y) / world.aspect) < GROUP_RADIUS)) {
           if (home) {
             home.push(...group); // this card links two groups: merge them
             group.length = 0;
@@ -158,7 +158,7 @@ export class Beacons {
         label.height = label.el.offsetHeight;
       }
 
-      this.point.set((x - 0.5) * WORLD_W, top, (y - 0.5) * WORLD_D).project(camera);
+      this.point.set((x - 0.5) * world.w, top, (y - 0.5) * world.d).project(camera);
       label.x = (this.point.x * 0.5 + 0.5) * width;
       label.y = (-this.point.y * 0.5 + 0.5) * height;
 
