@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CameraRig, DEFAULT_ELEVATION } from './camera';
+import { CameraRig, DEFAULT_ELEVATION, moveWithKeys } from './camera';
 
 /** Run the rig for a while so its easing has finished. */
 function settle(rig: CameraRig, sway = 0, from = 0) {
@@ -61,5 +61,36 @@ describe('the camera rig', () => {
     const first = rig.step(0, 100);
     expect(Math.abs(first.azimuth)).toBeLessThanOrEqual(Math.PI);
     expect(settle(rig, 0, 100)).toEqual({ azimuth: 0, elevation: DEFAULT_ELEVATION, zoom: 1, panX: 0, panZ: 0 });
+  });
+});
+
+describe('walking the view with W A S D', () => {
+  const walk = (keys: string, fast = false, seconds = 1, turn = 0) => {
+    const rig = new CameraRig();
+    rig.frameInfo(50, 50, 0.01); // a world big enough not to hit its edge
+    if (turn) rig.orbit(-turn / 0.0045, 0);
+    for (let i = 0; i < seconds * 60; i++) moveWithKeys(rig, new Set(keys), fast, 1 / 60);
+    return settle(rig);
+  };
+  it('goes away with W, back with S, left with A, right with D', () => {
+    expect(walk('w').panZ).toBeLessThan(-1); // away from the usual view is the far side
+    expect(walk('s').panZ).toBeGreaterThan(1);
+    expect(walk('a').panX).toBeLessThan(-1);
+    expect(walk('d').panX).toBeGreaterThan(1);
+    expect(walk('w').panX).toBeCloseTo(0);
+  });
+  it('follows the way the view is turned', () => {
+    const turned = walk('w', false, 1, Math.PI / 2); // looking from the right: "away" is now to the left
+    expect(turned.panX).toBeLessThan(-1);
+    expect(turned.panZ).toBeCloseTo(0, 1);
+  });
+  it('is faster with Shift, no faster on a diagonal, and still without keys', () => {
+    const plain = walk('d').panX;
+    expect(walk('d', true).panX).toBeGreaterThan(plain * 2);
+    const diagonal = walk('wd');
+    expect(Math.abs(diagonal.panX)).toBeLessThan(plain);
+    expect(walk('wd').panX).toBeCloseTo(walk('wd', false, 2).panX / 2, 1); // same speed whatever the frame count
+    expect(walk('')).toEqual({ azimuth: 0, elevation: DEFAULT_ELEVATION, zoom: 1, panX: 0, panZ: 0 });
+    expect(walk('ws').panZ).toBe(0); // opposite keys cancel
   });
 });

@@ -5,7 +5,7 @@
 //
 //   turn   drag · two-finger scroll · arrow keys · one finger
 //   zoom   pinch · mouse wheel · ⌘/Ctrl + scroll · + and −     (toward the pointer)
-//   move   right-drag · Shift + drag · Shift + scroll · middle-drag · two fingers
+//   move   W A S D (Shift to go faster) · right-drag · Shift + drag · Shift + scroll · middle-drag · two fingers
 //   reset  double-click · 0 · the "Reset view" button           (the sway comes back)
 //
 // Every move eases, so nothing snaps. The rig is plain numbers and knows
@@ -88,6 +88,14 @@ export class CameraRig {
     this.goal.panZ = clamp(this.goal.panZ - rz * dx * u + fz * away, -this.limitZ, this.limitZ);
   }
 
+  /** Walk the looked-at point across the ground, in scene units: to the view's right, and away from the camera. */
+  walk(right: number, away: number): void {
+    this.grab();
+    const { azimuth } = this.goal;
+    this.goal.panX = clamp(this.goal.panX + Math.cos(azimuth) * right - Math.sin(azimuth) * away, -this.limitX, this.limitX);
+    this.goal.panZ = clamp(this.goal.panZ - Math.sin(azimuth) * right - Math.cos(azimuth) * away, -this.limitZ, this.limitZ);
+  }
+
   /**
    * Zoom by a factor (above 1 = closer). With `toward` (a point on the ground,
    * relative to the middle of the world) that point stays under the pointer.
@@ -146,6 +154,26 @@ export class CameraRig {
   get target(): Readonly<CameraPose> {
     return this.goal;
   }
+}
+
+// --- walking the view with W A S D ------------------------------------------------------
+
+export const MOVE_KEYS = ['w', 'a', 's', 'd'] as const;
+const WALK = 3.2; // scene units a second at the usual zoom (the world is 10 wide): about three seconds to cross
+const RUN = 9; // with Shift held
+
+/**
+ * Move the view for the keys held down: W away, S toward you, A left, D right,
+ * faster with Shift. Call every frame; the speed is the same at any frame rate,
+ * and slower when zoomed in, so it always feels the same on screen.
+ */
+export function moveWithKeys(rig: CameraRig, held: ReadonlySet<string>, fast: boolean, dt: number): void {
+  const right = (held.has('d') ? 1 : 0) - (held.has('a') ? 1 : 0);
+  const away = (held.has('w') ? 1 : 0) - (held.has('s') ? 1 : 0);
+  if (!right && !away) return;
+  // Diagonals are no faster than straight lines.
+  const step = ((fast ? RUN : WALK) * dt) / (Math.hypot(right, away) * rig.target.zoom);
+  rig.walk(right * step, away * step);
 }
 
 // --- listening to the mouse, trackpad, fingers ---------------------------------------
