@@ -1,6 +1,8 @@
 // Deck of Worlds: cards in, world out.
 //   cards (camera + simulated)  ->  CardStore (smoothing)  ->  WorldSim (rules)  ->  WorldRenderer (picture)
+import { onCardsChanged } from './cards/defs';
 import { CardStore } from './cards/store';
+import { loadStoredCards } from './cards/words';
 import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { bindCameraInput, MOVE_KEYS, moveWithKeys } from './render/camera';
@@ -168,12 +170,18 @@ function setCards(code: string, layout: Layout = 'cluster'): string {
 }
 // Asking for either is developing: bring out the card tray (normally behind Tab).
 if (params.has('cards') || params.has('instant')) tablePanel.hidden = false;
+// Cards made from typed words: kept in this browser and on the server. Loaded before the
+// address is read, so ?cards= can name them too.
+const stored = loadStoredCards().catch(() => 0);
+onCardsChanged(() => store.refreshDefs());
 if (params.has('cards')) {
-  try {
-    setCards(params.get('cards')!, params.get('layout') === 'spread' ? 'spread' : 'cluster');
-  } catch (error) {
-    toast(`Cards in the address: ${(error as Error).message}`, 8);
-  }
+  void stored.then(() => {
+    try {
+      setCards(params.get('cards')!, params.get('layout') === 'spread' ? 'spread' : 'cluster');
+    } catch (error) {
+      toast(`Cards in the address: ${(error as Error).message}`, 8);
+    }
+  });
 }
 
 // --- every combination, side by side (the button, V, or ?combos in the address) -----

@@ -1,10 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { CARD_DEFS } from '../cards/defs';
+import { BUILT_IN_IDS, CARD_DEFS, registerCard } from '../cards/defs';
 import { CardStore } from '../cards/store';
+import { cleanCard } from '../cards/words';
 import { WorldSim } from '../sim/world';
 import { nameOf, parseCode, resolveScenarios, tidyCode } from './codes';
-import { combinations, defaultFilter } from './filter';
+import { combinations, countCombinations, defaultFilter } from './filter';
 import { liveCards, measure } from './metrics';
+
+// Two cards made from typed words, as the model might describe them: one that pushes on the
+// world (both ways), changes the air and stands objects on the shore; one that is only an object.
+const MUD = cleanCard({
+  word: 'mud', origin: 'llm', icon: '🟤', color: '#6b4f33', reading: 'Wet, dead, sunken ground with reeds.',
+  effects: [
+    { field: 'wetness', amount: 0.45, radius: 0.16 }, { field: 'life', amount: -0.8, radius: 0.18 },
+    { field: 'height', amount: -0.05, radius: 0.12 }, { field: 'temperature', amount: -0.1, radius: 0.2 },
+  ],
+  atmosphere: { tint: '#6b5a40', strength: 0.3, light: -0.2, particles: { motion: 'drift', color: '#b8a888', size: 0.8, density: 0.5, glow: false } },
+  prop: { parts: [{ shape: 'cylinder', at: [0, 0.3, 0], size: [0.05, 0.6, 0.05], rotate: [0, 0, 5], color: '#6f7a3a' }], scale: 'small', count: 'many', habitat: 'shore', motion: 'sway', glow: false },
+})!;
+const HAUNTED = cleanCard({
+  word: 'haunted house', origin: 'llm', icon: '👻', color: '#4c4652', reading: 'A dark house.',
+  prop: { parts: [{ shape: 'box', at: [0, 0.25, 0], size: [0.7, 0.5, 0.45], rotate: [0, 0, 0], color: '#4c4652' }], scale: 'medium', count: 'one', habitat: 'land', motion: 'still', glow: false },
+})!;
+registerCard(MUD);
+registerCard(HAUNTED);
+/** Worlds with made cards in, for the "depends on the cards alone" checks below. */
+const MADE_CODES = ['mud', 'mud*3', 'mud+water*3', 'mud+life+water', 'mud+mountain+sun', 'haunted-house+water', 'mud+haunted-house+people+life+water'];
 
 describe('combination codes', () => {
   it('reads cards, copies and positions', () => {
@@ -20,6 +41,17 @@ describe('combination codes', () => {
     expect(() => parseCode('l')).toThrow(/could be life or lava/);
     expect(() => parseCode('fog')).toThrow(/no card called/);
   });
+  it('reads cards made from words by their full id, and the shorthand still means only built-in cards', () => {
+    // MUD exists, yet `m` is still MOUNTAIN, and `h` is not HAUNTED HOUSE.
+    expect(parseCode('m+w').map((c) => c.id)).toEqual(['mountain', 'water']);
+    expect(parseCode('mud+haunted-house*2').map((c) => c.id)).toEqual(['mud', 'haunted-house', 'haunted-house']);
+    expect(() => parseCode('haunted')).toThrow(/no card called/);
+    expect(tidyCode('Mud_water x3')).toBe('mud+water*3');
+  });
+  it('keeps the ready-made sets to built-in cards; made cards have their own', () => {
+    expect(resolveScenarios({ set: 'subsets' }).every((s) => s.cards.every((c) => BUILT_IN_IDS.has(c.id)))).toBe(true);
+    expect(resolveScenarios({ set: 'words' }).map((s) => s.code)).toEqual(['mud', 'haunted-house']);
+  });
   it('puts copies side by side, never on top of each other', () => {
     const cards = parseCode('water*3+life');
     expect(new Set(cards.map((c) => `${c.x},${c.y}`)).size).toBe(4);
@@ -31,7 +63,8 @@ describe('combination codes', () => {
   });
   it('lists every combination of cards exactly once', () => {
     const subsets = resolveScenarios({ set: 'subsets' });
-    expect(subsets.length).toBe(2 ** CARD_DEFS.filter((d) => !d.modifier && !d.compound).length); // modifiers and compound cards are not mixed in
+    // Modifiers and compound cards are not mixed in, nor are cards made from words (they have their own set).
+    expect(subsets.length).toBe(2 ** CARD_DEFS.filter((d) => !d.modifier && !d.compound && BUILT_IN_IDS.has(d.id)).length);
     expect(new Set(subsets.map((s) => s.code)).size).toBe(subsets.length);
     expect(resolveScenarios({}).length).toBeGreaterThan(10); // the showcase
     expect(resolveScenarios({ codes: 'flood=water*3; life+sun' }).map((s) => s.name)).toEqual(['flood', 'life_sun']);
@@ -62,6 +95,26 @@ describe('the Combinations view filter', () => {
     expect(list.map((s) => s.code)).toEqual(['empty', 'water*3', 'life', 'water*3+life']);
     expect(list[3].cards.filter((c) => c.id === 'water').length).toBe(3);
   });
+  it('"only with" keeps the combinations that include every marked card', () => {
+    const list = combinations({ off: [], copies: {}, only: ['life'] }, ids);
+    expect(list.length).toBe(16);
+    expect(list.every((s) => s.cards.some((c) => c.id === 'life'))).toBe(true);
+    expect(combinations({ off: [], copies: {}, only: ['life', 'sun'] }, ids).length).toBe(8);
+    expect(combinations({ off: ['life'], copies: {}, only: ['life'] }, ids).length).toBe(16); // a card switched off is not "only"
+  });
+  it('counts and lists just the first few of a great many', () => {
+    const many = Array.from({ length: 30 }, (_, k) => `card${k}`);
+    expect(countCombinations(defaultFilter(), many)).toBe(2 ** 30);
+    const first = combinations(defaultFilter(), CARD_DEFS.map((d) => d.id), 64);
+    expect(first.length).toBe(64);
+    expect(first[0].code).toBe('empty');
+    expect(first[1].code).toBe('mountain'); // BIG alone is not a combination
+    // The same order as before: every count of cards in turn, in the cards' own order.
+    const all = combinations(defaultFilter(), ids);
+    expect(combinations(defaultFilter(), ids, 10)).toEqual(all.slice(0, 10));
+    expect(countCombinations(defaultFilter(), CARD_DEFS.map((d) => d.id))).toBe(combinations(defaultFilter()).length);
+    expect(countCombinations({ off: [], copies: {}, only: ['big'] }, CARD_DEFS.map((d) => d.id))).toBe(combinations({ off: [], copies: {}, only: ['big'] }).length);
+  });
   it('ignores a remembered choice for a card that no longer exists', () => {
     const list = combinations({ off: ['fog'], copies: { fog: 3 } }, ids);
     expect(list.length).toBe(32);
@@ -71,12 +124,27 @@ describe('the Combinations view filter', () => {
 
 // These run every combination of cards (2^cards), so they get slower with each new card.
 describe('the settled world depends on the cards alone', { timeout: 120_000 }, () => {
-  const all = resolveScenarios({ set: 'all' });
+  const all = [...resolveScenarios({ set: 'all' }), ...resolveScenarios({ codes: MADE_CODES.join(';') })];
+  const measured = (sim: WorldSim, s: { cards: Parameters<typeof liveCards>[0] }) => {
+    const cards = liveCards(s.cards);
+    return measure(sim.settleNow(cards), cards).hash;
+  };
   it('gives the same world whatever came before it', () => {
-    const fresh = all.map((s) => measure(new WorldSim().settleNow(liveCards(s.cards))).hash);
+    const fresh = all.map((s) => measured(new WorldSim(), s));
     const reused = new WorldSim();
-    const backwards = [...all].reverse().map((s) => measure(reused.settleNow(liveCards(s.cards))).hash).reverse();
+    const backwards = [...all].reverse().map((s) => measured(reused, s)).reverse();
     expect(backwards).toEqual(fresh);
+  });
+  it('made cards change the world, stand their objects and keep every field in range', () => {
+    const cards = liveCards(parseCode('mud+life+water'));
+    const frame = new WorldSim().settleNow(cards);
+    const m = measure(frame, cards);
+    expect(m.objects).toBeGreaterThan(0);
+    expect(m.hash).not.toBe(measure(new WorldSim().settleNow(liveCards(parseCode('life+water')))).hash);
+    for (const v of frame.vegetation) expect(v >= 0 && v <= 1).toBe(true);
+    for (const v of frame.wetness) expect(v >= 0 && v <= 1).toBe(true);
+    for (const v of frame.temperature) expect(v >= -1 && v <= 1).toBe(true);
+    for (const v of frame.height) expect(Number.isFinite(v)).toBe(true);
   });
   it('is fully settled: settling again changes nothing', () => {
     for (const s of all) {
@@ -94,7 +162,7 @@ describe('the settled world depends on the cards alone', { timeout: 120_000 }, (
     }
   });
   it('is where the animated world ends up, at any frame rate', () => {
-    for (const code of ['water', 'water*3', 'life+water', 'mountain+water', 'water*3@0.3,0.3+life@0.8,0.6', 'mountain+water+sun+ice+life', 'ravine+water', 'lava+ravine', 'volcano+water']) {
+    for (const code of ['water', 'water*3', 'life+water', 'mountain+water', 'water*3@0.3,0.3+life@0.8,0.6', 'mountain+water+sun+ice+life', 'ravine+water', 'lava+ravine', 'volcano+water', 'mud+life+water', 'mud*3+mountain']) {
       const placements = parseCode(code);
       const settled = measure(new WorldSim().settleNow(liveCards(placements)));
       for (const fps of [60, 24]) {

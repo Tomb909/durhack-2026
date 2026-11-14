@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
-import { HARNESS_OUT, harnessPlugin } from './harness-plugin.mjs';
+import { HARNESS_OUT, harnessPlugin, readWords } from './harness-plugin.mjs';
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -25,7 +25,10 @@ const HELP = `Deck of Worlds harness
   npm --prefix web run harness -- [codes...] [options]
 
   codes              combination codes, one world each: water  "water*3"  "life+water+sun"  "water*3+life@0.8,0.6"
-  --set NAMES        ready-made sets, comma separated: showcase (default), singles, pairs, subsets, copies, all
+  --set NAMES        ready-made sets, comma separated: showcase (default), singles, pairs, subsets, copies, all,
+                     words (every card made from a typed word, alone), words-mixed (each beside water, mountain, life)
+  --guess WORDS      make the abstract fallback card for these words (comma separated) so codes can use them:
+                     --guess kiki,bouba kiki bouba
   --layout NAME      where unplaced cards go: cluster (default, together) or spread (each kind apart)
   --json             print JSON instead of a table
   --baseline         save these numbers as the baseline
@@ -46,7 +49,7 @@ const HELP = `Deck of Worlds harness
 
 function parseArgs(argv) {
   const options = { codes: [], set: null, layout: 'cluster', view: '3d' };
-  const valued = new Set(['set', 'layout', 'view', 'tile', 'cols', 'time', 'zoom', 'az', 'el']);
+  const valued = new Set(['set', 'layout', 'view', 'tile', 'cols', 'time', 'zoom', 'az', 'el', 'guess']);
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith('--')) options.codes.push(arg);
@@ -108,7 +111,7 @@ async function shots(options, codes) {
   const query = new URLSearchParams({ save: '1', layout: options.layout, view: options.view });
   if (options.set) query.set('set', options.set);
   if (codes) query.set('c', codes);
-  for (const key of ['tile', 'cols', 'zoom', 'az', 'el']) if (options[key]) query.set(key, options[key]);
+  for (const key of ['tile', 'cols', 'zoom', 'az', 'el', 'guess']) if (options[key]) query.set(key, options[key]);
   if (options.time) query.set('t', options.time);
   if (options.noBeacons) query.set('beacons', '0');
   if (options.png) query.set('fmt', 'png');
@@ -149,6 +152,10 @@ async function main() {
   const loader = await createServer({ root: WEB, configFile: false, logLevel: 'error', appType: 'custom', server: { middlewareMode: true, ws: false, hmr: false } });
   let rows, ms;
   try {
+    // Cards made from typed words (.deck/words.json) work in codes too, by their full id.
+    const { loadCards, guessCards } = await loader.ssrLoadModule('/src/cards/words.ts');
+    loadCards(readWords());
+    if (options.guess) guessCards(options.guess);
     const { resolveScenarios } = await loader.ssrLoadModule('/src/harness/codes.ts');
     const { measureAll, formatTable } = await loader.ssrLoadModule('/src/harness/metrics.ts');
     const scenarios = resolveScenarios({ set: options.set, codes, layout: options.layout });

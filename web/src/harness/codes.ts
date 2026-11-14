@@ -4,12 +4,15 @@
 //   water*3                  three copies side by side (also: water_x3)
 //   life+water+sun           several cards (also: life_water_sun, "life water sun")
 //   water*3+life@0.8,0.6     a card at a table position: x left to right, y far to near, 0..1
-//   m+w*2                    any unambiguous start of a card's id
+//   m+w*2                    any unambiguous start of a built-in card's id
+//   haunted-house+water      a card made from a typed word, by its full id
 //   empty                    no cards
 //
 // Card ids come from cards.json, so a new card can be used in codes straight away.
+// Cards made from typed words (cards/words.ts) work too, by their full id only: the
+// shorthand matches built-in cards alone, so adding MUD never makes `m+w` ambiguous.
 // (Codes split on "_", so an id containing "_" cannot be written in one.)
-import { CARD_DEFS } from '../cards/defs';
+import { BUILT_IN_IDS, CARD_DEFS } from '../cards/defs';
 
 export interface Placement {
   id: string;
@@ -46,9 +49,9 @@ interface Group {
 function resolveId(token: string): string {
   const ids = CARD_DEFS.map((d) => d.id.toLowerCase());
   if (ids.includes(token)) return CARD_DEFS[ids.indexOf(token)].id;
-  const starts = CARD_DEFS.filter((d) => d.id.toLowerCase().startsWith(token));
+  const starts = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id) && d.id.toLowerCase().startsWith(token));
   if (starts.length === 1) return starts[0].id;
-  const known = CARD_DEFS.map((d) => d.id).join(', ');
+  const known = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id)).map((d) => d.id).join(', ');
   throw new Error(starts.length ? `"${token}" could be ${starts.map((d) => d.id).join(' or ')}` : `no card called "${token}" (cards: ${known})`);
 }
 
@@ -132,10 +135,16 @@ function scenario(code: string, layout: Layout, name?: string): Scenario {
 
 // --- ready-made sets ---------------------------------------------------------------
 
-/** The cards that do something by themselves. A modifier (BIG) only changes a card beside it, so it is left out of the ready-made sets: write it in a code (`big+mountain`) to see it. */
-const ids = () => CARD_DEFS.filter((d) => !d.modifier).map((d) => d.id);
+/**
+ * The built-in cards that do something by themselves. A modifier (BIG) only changes a card beside it,
+ * so it is left out of the ready-made sets: write it in a code (`big+mountain`) to see it. Cards made
+ * from typed words have their own set (`words`), so the others stay the same size and the same worlds.
+ */
+const ids = () => CARD_DEFS.filter((d) => !d.modifier && BUILT_IN_IDS.has(d.id)).map((d) => d.id);
 /** The cards mixed in every-combination sets. A compound card (VOLCANO) is already a mix, and each card here doubles the list. */
-const mixable = () => CARD_DEFS.filter((d) => !d.modifier && !d.compound).map((d) => d.id);
+const mixable = () => CARD_DEFS.filter((d) => !d.modifier && !d.compound && BUILT_IN_IDS.has(d.id)).map((d) => d.id);
+/** Cards made from typed words, in the order they were made. */
+const wordIds = () => CARD_DEFS.filter((d) => !BUILT_IN_IDS.has(d.id)).map((d) => d.id);
 
 /** Every way of choosing cards, one copy each: 2^n codes, fewest cards first. */
 function subsets(): string[] {
@@ -172,6 +181,10 @@ export const SETS: Record<string, () => [code: string, name?: string][]> = {
   subsets: () => subsets().map((c): [string] => [c]),
   copies: () => ids().flatMap((id) => [1, 2, 3].map((n): [string] => [n > 1 ? `${id}*${n}` : id])),
   all: () => [...SETS.subsets(), ...SETS.copies(), ...SHOWCASE],
+  /** Every card made from a typed word, alone. */
+  words: () => wordIds().map((id): [string] => [id]),
+  /** Every card made from a typed word beside water, mountain, and life with water: does it find its place? */
+  'words-mixed': () => wordIds().flatMap((id): [string][] => [[`${id}+water*3`], [`${id}+mountain`], [`${id}+life+water`]]),
 };
 
 export interface ScenarioRequest {

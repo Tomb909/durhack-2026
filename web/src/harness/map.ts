@@ -1,6 +1,7 @@
 // A flat, top-down picture of a world, one pixel per grid cell. No 3D, no GPU:
 // it shows exactly what the rules decided, with nothing hidden behind clouds.
 import { cardDef } from '../cards/defs';
+import type { PlacedObject } from '../sim/props';
 import { RULES, underSea, type WorldFrame } from '../sim/world';
 import type { Placement } from './codes';
 
@@ -26,6 +27,7 @@ const BASALT: RGB = [44, 38, 42];
 
 export const MAP_LEGEND: [label: string, colour: RGB][] = [
   ['sea', SEA_DEEP], ['river/lake', FRESH], ['forest', FOREST], ['desert', SAND], ['snow/ice', SNOW], ['rock', ROCK], ['farmland', FARM], ['villages', HOME], ['lava', LAVA], ['cooled lava', BASALT], ['rain (dots)', RAIN],
+  ['objects (squares)', [255, 255, 255]],
 ];
 
 /** Draw the world into a canvas the size of the grid (scale it up when copying). */
@@ -86,5 +88,17 @@ export function drawCardMarks(g: CanvasRenderingContext2D, cards: Placement[], x
     g.lineWidth = Math.max(1, r / 3);
     g.strokeStyle = '#000000';
     g.stroke();
+  }
+}
+
+/** Mark where word cards' objects stand: a small square in the card's colour, outlined. */
+export function drawObjectMarks(g: CanvasRenderingContext2D, objects: readonly PlacedObject[], x: number, y: number, width: number, height: number): void {
+  for (const o of objects) {
+    const s = Math.max(3, o.size * width * 0.9);
+    g.fillStyle = o.def.color;
+    g.strokeStyle = o.afloat ? '#ffffff' : '#000000';
+    g.lineWidth = Math.max(1, s / 5);
+    g.fillRect(x + o.x * width - s / 2, y + o.y * height - s / 2, s, s);
+    g.strokeRect(x + o.x * width - s / 2, y + o.y * height - s / 2, s, s);
   }
 }

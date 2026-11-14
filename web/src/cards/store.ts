@@ -51,6 +51,8 @@ export class CardStore {
   moving = false;
   /** True: no gliding or fading. Cards are where they are told to be, at once. */
   instant = false;
+  /** Set when a card's definition changed under it (a word read again): the world must look again. */
+  private dirty = false;
 
   private find(key: string): LiveCard | undefined {
     return this.cards.find((c) => c.key === key);
@@ -146,6 +148,19 @@ export class CardStore {
     for (const card of this.cards) if (card.key.endsWith(':adopted')) card.present = false;
   }
 
+  /**
+   * Card definitions changed (a word card made, read again or removed): point every
+   * card at its current definition, take away cards whose definition is gone.
+   */
+  refreshDefs(): void {
+    for (const card of this.cards) {
+      const def = cardDef(card.def.id);
+      if (!def) card.present = false;
+      else card.def = def;
+    }
+    this.dirty = true;
+  }
+
   // --- per-frame smoothing --------------------------------------------------------
 
   update(dt: number): void {
@@ -191,6 +206,7 @@ export class CardStore {
     const kept = this.cards.filter((c) => c.present || c.fade > 0);
     if (kept.length !== this.cards.length) moving = true;
     this.cards = kept;
-    this.moving = moving;
+    this.moving = moving || this.dirty;
+    this.dirty = false;
   }
 }

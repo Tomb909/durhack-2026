@@ -1,7 +1,9 @@
 // A world as a handful of numbers, so worlds can be compared without looking
 // at pictures: how much is flooded, forested, raining, frozen. No graphics.
 import { cardDef } from '../cards/defs';
+import { hashText } from '../cards/words';
 import { settledCard, type LiveCard } from '../cards/store';
+import { placeProps, type PlacedObject } from '../sim/props';
 import { RULES, WorldSim, underSea, type WorldFrame } from '../sim/world';
 import type { Placement, Scenario } from './codes';
 
@@ -21,11 +23,13 @@ export interface Metrics {
   homes: number; // villages
   farms: number; // farmland
   lava: number; // molten or set
+  /** Objects standing (from word cards): a count, not a share. */
+  objects: number;
   /** Fingerprint of the whole world: equal worlds have equal fingerprints. */
   hash: string;
 }
 
-export const METRIC_KEYS = ['sea', 'peak', 'flooded', 'fresh', 'rain', 'snow', 'forest', 'frozen', 'desert', 'homes', 'farms', 'lava'] as const;
+export const METRIC_KEYS = ['sea', 'peak', 'flooded', 'fresh', 'rain', 'snow', 'forest', 'frozen', 'desert', 'homes', 'farms', 'lava', 'objects'] as const;
 
 /** Plain names for the numbers, for people. `share` ones are percentages of the map. */
 export const METRIC_LABELS: Record<(typeof METRIC_KEYS)[number], { label: string; share: boolean }> = {
@@ -41,13 +45,18 @@ export const METRIC_LABELS: Record<(typeof METRIC_KEYS)[number], { label: string
   homes: { label: 'Villages', share: true },
   farms: { label: 'Farmland', share: true },
   lava: { label: 'Lava', share: true },
+  objects: { label: 'Objects placed', share: false },
 };
 
 export function liveCards(cards: Placement[], prefix = 'h'): LiveCard[] {
   return cards.map((p, k) => settledCard(`${prefix}:${k}`, cardDef(p.id)!, p.x, p.y));
 }
 
-export function measure(frame: WorldFrame): Metrics {
+/**
+ * The world's numbers. With the cards, the objects they put down are counted
+ * too (and, when there are any, fingerprinted with where they stand).
+ */
+export function measure(frame: WorldFrame, cards: LiveCard[] = [], objects: PlacedObject[] = placeProps(frame, cards)): Metrics {
   const n = frame.w * frame.h;
   const { height, temperature, wetness, vegetation, waterSurface, river, precipitation, homes, farms, fishing, logging, cleared, lava, lavaHeat, lavaSurface, seaLevel } = frame;
   let peak = -Infinity;
@@ -76,11 +85,16 @@ export function measure(frame: WorldFrame): Metrics {
     mix(lava[i]); mix(lavaHeat[i]); mix(lavaSurface[i]);
   }
   mix(seaLevel);
+  // Only worlds with objects mix them in, so every world without one keeps the fingerprint it always had.
+  for (const o of objects) {
+    mix(parseInt(hashText(o.def.id), 16) / 1e4); mix(o.x); mix(o.y); mix(o.ground); mix(o.size);
+  }
   const pct = (count: number) => Math.round((count / n) * 1000) / 10;
   return {
     sea: Math.round(seaLevel * 1e4) / 1e4,
     peak: Math.round(peak * 1e3) / 1e3,
     flooded: pct(flooded), fresh: pct(fresh), rain: pct(rain), snow: pct(snow), forest: pct(forest), frozen: pct(frozen), desert: pct(desert), homes: pct(village), farms: pct(farmland), lava: pct(molten),
+    objects: objects.length,
     hash: (hash >>> 0).toString(16).padStart(8, '0'),
   };
 }
@@ -95,13 +109,16 @@ export interface Row {
 export function measureAll(scenarios: Scenario[]): { rows: Row[]; ms: number } {
   const sim = new WorldSim();
   const start = performance.now();
-  const rows = scenarios.map((s) => ({ name: s.name, code: s.code, metrics: measure(sim.settleNow(liveCards(s.cards))) }));
+  const rows = scenarios.map((s) => {
+    const cards = liveCards(s.cards);
+    return { name: s.name, code: s.code, metrics: measure(sim.settleNow(cards), cards) };
+  });
   return { rows, ms: performance.now() - start };
 }
 
 /** Plain-text table, one world per line. */
 export function formatTable(rows: Row[]): string {
-  const head = ['#', 'world', ...METRIC_KEYS.map((k) => (k === 'sea' || k === 'peak' ? k : `${k}%`)), 'hash'];
+  const head = ['#', 'world', ...METRIC_KEYS.map((k) => (METRIC_LABELS[k].share ? `${k}%` : k)), 'hash'];
   const body = rows.map((r, i) => [
     String(i + 1).padStart(2, '0'), r.name, ...METRIC_KEYS.map((k) => String(r.metrics[k])), r.metrics.hash,
   ]);

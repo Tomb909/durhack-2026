@@ -590,7 +590,8 @@ export class WorldSim {
 
     // --- 5. plants: only where Life reaches AND the climate suits AND it is not under water
     for (let i = 0; i < n; i++) {
-      const life = Math.min(1, push.life[i]);
+      // Cards may push life down as well as up (BLIGHT): keep the sum in range.
+      const life = Math.max(0, Math.min(1, push.life[i]));
       const suits =
         smoothstep(RULES.plantWetMin, RULES.plantWetGood, wetness[i]) *
         smoothstep(RULES.plantColdLimit, RULES.plantColdGood, temperature[i]);
