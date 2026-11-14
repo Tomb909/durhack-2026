@@ -19,11 +19,14 @@ export const copiesOf = (filter: ComboFilter, id: string) => Math.min(MOST_COPIE
 /** Every combination of the cards that are on: fewest cards first, then in the cards' own order. */
 export function combinations(filter: ComboFilter, ids: string[] = CARD_DEFS.map((d) => d.id)): Scenario[] {
   const on = ids.filter((id) => !filter.off.includes(id));
+  const modifiers = new Set(CARD_DEFS.filter((d) => d.modifier).map((d) => d.id));
   const sets: string[][] = [];
   for (let mask = 0; mask < 1 << on.length; mask++) sets.push(on.filter((_, i) => mask & (1 << i)));
   sets.sort((a, b) => a.length - b.length);
-  return sets.map((set) => {
-    const code = set.map((id) => (copiesOf(filter, id) > 1 ? `${id}*${copiesOf(filter, id)}` : id)).join('+') || 'empty';
-    return { name: nameOf(code), code, cards: parseCode(code, 'cluster') };
-  });
+  return sets
+    .filter((set) => set.length === 0 || set.some((id) => !modifiers.has(id)))
+    .map((set) => {
+      const code = set.map((id) => (copiesOf(filter, id) > 1 ? `${id}*${copiesOf(filter, id)}` : id)).join('+') || 'empty';
+      return { name: nameOf(code), code, cards: parseCode(code, 'cluster') };
+    });
 }
