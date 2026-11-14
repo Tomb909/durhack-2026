@@ -39,11 +39,18 @@ const SPRING = 11; // higher = snappier following
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
+/** A card that has already arrived: full strength, at rest, no arrival pulse. */
+export function settledCard(key: string, def: CardDef, x: number, y: number): LiveCard {
+  return { key, def, source: 'sim', x, y, tx: x, ty: y, vx: 0, vy: 0, strength: 1, fade: 1, present: true, visible: true, age: 99 };
+}
+
 export class CardStore {
   cards: LiveCard[] = [];
   private nextSim = 1;
   /** Bumps whenever anything changed this frame. */
   moving = false;
+  /** True: no gliding or fading. Cards are where they are told to be, at once. */
+  instant = false;
 
   private find(key: string): LiveCard | undefined {
     return this.cards.find((c) => c.key === key);
@@ -82,6 +89,16 @@ export class CardStore {
 
   clearSim(): void {
     for (const card of this.cards) if (card.source === 'sim') card.present = false;
+  }
+
+  /** Replace every simulated card at once, already arrived (no fade in or out). */
+  setSim(placements: { id: string; x: number; y: number }[]): void {
+    this.cards = this.cards.filter((c) => c.source !== 'sim');
+    for (const p of placements) {
+      const def = cardDef(p.id);
+      if (def) this.cards.push(settledCard(`sim:${this.nextSim++}`, def, p.x, p.y));
+    }
+    this.moving = true;
   }
 
   // --- tracked cards (camera) ---------------------------------------------------
@@ -135,6 +152,16 @@ export class CardStore {
     let moving = false;
     for (const card of this.cards) {
       card.age += dt;
+      if (this.instant) {
+        const target = card.present ? 1 : 0;
+        if (card.x !== card.tx || card.y !== card.ty || card.fade !== target) moving = true;
+        card.x = card.tx;
+        card.y = card.ty;
+        card.vx = card.vy = 0;
+        card.fade = card.strength = target;
+        if (card.present) card.age = Math.max(card.age, 99); // no arrival pulse
+        continue;
+      }
       // Critically damped spring towards the target position.
       const ax = SPRING * SPRING * (card.tx - card.x) - 2 * SPRING * card.vx;
       const ay = SPRING * SPRING * (card.ty - card.y) - 2 * SPRING * card.vy;

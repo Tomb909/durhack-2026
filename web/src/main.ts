@@ -1,6 +1,7 @@
 // Deck of Worlds: cards in, world out.
 //   cards (camera + simulated)  ->  CardStore (smoothing)  ->  WorldSim (rules)  ->  WorldRenderer (picture)
 import { CardStore } from './cards/store';
+import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { WorldRenderer } from './render/scene';
 import { WorldSim } from './sim/world';
@@ -96,6 +97,31 @@ link.onDown = () => {
 link.connect();
 setStatus('off', 'Simulated cards');
 
+// --- cards by code, with no waiting -------------------------------------------------
+//   ?cards=water*3+life@0.8,0.6   start with these cards, already settled
+//   ?instant                      no fading or easing at all (also the I key)
+//   ?still=6                      freeze the picture at this moment (seconds)
+// The same from the console: deck.set('life+water+sun')
+
+const params = new URLSearchParams(location.search);
+store.instant = params.has('instant');
+const still = params.has('still') ? Number(params.get('still')) || 6 : null;
+if (still !== null) view.sway = false;
+
+/** Replace the simulated cards with a combination code and jump to the settled world. */
+function setCards(code: string, layout: Layout = 'cluster'): string {
+  store.setSim(parseCode(code, layout));
+  sim.settleNow(store.cards);
+  return tidyCode(code);
+}
+if (params.has('cards')) {
+  try {
+    setCards(params.get('cards')!, params.get('layout') === 'spread' ? 'spread' : 'cluster');
+  } catch (error) {
+    toast(`Cards in the address: ${(error as Error).message}`, 8);
+  }
+}
+
 // --- keys -------------------------------------------------------------------------
 
 const guide = new Guide();
@@ -137,6 +163,10 @@ window.addEventListener('keydown', (e) => {
     case 'x':
       store.clearSim();
       break;
+    case 'i':
+      store.instant = !store.instant;
+      toast(store.instant ? 'Instant: no fading, the world jumps to its final state' : 'Animated');
+      break;
     case 'g':
       cardCheck.hide();
       guide.toggle();
@@ -160,9 +190,10 @@ function tick(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   store.update(dt);
-  const frame = sim.step(store.cards, store.moving, dt);
+  const frame = store.instant && store.moving ? sim.settleNow(store.cards) : sim.step(store.cards, store.moving, dt);
   table.update();
-  view.render(frame, store.cards, dt);
+  if (still !== null) view.renderAt(frame, store.cards, still);
+  else view.render(frame, store.cards, dt);
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
@@ -176,4 +207,4 @@ async function shot(): Promise<string> {
 }
 
 // Handy when poking around in the browser console.
-Object.assign(window, { deck: { store, sim, view, link, shot } });
+Object.assign(window, { deck: { store, sim, view, link, shot, set: setCards } });

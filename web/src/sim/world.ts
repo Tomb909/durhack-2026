@@ -37,6 +37,8 @@ export const RULES = {
   plantColdLimit: -0.45,
   plantColdGood: -0.2,
   settleSeconds: 0.35, // how fast rivers and lakes ease to their new shape
+  /** Land beside water is damper, which can move the water again. Look this many times at most. */
+  settlePasses: 12,
   hydrology: {
     riverStart: 90,
     riverFull: 420,
@@ -96,7 +98,10 @@ export class WorldSim {
   private nearWater = new Float32Array(this.n);
   private scratch = new Float32Array(this.n);
   private hydrology = new Hydrology(GW, GH);
+  private lastSurface = new Float32Array(this.n);
+  private lastRiver = new Float32Array(this.n);
   private settle = 0;
+  private passesLeft = 0;
   private started = false;
 
   constructor() {
@@ -131,6 +136,7 @@ export class WorldSim {
     if (cardsMoving || !this.started) {
       this.recompute(cards);
       this.settle = RULES.settleSeconds * 5;
+      this.passesLeft = RULES.settlePasses;
       if (!this.started) {
         this.frame.waterSurface.set(this.surfaceTarget);
         this.frame.river.set(this.riverTarget);
@@ -147,25 +153,45 @@ export class WorldSim {
         waterSurface[i] += (st[i] - waterSurface[i]) * k;
         river[i] += (rt[i] - river[i]) * k;
       }
+      // The water has arrived. Land beside it is damper now, which may move the
+      // water again, so look once more and keep going until nothing changes.
+      // Without this the world would stop wherever the animation happened to be.
+      if (this.settle <= 0 && this.passesLeft-- > 0 && this.refine(cards)) this.settle = RULES.settleSeconds * 5;
       this.frame.version++;
     }
     return this.frame;
   }
 
-  /** Jump straight to the settled state (used by tests). */
+  /**
+   * Jump straight to the settled state: what the cards alone give, starting
+   * from a dry world. Depends on nothing that came before, so the same cards
+   * always give the same world. The live loop (`step`) ends up here too.
+   */
   settleNow(cards: LiveCard[]): WorldFrame {
+    this.started = false; // forget the old water
     this.recompute(cards);
-    // Wetness near water depends on where the water was; iterate to a fixed point.
-    for (let i = 0; i < 3; i++) {
-      this.frame.waterSurface.set(this.surfaceTarget);
-      this.frame.river.set(this.riverTarget);
-      this.recompute(cards);
-    }
+    this.started = true;
+    for (let i = 0; i < RULES.settlePasses; i++) if (!this.refine(cards)) break;
     this.frame.waterSurface.set(this.surfaceTarget);
     this.frame.river.set(this.riverTarget);
-    this.started = true;
+    this.settle = 0;
+    this.passesLeft = 0;
     this.frame.version++;
     return this.frame;
+  }
+
+  /** Let the water reach its target and work the world out again. True if that moved the water. */
+  private refine(cards: LiveCard[]): boolean {
+    const { n, frame, surfaceTarget, riverTarget, lastSurface, lastRiver } = this;
+    lastSurface.set(surfaceTarget);
+    lastRiver.set(riverTarget);
+    frame.waterSurface.set(surfaceTarget);
+    frame.river.set(riverTarget);
+    this.recompute(cards);
+    for (let i = 0; i < n; i++) {
+      if (Math.abs(surfaceTarget[i] - lastSurface[i]) > 1e-6 || Math.abs(riverTarget[i] - lastRiver[i]) > 1e-6) return true;
+    }
+    return false;
   }
 
   private recompute(cards: LiveCard[]): void {

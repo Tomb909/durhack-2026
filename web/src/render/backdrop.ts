@@ -32,11 +32,17 @@ export function makeBackdrop(time: THREE.IUniform<number>): THREE.Group {
   const count = 700;
   const positions = new Float32Array(count * 3);
   const seeds = new Float32Array(count);
+  // Seeded, so the same world at the same moment is the same picture on every load.
+  let s = 71;
+  const random = () => {
+    s = (Math.imul(s, 1664525) + 1013904223) | 0;
+    return (s >>> 0) / 4294967296;
+  };
   for (let i = 0; i < count; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 46;
-    positions[i * 3 + 1] = (Math.random() - 0.5) * 26;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 46 - 6;
-    seeds[i] = Math.random();
+    positions[i * 3] = (random() - 0.5) * 46;
+    positions[i * 3 + 1] = (random() - 0.5) * 26;
+    positions[i * 3 + 2] = (random() - 0.5) * 46 - 6;
+    seeds[i] = random();
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));

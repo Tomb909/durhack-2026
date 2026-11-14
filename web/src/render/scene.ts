@@ -45,8 +45,11 @@ export class WorldRenderer {
   private quality = 1.5;
   private raycaster = new THREE.Raycaster();
   private plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.25);
+  private fixed: { width: number; height: number } | null = null;
   showBeacons = true;
   sway = true;
+  /** Above 1 moves the camera closer than "the whole world fits". */
+  zoom = 1;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -95,10 +98,16 @@ export class WorldRenderer {
     this.resize();
   }
 
+  /** Draw at exactly this many pixels, whatever the window or screen (used by the harness). */
+  setFixedSize(width: number, height: number): void {
+    this.fixed = { width, height };
+    this.resize();
+  }
+
   resize(): void {
-    const width = this.canvas.clientWidth || window.innerWidth;
-    const height = this.canvas.clientHeight || window.innerHeight;
-    const ratio = Math.min(window.devicePixelRatio || 1, this.quality);
+    const width = this.fixed?.width ?? (this.canvas.clientWidth || window.innerWidth);
+    const height = this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight);
+    const ratio = this.fixed ? 1 : Math.min(window.devicePixelRatio || 1, this.quality);
     this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(width, height, false);
     this.composer.setPixelRatio(ratio);
@@ -115,7 +124,7 @@ export class WorldRenderer {
     const half = THREE.MathUtils.degToRad(FOV / 2);
     const halfH = Math.atan(Math.tan(half) * this.camera.aspect);
     // Far enough back that the whole chunk fits, whatever the window shape.
-    const distance = Math.max((WORLD_W / 2 + 0.9) / Math.tan(halfH), (WORLD_D / 2 + 1.9) / Math.tan(half));
+    const distance = Math.max((WORLD_W / 2 + 0.9) / Math.tan(halfH), (WORLD_D / 2 + 1.9) / Math.tan(half)) / this.zoom;
     const azimuth = this.sway ? SWAY * Math.sin((this.time * Math.PI * 2) / SWAY_PERIOD) : 0;
     const flat = Math.cos(ELEVATION) * distance;
     this.camera.position.set(TARGET.x + Math.sin(azimuth) * flat, TARGET.y + Math.sin(ELEVATION) * distance, TARGET.z + Math.cos(azimuth) * flat);
@@ -133,6 +142,12 @@ export class WorldRenderer {
     const y = hit.z / WORLD_D + 0.5;
     if (x < -0.03 || x > 1.03 || y < -0.03 || y > 1.03) return null;
     return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+  }
+
+  /** Draw the world as it looks at one fixed moment: same inputs, same picture. */
+  renderAt(frame: WorldFrame, cards: LiveCard[], time: number): void {
+    this.time = time;
+    this.render(frame, cards, 0);
   }
 
   render(frame: WorldFrame, cards: LiveCard[], dt: number): void {
