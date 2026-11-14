@@ -45,6 +45,11 @@ describe('the Combinations view filter', () => {
     expect(all[0].code).toBe('empty');
     expect(new Set(all.map((s) => s.code)).size).toBe(32);
   });
+  it('omits standalone modifiers but keeps them with a card they can modify', () => {
+    const all = combinations(defaultFilter(), CARD_DEFS.map((d) => d.id));
+    expect(all.some((scenario) => scenario.code === 'big')).toBe(false);
+    expect(all.some((scenario) => scenario.code === 'big+water')).toBe(true);
+  });
   it('halves the list for each card switched off', () => {
     const list = combinations({ off: ['ice', 'sun'], copies: {} }, ids);
     expect(list.length).toBe(8);
