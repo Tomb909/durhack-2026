@@ -29,6 +29,9 @@ uniform float uSeaBase;
 uniform vec4 uPulse[16];
 uniform vec3 uPulseColor[16];
 uniform int uPulseCount;
+uniform vec4 uGround[8];
+uniform vec3 uGroundColor[8];
+uniform int uGroundCount;
 varying vec2 vUv;
 varying vec3 vWorld;
 
@@ -151,6 +154,18 @@ void main() {
   col = mix(col, col * vec3(0.30, 0.55, 0.62), under);
   // Less daylight reaches the bottom of a hole.
   col *= 1.0 - 0.5 * smoothstep(0.0, 0.2, uSeaBase - h);
+
+  // Cards that paint the land (MARS: red ground). The colour takes the ground's own light and shade,
+  // with a ragged edge, and stays off water and away from snow and lava.
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  for (int i = 0; i < 8; i++) {
+    if (i >= uGroundCount) break;
+    vec4 g = uGround[i];
+    float r = length((vUv - g.xy) * vec2(WORLD_W, WORLD_D)) / (g.z * WORLD_W);
+    float edge = 1.0 - smoothstep(0.55, 1.0, r + (fbm2(vWorld.xz * 1.7 + float(i) * 13.0) - 0.5) * 0.35);
+    vec3 painted = uGroundColor[i] * (lum / max(0.08, dot(uGroundColor[i], vec3(0.299, 0.587, 0.114)))) * 0.85;
+    col = mix(col, clamp(painted, 0.0, 1.0), g.w * edge * (1.0 - under) * (1.0 - lavaCover));
+  }
 
   // Light: warm sun with soft shadows, cool sky fill, overcast under rain.
   float shadow = sunShadow(vWorld + n * 0.02);

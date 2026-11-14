@@ -55,12 +55,18 @@ export interface SharedUniforms {
   uPulse: THREE.IUniform<THREE.Vector4[]>;
   uPulseColor: THREE.IUniform<THREE.Color[]>;
   uPulseCount: THREE.IUniform<number>;
+  /** Per ground card: table u, v, radius (share of width), strength. */
+  uGround: THREE.IUniform<THREE.Vector4[]>;
+  uGroundColor: THREE.IUniform<THREE.Color[]>;
+  uGroundCount: THREE.IUniform<number>;
   /** Where smoke rises (see vents.ts): table u, table v, strength, unused. */
   uVent: THREE.IUniform<THREE.Vector4[]>;
   uVentCount: THREE.IUniform<number>;
 }
 
 export const MAX_PULSES = 16;
+/** Cards that paint the land a colour (Ground), at most this many at once. */
+export const MAX_GROUNDS = 8;
 
 export function makeSharedUniforms(): SharedUniforms {
   return {
@@ -82,6 +88,9 @@ export function makeSharedUniforms(): SharedUniforms {
     uPulse: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Vector4(0, 0, 99, 0)) },
     uPulseColor: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Color(1, 1, 1)) },
     uPulseCount: { value: 0 },
+    uGround: { value: Array.from({ length: MAX_GROUNDS }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uGroundColor: { value: Array.from({ length: MAX_GROUNDS }, () => new THREE.Color(1, 1, 1)) },
+    uGroundCount: { value: 0 },
     uVent: { value: Array.from({ length: MAX_VENTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
     uVentCount: { value: 0 },
   };

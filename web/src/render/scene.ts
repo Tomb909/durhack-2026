@@ -12,7 +12,7 @@ import { AirLayer, GradeShader } from './air';
 import { makeBackdrop } from './backdrop';
 import { Beacons } from './beacons';
 import { CameraRig } from './camera';
-import { HSCALE, MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
+import { HSCALE, MAX_GROUNDS, MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
 import { makeLava } from './lava';
 import { CALM, worldMood, type Mood } from './mood';
@@ -396,6 +396,15 @@ export class WorldRenderer {
       this.shared.uPulseColor.value[i].copy(colour);
     }
     this.shared.uPulseCount.value = count;
+    let grounds = 0;
+    for (const card of cards) {
+      const g = card.def.ground;
+      if (!g || card.strength <= 0 || grounds >= MAX_GROUNDS) continue;
+      this.shared.uGround.value[grounds].set(card.x, card.y, g.radius, g.strength * Math.min(1, card.strength));
+      this.shared.uGroundColor.value[grounds].set(g.color);
+      grounds++;
+    }
+    this.shared.uGroundCount.value = grounds;
     this.props.update(frame, cards, dt > 0);
     this.air.update(frame, cards, (this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight)) * this.renderer.getPixelRatio());
     const grade = this.air.grade;

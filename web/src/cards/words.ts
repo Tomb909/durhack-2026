@@ -12,14 +12,14 @@
 import {
   BUILT_IN_IDS, CARD_DEFS, HABITATS, PART_MIRRORS, PART_SHAPES, PARTICLE_MOTIONS, PROP_COUNTS, PROP_MOTIONS, PROP_SCALES,
   cardDef, cardsChanged, registerCard, unregisterCard,
-  type Atmosphere, type CardDef, type CardEffect, type FieldName, type Particles, type Prop, type PropPart,
+  type Atmosphere, type Ground, type CardDef, type CardEffect, type FieldName, type Particles, type Prop, type PropPart,
 } from './defs';
 
 export const MAX_WORD = 40;
 const MAX_READING = 200;
 /** Parts as written, and primitives once mirrors and repeats are drawn out. */
-export const MAX_PARTS = 40;
-export const MAX_PRIMITIVES = 160;
+export const MAX_PARTS = 100;
+export const MAX_PRIMITIVES = 400;
 const MAX_REPEAT = 12;
 
 /** How many primitives a part draws: itself, round the axis, and mirrored. */
@@ -133,6 +133,13 @@ function cleanParticles(v: unknown): Particles | null {
   };
 }
 
+function cleanGround(v: unknown): Ground | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const r = v as Record<string, unknown>;
+  const ground: Ground = { color: colour(r.color, '#ffffff'), strength: num(r.strength, 0, 1, 0), radius: num(r.radius, 0.05, 0.35, 0.2) };
+  return ground.strength > 0 ? ground : undefined;
+}
+
 function cleanAtmosphere(v: unknown): Atmosphere | undefined {
   if (!v || typeof v !== 'object') return undefined;
   const r = v as Record<string, unknown>;
@@ -169,7 +176,7 @@ function cleanPart(v: unknown): PropPart | null {
 function cleanProp(v: unknown): Prop | undefined {
   if (!v || typeof v !== 'object') return undefined;
   const r = v as Record<string, unknown>;
-  const parts = (Array.isArray(r.parts) ? r.parts.slice(0, 64) : []).map(cleanPart).filter((p): p is PropPart => !!p).slice(0, MAX_PARTS);
+  const parts = (Array.isArray(r.parts) ? r.parts.slice(0, MAX_PARTS * 2) : []).map(cleanPart).filter((p): p is PropPart => !!p).slice(0, MAX_PARTS);
   if (!parts.length) return undefined;
   // Mirrors and repeats multiply. Every part is kept; past the limit, the later ones lose their copies.
   let drawn = 0;
@@ -220,13 +227,15 @@ export function cleanCard(input: unknown): CardDef | null {
   };
   const atmosphere = cleanAtmosphere(r.atmosphere);
   if (atmosphere) def.atmosphere = atmosphere;
+  const ground = cleanGround(r.ground);
+  if (ground) def.ground = ground;
   const prop = cleanProp(r.prop);
   if (prop) def.prop = prop;
   const ms = num(r.ms, 0, 600_000, Number.NaN);
   if (Number.isFinite(ms)) def.ms = Math.round(ms);
   // Every word shows something: a card that would do nothing gets the abstract shape instead.
   // (The fallback always has an object, so this cannot loop.)
-  if (!def.effects.length && !def.atmosphere && !def.prop) return cleanCard(fallbackCard(word));
+  if (!def.effects.length && !def.atmosphere && !def.ground && !def.prop) return cleanCard(fallbackCard(word));
   return def;
 }
 
@@ -414,7 +423,7 @@ export type AskServer = (text: string, fresh: boolean) => Promise<{ card: unknow
 
 export const askServer: AskServer = async (text, fresh) => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25_000);
+  const timer = setTimeout(() => controller.abort(), 50_000);
   try {
     const response = await fetch('/api/word', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

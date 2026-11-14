@@ -81,7 +81,7 @@ MODEL = os.environ.get("DECK_WORD_MODEL") or DEFAULT_MODEL
 # How hard the model thinks (Gemini's thinking level: minimal, low, medium or high; not every
 # model takes every level). Left unset, the model's own default is used, which is the fastest.
 EFFORT = os.environ.get("DECK_WORD_EFFORT", "").strip().lower()
-TIMEOUT = 20.0  # seconds: past this the page has long since shown its own guess
+TIMEOUT = 45.0  # seconds: past this the page has long since shown its own guess
 
 
 def _seconds(name: str, default: float) -> float:
@@ -98,7 +98,7 @@ HEDGE_AFTER = _seconds("DECK_WORD_HEDGE", 7.0)
 # The most times one word is asked, counting asks repeated because the model was overloaded.
 MOST_ASKS = 5
 MAX_WORD = 40
-MAX_PARTS = 40
+MAX_PARTS = 100
 
 # --- words and ids (keep in step with web/src/cards/words.ts) -------------------------
 
@@ -222,6 +222,9 @@ CARD_SCHEMA: dict[str, Any] = {
             },
         },
         "tint": {"type": "string"},
+        "ground_color": {"type": "string"},
+        "ground_strength": {"type": "number"},
+        "ground_radius": {"type": "number"},
         "tint_strength": {"type": "number"},
         "light": {"type": "number"},
         "particles": {"type": "string", "enum": ["none", "rise", "fall", "drift", "swirl"]},
@@ -256,7 +259,7 @@ CARD_SCHEMA: dict[str, Any] = {
         },
     },
     "required": [
-        "reading", "icon", "color", "effects", "tint", "tint_strength", "light", "particles", "particle_color",
+        "reading", "icon", "color", "effects", "ground_color", "ground_strength", "ground_radius", "tint", "tint_strength", "light", "particles", "particle_color",
         "particle_size", "particle_density", "particle_glow", "has_object", "metres", "count", "habitat", "motion",
         "glow", "palette", "parts",
     ],
@@ -285,6 +288,12 @@ Radius is a share of the world's width (0.05 to 0.3); seaLevel ignores it. At mo
 for places, landscapes, weather and climates (a desert, a marsh, a glacier, a hill). Leave effects empty for \
 an object that simply stands in the world: a lighthouse does not raise the land.
 
+Paint the ground (ground_color, ground_strength, ground_radius). This colours the land itself round the \
+card, keeping its hills and shading: the rust red of Mars, the pale grey of the Moon, the black of burnt \
+land, the violet of an alien moss. ground_strength runs from 0 (unchanged) to 1 (fully that colour); 0.6 \
+to 0.85 reads clearly. ground_radius is a share of the world's width like an effect's. Use it for places \
+and surfaces whose colour names them; leave ground_strength 0 for objects and most other words.
+
 2. Change the air (atmosphere). tint is a colour the whole picture leans towards and tint_strength how far \
 (0 none, 0.2 a hint, 0.5 strong). light runs from -1 (night) through 0 (unchanged) to +1 (bright midday). \
 particles are things in the air near the card: rise (smoke, sparks, steam, bubbles), fall (petals, ash, \
@@ -295,7 +304,9 @@ weather and abstract words; use it lightly for objects, if at all. Use tint_stre
 air should not change, and particles none when nothing is in the air.
 
 3. Put an object in the world (has_object, palette and parts). This is what people look at longest, so \
-build it like a small sculpture, not a diagram. The object is built from 18 to 30 parts and fits a cube \
+build it like a small sculpture, not a diagram. The object is built from 18 to 30 parts for a simple thing; a complex one (a castle, a ship \
+with rigging, a dragon, a whole scene such as a giant mushroom with smaller ones round it) may use up to \
+100 parts where the detail earns it. It fits a cube \
 measured in hundredths: x (left to right) and z (back to front) run from -50 to 50, y from 0 (the ground) \
 to 100 (the top). The object faces +z. Make its longest side fill the cube: a tower is 100 tall, a ship 100 \
 long. Each part is written shortly:
@@ -346,6 +357,14 @@ the nearest water, and sits beached if there is none), shore (at the water's edg
 ground: birds, clouds, lanterns), anywhere. motion: still, bob (on water), sway (in the wind), spin, drift \
 (a slow loop). glow when the object is lit from within (a lantern, a star). If the word needs no object, \
 set has_object false and leave palette and parts empty; the other object fields are then ignored.
+
+Never build ground out of parts. Rocks, boulders, craters, dunes, rubble, soil, cliffs and patches of \
+terrain made of parts look like broken lumps on the smooth land. A place, landscape, biome, planet or \
+surface (a desert, a swamp, MARS SURFACE, MOON, a mushroom forest) is made with effects and the air only: \
+height for hills and canyons, temperature and wetness for colour and dryness, life for plants, and a \
+ground colour for the colour of the land (rust red for Mars, pale grey for the Moon) and a tint for the air. Give such a word an \
+object only when one upright thing names it (giant mushrooms for a mushroom forest, cacti for a desert, \
+a rover for Mars), and then build that thing, big and clear, never the ground under it.
 
 Two objects in full, to show the standard (do not copy their shapes for other words):
 COW, metres 2.5, few, land, still. palette ["#f2efe6","#2b2a2a","#d9a9a0","#cfc8b8","#e8dfc0"]. parts:
@@ -404,6 +423,11 @@ false (the lamp is small), motion still.
 yellow-green tint at 0.15, light +0.2, particles drift, small, sparse, pale yellow (pollen); an object of \
 many small flowers (metres 0.3): a few leaning green stems with leaves, each topped with a bright \
 centre and a repeat of petals round it, in two or three colours.
+- MARS SURFACE: effects temperature +0.3 and wetness -0.8, radius 0.25, life -1.0, a little height \
++0.15; ground #b5532e at 0.8, radius 0.3; air a red-orange tint at 0.3, particles drift, small, sparse, rust (dust); no object.
+- MUSHROOM FOREST: effects life +0.7 and wetness +0.4, radius 0.2; air a purple tint at 0.3, light -0.2, \
+particles drift, glowing, sparse, pale green (spores); an object of few giant mushrooms (metres 8): a thick \
+pale stalk with a wide spotted cap that overhangs it, gills underneath, small ones at its foot.
 - LONELINESS: no effects; tint a cold grey-blue at 0.35, light -0.3, particles fall, small, sparse, pale \
 grey; one object (metres 6): a single thin leaning figure, small and off-centre on a wide, low, empty grey \
 disc, with one bare tree bent away from it.
@@ -453,6 +477,11 @@ def card_from_reply(word: str, data: dict[str, Any], ms: int) -> dict[str, Any]:
             "density": data.get("particle_density", 0.4),
             "glow": bool(data.get("particle_glow")),
         }
+    card["ground"] = {
+        "color": data.get("ground_color", ""),
+        "strength": data.get("ground_strength", 0),
+        "radius": data.get("ground_radius", 0.2),
+    }
     card["atmosphere"] = {
         "tint": data.get("tint", ""),
         "strength": data.get("tint_strength", 0),

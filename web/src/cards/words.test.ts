@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUILT_IN_IDS, CARD_DEFS, cardDef } from './defs';
-import { cleanCard, fallbackCard, findCard, nearMatch, normaliseWord, register, removeWord, resolveWord, wordId, wordSound, type AskServer, MAX_PRIMITIVES, copiesOf } from './words';
+import { cleanCard, fallbackCard, findCard, nearMatch, normaliseWord, register, removeWord, resolveWord, wordId, wordSound, type AskServer, MAX_PRIMITIVES, MAX_PARTS, copiesOf } from './words';
 
 describe('words and ids', () => {
   it('normalises what was typed', () => {
@@ -75,7 +75,7 @@ describe('cleanCard, the one gate', () => {
     expect(def.atmosphere!.tint).toBe('#ffffff');
     expect(def.atmosphere!.particles).toBeNull();
     const prop = def.prop!;
-    expect(prop.parts.length).toBeLessThanOrEqual(40);
+    expect(prop.parts.length).toBeLessThanOrEqual(MAX_PARTS);
     for (const part of prop.parts) {
       expect(part.shape).toBe('box');
       expect(part.color).toMatch(/^#[0-9a-f]{6}$/);

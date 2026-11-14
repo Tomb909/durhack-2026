@@ -82,6 +82,15 @@ export interface Particles {
 }
 
 /** How a card changes the air. Tint and light are for the whole world; particles stay by the card. */
+/** A colour painted onto the land round the card (the red of Mars, the grey of the Moon). */
+export interface Ground {
+  color: string;
+  /** 0..1: how far the land takes the colour. */
+  strength: number;
+  /** A share of the world's width, as for effects. */
+  radius: number;
+}
+
 export interface Atmosphere {
   /** A colour the sky and light lean towards. */
   tint: string;
@@ -147,6 +156,7 @@ export interface CardDef {
    */
   compound?: boolean;
   atmosphere?: Atmosphere;
+  ground?: Ground;
   prop?: Prop;
   /** Only on cards made from a typed word: read by the model, or guessed in the page. */
   origin?: 'llm' | 'fallback';

@@ -188,7 +188,7 @@ def test_makes_stores_and_reuses(tmp_path: Path):
     config = call["config"]
     assert config["system_instruction"] == PROMPT
     assert config["response_mime_type"] == "application/json" and config["response_json_schema"] == CARD_SCHEMA
-    assert config["http_options"] == {"timeout": 20000}  # milliseconds
+    assert config["http_options"] == {"timeout": 45000}  # milliseconds
     # No thinking level unless one is asked for: the model's own default is the fastest.
     assert "thinking_config" not in config and "temperature" not in config
     slow = WordService(WordStore(tmp_path / "other.json"), client_factory=lambda: client, effort="high")
