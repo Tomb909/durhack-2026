@@ -163,6 +163,7 @@ export const RULES = {
     ventStart: 0.3, // how strongly Lava must push before molten rock wells up
     ventFull: 0.8,
     thickness: 0.006, // how thick it lies on open ground
+    ragged: 1.6, // how much noise breaks up the edge of where it wells up (share of the push, per unit of noise)
     coolBelow: -0.3, // colder than this and it has set to rock
     coolSpan: 0.25, // fully molten this much warmer than that
     flow: {
@@ -176,6 +177,13 @@ export const RULES = {
       keep: 0.98, // a stream loses this much at every step, so it runs out
       levelLakes: true,
     } satisfies HydrologyRules,
+  },
+  /** A crack (an effect with `crack`, such as a ravine): how uneven it is along its length. */
+  crack: {
+    widen: 1.9, // width swells and narrows by this share per unit of slow noise
+    wander: 3.5, // the middle wanders off the fault line by this many widths per unit of fine noise
+    deepen: 1.3, // depth swells by this share per unit of slow noise
+    jagged: 0.7, // and by this share per unit of fine noise
   },
   /** A volcano's cone (an effect with `cone`; the shape itself is on the card). */
   volcano: {
@@ -288,6 +296,10 @@ export class WorldSim {
   private fault: Float32Array;
   /** How fast `fault` changes per cell, so a crack is the same width everywhere. */
   private faultGrade: Float32Array;
+  /** Fine noise (about -0.5..0.5): breaks the edge of welling lava into lobes and makes a crack wander. */
+  private jag: Float32Array;
+  /** Slow noise (about -0.5..0.5): a crack widens and deepens in some stretches and narrows in others. */
+  private swell: Float32Array;
   /** Volcano cones (effects with `cone`): the highest cone at each cell. */
   private coneLift: Float32Array;
   /** Molten rock pouring out of the cones' notches, in lava flow units. */
@@ -329,7 +341,7 @@ export class WorldSim {
     const h = (this.h = gridHeight(aspect));
     const n = (this.n = w * h);
     const f = () => new Float32Array(n);
-    this.base = f(); this.ridge = f(); this.rough = f(); this.fault = f(); this.faultGrade = f(); this.coneLift = f(); this.ventFlow = f(); this.coneMask = f(); this.coneFloor = f(); this.ground = new Float64Array(n);
+    this.base = f(); this.ridge = f(); this.rough = f(); this.fault = f(); this.faultGrade = f(); this.jag = f(); this.swell = f(); this.coneLift = f(); this.ventFlow = f(); this.coneMask = f(); this.coneFloor = f(); this.ground = new Float64Array(n);
     this.push = { height: f(), temperature: f(), wetness: f(), life: f(), settlement: f(), lava: f() };
     this.lavaSource = f(); this.lavaTarget = f(); this.lavaHeatTarget = f(); this.lavaSurfaceTarget = f();
     this.lavaFlow = new Hydrology(w, h);
@@ -358,6 +370,8 @@ export class WorldSim {
         this.ridge[k] = ridged(X * 3.4, Y * 3.4, 5, 5);
         this.rough[k] = fbm(X * 9, Y * 9, 2, 23) - 0.5;
         this.fault[k] = fbm(X * 2.3, Y * 2.3, 3, 71);
+        this.jag[k] = fbm(X * 13, Y * 13, 3, 41) - 0.5;
+        this.swell[k] = fbm(X * 5, Y * 5, 2, 59) - 0.5;
       }
     }
     // Never flatter than this, or a crack would spread into a wide pit where the field levels off.
@@ -649,7 +663,9 @@ export class WorldSim {
     let any = false;
     for (let i = 0; i < n; i++) {
       // Lava pushed on wells up (up to 1 per cell); a cone's notches pour out more than that.
-      const s = this.inside[i] ? smoothstep(L.ventStart, L.ventFull, pushed[i]) + vents[i] : 0;
+      // Noise on the push gives the welling ground a ragged, lobed edge, not a round disc.
+      const p = pushed[i] * (1 + L.ragged * this.jag[i]);
+      const s = this.inside[i] ? smoothstep(L.ventStart, L.ventFull, p) + vents[i] : 0;
       lavaSource[i] = s;
       if (s > 0) any = true;
     }
@@ -1033,6 +1049,8 @@ export class WorldSim {
     const copies = this.copies;
     const { fault, faultGrade } = this;
     const crackCells = crack * (this.w - 1);
+    const { jag, swell } = this;
+    const C = RULES.crack;
     copies.fill(0);
     const { w: GW, h: GH } = this;
     const sigmaX = radius * (GW - 1); // radius is a fraction of the world's width
@@ -1060,9 +1078,13 @@ export class WorldSim {
         if (crack > 0) {
           // A crack keeps to its fault line, which follows no row or column: that part is per cell.
           for (let i = x0; i <= x1; i++) {
-            // Roughly how many cells this one is from the card's fault line.
-            const off = (fault[row + i] - line) / (faultGrade[row + i] * crackCells);
-            copies[row + i] += down * across[i] * Math.exp(-0.5 * off * off);
+            // Roughly how many crack widths this one is from the card's fault line. The width
+            // swells and narrows along the crack, and its middle wanders off the line a little.
+            const k = row + i;
+            const width = crackCells * (1 + C.widen * swell[k]);
+            const off = (fault[k] - line) / (faultGrade[k] * width) + C.wander * jag[k];
+            const depth = 1 + C.deepen * swell[k] + C.jagged * jag[k];
+            copies[k] += down * across[i] * depth * Math.exp(-0.5 * off * off);
           }
         } else {
           for (let i = x0; i <= x1; i++) copies[row + i] += down * across[i];
