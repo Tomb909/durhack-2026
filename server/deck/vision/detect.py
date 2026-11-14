@@ -282,7 +282,24 @@ def _group_letters(ink: np.ndarray) -> list[np.ndarray]:
     return [np.concatenate([points[i] for i in fragment.letters]) for fragment in fragments.values()]
 
 
-def detect(rect_bgr: np.ndarray, backdrop: Backdrop | None = None, now: float = 0.0) -> DetectResult:
+def _inside_bands(inside: np.ndarray | None, shape: tuple[int, int], margin: int) -> tuple[np.ndarray, np.ndarray]:
+    """(where ink may be, where a word may reach) for a play area of any shape.
+
+    The whole rectified image for a rectangle, or the drawn shape's interior,
+    each kept `margin` (and a couple more pixels) clear of the border line.
+    """
+    area = np.full(shape, 255, np.uint8) if inside is None else inside.copy()
+    area[[0, -1], :] = 0
+    area[:, [0, -1]] = 0
+    allowed = cv2.erode(area, cv2.getStructuringElement(cv2.MORPH_RECT, (2 * margin - 1, 2 * margin - 1)))
+    reach = cv2.erode(area, cv2.getStructuringElement(cv2.MORPH_RECT, (2 * margin + 5, 2 * margin + 5)))
+    return allowed, reach
+
+
+def detect(
+    rect_bgr: np.ndarray, backdrop: Backdrop | None = None, now: float = 0.0, inside: np.ndarray | None = None
+) -> DetectResult:
+    """`inside`: optional uint8 mask of the play area (255 inside); None means the whole image."""
     gray = cv2.cvtColor(rect_bgr, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape
     paper = _paper_level(gray)
@@ -298,16 +315,20 @@ def detect(rect_bgr: np.ndarray, backdrop: Backdrop | None = None, now: float = 
     ink = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
 
     margin = mm(EDGE_MARGIN_MM)
-    ink[:margin, :] = 0
-    ink[-margin:, :] = 0
-    ink[:, :margin] = 0
-    ink[:, -margin:] = 0
+    allowed, reach = _inside_bands(inside, (h, w), margin)
+    ink[allowed == 0] = 0
 
-    lit = float(np.percentile(paper, 85))
+    # Paper brightness and colour are measured inside the play area only: outside
+    # a drawn circle there may be bare sheet or wooden table.
+    in_area = allowed > 0 if np.any(allowed) else np.ones((h, w), bool)
+    lit = float(np.percentile(paper[in_area], 85))
     # Colour is judged on a smoothed quarter-size copy: ink and noise drop out.
     small = cv2.medianBlur(cv2.resize(rect_bgr, (w // 4, h // 4), interpolation=cv2.INTER_AREA), 5)
     lab = cv2.cvtColor(small, cv2.COLOR_BGR2LAB).astype(np.float32)
-    chroma = np.hypot(lab[:, :, 1] - np.median(lab[:, :, 1]), lab[:, :, 2] - np.median(lab[:, :, 2]))
+    small_in = cv2.resize(in_area.astype(np.uint8), (w // 4, h // 4), interpolation=cv2.INTER_NEAREST) > 0
+    if not np.any(small_in):
+        small_in[:] = True
+    chroma = np.hypot(lab[:, :, 1] - np.median(lab[:, :, 1][small_in]), lab[:, :, 2] - np.median(lab[:, :, 2][small_in]))
     coloured = cv2.resize((chroma > OCCLUDER_CHROMA).astype(np.uint8) * 255, (w, h), interpolation=cv2.INTER_NEAREST)
     raw = ((gray < OCCLUDER_DARK * lit) | (coloured > 0)).astype(np.uint8) * 255
     # Keep only what is thicker than any pen stroke, then grow it to cover its fuzzy edge.
@@ -330,9 +351,8 @@ def detect(rect_bgr: np.ndarray, backdrop: Backdrop | None = None, now: float = 
 
     detections: list[Detection] = []
     for points in _group_letters(ink):
-        x0, y0 = points.min(axis=0)
-        x1, y1 = points.max(axis=0)
-        if x0 <= margin + 1 or y0 <= margin + 1 or x1 >= w - margin - 2 or y1 >= h - margin - 2:
+        px, py = points[:, 0].astype(np.int32), points[:, 1].astype(np.int32)
+        if np.any(reach[py, px] == 0):
             continue  # runs off the play area: the border line or an arm, not a card
         if len(points) < MIN_INK_MM2 * PX_PER_MM * PX_PER_MM:
             continue

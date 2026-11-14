@@ -187,3 +187,66 @@ def test_widely_spaced_letters_are_still_one_word(reader):
     rect = cv2.resize(inner, (1050, 742), interpolation=cv2.INTER_AREA)
     words = detect(rect).detections
     assert len(words) == 1, [round(d.long) for d in words]
+
+
+# --- play areas of any shape -------------------------------------------------------
+
+
+@pytest.mark.parametrize("border", ["circle", "blob"])
+def test_any_closed_border_is_a_play_area(reader, border):
+    # Positions are fractions of the shape's bounding box, as for a rectangle.
+    scraps = [Scrap("SUN", 0.5, 0.3), Scrap("ICE", 0.3, 0.6, angle=30), Scrap("LIFE", 0.68, 0.62, angle=-20)]
+    vision = Vision(reader)
+    run(vision, scraps, frames=6, border=border)
+    assert vision.play_area.locked and not vision.play_area.four_sided
+    shape = vision.snapshot(now=0.55)["playArea"]["shape"]
+    assert shape is not None and len(shape["outline"]) >= 12
+    cards = by_card(vision)
+    for scrap in scraps:
+        (card,) = cards[scrap.word.lower()]
+        assert abs(card["x"] - scrap.x) < 0.03, (scrap.word, card)
+        assert abs(card["y"] - scrap.y) < 0.03, (scrap.word, card)
+
+
+def test_circle_gives_a_round_world(reader):
+    vision = Vision(reader)
+    run(vision, [Scrap("SUN", 0.5, 0.5)], frames=5, border="circle")
+    shape = vision.snapshot(now=0.45)["playArea"]["shape"]
+    assert abs(shape["aspect"] - 1.0) < 0.04
+    import numpy as np
+
+    radii = [np.hypot(x - 0.5, y - 0.5) for x, y in shape["outline"]]
+    assert 0.46 < min(radii) and max(radii) < 0.52
+
+
+def test_rectangle_world_is_unchanged(reader):
+    vision = Vision(reader)
+    run(vision, [Scrap("SUN", 0.5, 0.5)], frames=5)
+    shape = vision.snapshot(now=0.45)["playArea"]["shape"]
+    assert vision.play_area.four_sided
+    assert shape["outline"] == [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+    assert vision.play_area.rect_size() == (1050, 742)
+
+
+def test_scrap_outside_the_circle_is_ignored(reader):
+    # Two identical small scraps: one in the corner of the circle's bounding box
+    # (outside the circle, clear of its line), one in the middle.
+    small = dict(letter_mm=9, pad_mm=2)
+    vision = Vision(reader)
+    run(vision, [Scrap("ICE", 0.04, 0.05, **small), Scrap("ICE", 0.5, 0.5, **small)], frames=6, border="circle")
+    (ice,) = by_card(vision)["ice"]
+    assert abs(ice["x"] - 0.5) < 0.03 and abs(ice["y"] - 0.5) < 0.03
+
+
+def test_circle_with_no_sheet_edge_in_view():
+    # Looking straight down at a big sheet: only the drawn circle is visible.
+    import cv2
+    import numpy as np
+
+    from deck.vision.playarea import find_outlines
+
+    image = np.full((1080, 1920), 235, np.uint8)
+    cv2.circle(image, (960, 540), 420, 20, 22)
+    (outline, *_) = find_outlines(image)
+    assert not outline.four_sided
+    assert abs(outline.aspect - 1.0) < 0.03

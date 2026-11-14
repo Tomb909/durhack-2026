@@ -1,8 +1,7 @@
 // All open water (sea, lakes, rivers) is one surface, lifted to the water
 // level texture and drawn only where it is above the ground.
 import * as THREE from 'three';
-import { GH, GW } from '../sim/world';
-import { GLSL_COMMON, WORLD_D, WORLD_W, type SharedUniforms } from './common';
+import { GLSL_COMMON, world, type SharedUniforms } from './common';
 
 const vertex = /* glsl */ `
 ${GLSL_COMMON}
@@ -24,6 +23,7 @@ varying vec2 vUv;
 varying vec3 vWorld;
 
 void main() {
+  if (fieldB(vUv).a < 0.499) discard; // outside the play area
   vec4 a = fieldA(vUv);
   vec4 b = fieldB(vUv);
   float depth = b.r - a.r;
@@ -84,8 +84,8 @@ void main() {
 }
 `;
 
-export function makeWater(shared: SharedUniforms): THREE.Mesh {
-  const geometry = new THREE.PlaneGeometry(WORLD_W, WORLD_D, (GW - 1) * 2, (GH - 1) * 2);
+export function makeWater(shared: SharedUniforms, gw: number, gh: number): THREE.Mesh {
+  const geometry = new THREE.PlaneGeometry(world.w, world.d, (gw - 1) * 2, (gh - 1) * 2);
   geometry.rotateX(-Math.PI / 2);
   const material = new THREE.ShaderMaterial({
     uniforms: { ...shared },

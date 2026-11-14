@@ -64,6 +64,7 @@ class Tracker:
     def __init__(self) -> None:
         self.tracks: list[Track] = []
         self._next_id = 1
+        self.size: tuple[int, int] = (RECT_W, RECT_H)  # rectified image the positions are measured in
 
     def reset(self) -> None:
         self.tracks.clear()
@@ -204,9 +205,10 @@ class Tracker:
         half = int(max(track.long, track.short) / 2)
         x0, x1 = int(track.x) - half, int(track.x) + half
         y0, y1 = int(track.y) - half, int(track.y) + half
-        if x0 < 0 or y0 < 0 or x1 >= RECT_W or y1 >= RECT_H:
+        h, w = occluder.shape[:2]
+        if x0 < 0 or y0 < 0 or x1 >= w or y1 >= h:
             # Partly outside the play area: treat anything touching it as covering.
-            x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, RECT_W - 1), min(y1, RECT_H - 1)
+            x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w - 1), min(y1, h - 1)
         if x1 <= x0 or y1 <= y0:
             return False
         patch = occluder[y0:y1, x0:x1]
@@ -214,16 +216,28 @@ class Tracker:
 
     # --- output -------------------------------------------------------------
 
+    def resize(self, size: tuple[int, int]) -> None:
+        """The rectified image changed size (the play area's proportions changed): keep cards in place."""
+        if size == self.size:
+            return
+        sx, sy = size[0] / self.size[0], size[1] / self.size[1]
+        for t in self.tracks:
+            t.x *= sx
+            t.y *= sy
+        self.size = size
+
     def cards(self) -> list[dict]:
+        w, h = self.size
         return [
-            {"id": t.id, "card": t.card, "x": round(t.x / RECT_W, 4), "y": round(t.y / RECT_H, 4), "visible": t.visible}
+            {"id": t.id, "card": t.card, "x": round(t.x / w, 4), "y": round(t.y / h, 4), "visible": t.visible}
             for t in self.tracks
             if t.card is not None
         ]
 
     def candidates(self) -> list[dict]:
+        w, h = self.size
         return [
-            {"id": t.id, "x": round(t.x / RECT_W, 4), "y": round(t.y / RECT_H, 4), "text": t.text,
+            {"id": t.id, "x": round(t.x / w, 4), "y": round(t.y / h, 4), "text": t.text,
              "confidence": round(t.confidence, 3), "reads": t.reads}
             for t in self.tracks
             if t.card is None

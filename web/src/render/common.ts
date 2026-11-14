@@ -2,15 +2,20 @@
 //
 // The renderer's whole view of the world is two textures (see fields.ts):
 //   uFieldA = height, temperature, wetness, vegetation
-//   uFieldB = waterSurface, river, precipitation, (spare)
+//   uFieldB = waterSurface, river, precipitation, inside mask (0.5 on the outline)
 // plus the sea level. Rewrite anything in render/ freely: nothing else in the
 // app depends on it.
 import * as THREE from 'three';
-import { ASPECT, GH, GW, RULES } from '../sim/world';
+import { A3_ASPECT, GW, RULES, gridHeight } from '../sim/world';
 
 /** World size in scene units. X = table left to right, Z = far to near, Y = up. */
 export const WORLD_W = 10;
-export const WORLD_D = WORLD_W / ASPECT;
+/** Current world size (depth follows the play area's proportions). Mutated by setWorldAspect. */
+export const world = { w: WORLD_W, d: WORLD_W / A3_ASPECT, aspect: A3_ASPECT };
+export function setWorldAspect(aspect: number): void {
+  world.aspect = aspect;
+  world.d = WORLD_W / aspect;
+}
 /** Scene units per unit of sim height. */
 export const HSCALE = 4.2;
 export const SLAB_BOTTOM = -1.7;
@@ -23,6 +28,8 @@ export interface SharedUniforms {
   uFieldB: THREE.IUniform<THREE.Texture | null>;
   uTexel: THREE.IUniform<THREE.Vector2>;
   uGrid: THREE.IUniform<THREE.Vector2>;
+  /** World width and depth in scene units. */
+  uWorld: THREE.IUniform<THREE.Vector2>;
   uSea: THREE.IUniform<number>;
   uTime: THREE.IUniform<number>;
   uSunDir: THREE.IUniform<THREE.Vector3>;
@@ -39,8 +46,9 @@ export function makeSharedUniforms(): SharedUniforms {
   return {
     uFieldA: { value: null },
     uFieldB: { value: null },
-    uTexel: { value: new THREE.Vector2(1 / GW, 1 / GH) },
-    uGrid: { value: new THREE.Vector2(GW, GH) },
+    uTexel: { value: new THREE.Vector2(1 / GW, 1 / gridHeight(world.aspect)) },
+    uGrid: { value: new THREE.Vector2(GW, gridHeight(world.aspect)) },
+    uWorld: { value: new THREE.Vector2(world.w, world.d) },
     uSea: { value: RULES.seaBase },
     uTime: { value: 0 },
     uSunDir: { value: SUN_DIR.clone() },
@@ -62,8 +70,9 @@ uniform float uTime;
 uniform vec3 uSunDir;
 uniform float uFreezing;
 
-const float WORLD_W = ${WORLD_W.toFixed(4)};
-const float WORLD_D = ${WORLD_D.toFixed(4)};
+uniform vec2 uWorld;
+#define WORLD_W uWorld.x
+#define WORLD_D uWorld.y
 const float HSCALE = ${HSCALE.toFixed(4)};
 const float SLAB_BOTTOM = ${SLAB_BOTTOM.toFixed(4)};
 
@@ -97,3 +106,10 @@ float fbm2(vec2 p) {
   return s;
 }
 `;
+
+/** Point the shared uniforms at a new grid and world size (vectors are shared by reference). */
+export function setSharedWorld(shared: SharedUniforms, w: number, h: number): void {
+  shared.uTexel.value.set(1 / w, 1 / h);
+  shared.uGrid.value.set(w, h);
+  shared.uWorld.value.set(world.w, world.d);
+}

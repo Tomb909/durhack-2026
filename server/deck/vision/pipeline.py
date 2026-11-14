@@ -74,8 +74,11 @@ class Vision:
                 self.to_image = None
             else:
                 self.to_image = np.linalg.inv(homography)
-                self.rect = cv2.warpPerspective(frame, homography, (RECT_W, RECT_H), flags=cv2.INTER_AREA)
-                self.result = detect(self.rect, self.backdrop, now)
+                size = self.play_area.rect_size()
+                self.tracker.resize(size)
+                self.rect = cv2.warpPerspective(frame, homography, size, flags=cv2.INTER_AREA)
+                inside = None if self.play_area.four_sided else self.play_area.inside_mask()
+                self.result = detect(self.rect, self.backdrop, now, inside)
                 read: Callable[[Detection], Reading] | None = None
                 if self.reader is not None:
                     read = self._read
@@ -103,10 +106,21 @@ class Vision:
             found = self.play_area.found(now)
             return {
                 "camera": {"connected": connected, "fps": round(self.fps(), 1), "processMs": round(self.process_ms, 1)},
-                "playArea": {"found": found, "locked": self.play_area.locked, "flip": self.play_area.flip},
+                "playArea": {
+                    "found": found, "locked": self.play_area.locked, "flip": self.play_area.flip,
+                    # The world takes this shape: proportions (long / short side) and
+                    # outline (points 0..1 across the play area, x right, y toward the player).
+                    "shape": self._shape() if connected else None,
+                },
                 "cards": self.tracker.cards() if connected else [],
                 "candidates": self.tracker.candidates() if connected else [],
             }
+
+    def _shape(self) -> dict | None:
+        outline = self.play_area.outline()
+        if outline is None:
+            return None
+        return {"aspect": round(self.play_area.aspect, 4), "outline": outline}
 
     def phone_status(self, now: float | None = None) -> dict:
         """State for the phone overlay. Positions are 0..1 across the camera image."""
@@ -118,6 +132,9 @@ class Vision:
             if corners is None or w == 0:
                 return status
             status["corners"] = [[round(float(x) / w, 4), round(float(y) / h, 4)] for x, y in corners]
+            contour = self.play_area.contour
+            if contour is not None and not self.play_area.four_sided:
+                status["outline"] = [[round(float(x) / w, 4), round(float(y) / h, 4)] for x, y in contour]
             if self.to_image is None:
                 return status
             tracks = self.tracker.tracks
