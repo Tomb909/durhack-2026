@@ -252,6 +252,12 @@ export interface WorldFrame {
   seaLevel: number;
   /** Increases whenever the arrays change. */
   version: number;
+  /**
+   * Increases whenever the world was worked out again from the cards. Not while water and lava
+   * only ease toward where they are heading, nor while forest is being felled: those change
+   * `waterSurface`, `river`, the lava arrays and `cleared`, and nothing else.
+   */
+  rules: number;
 }
 
 const smoothstep = (a: number, b: number, x: number) => {
@@ -338,7 +344,7 @@ export class WorldSim {
       height: f(), temperature: f(), wetness: f(),
       vegetation: f(), waterSurface: f(), river: f(),
       precipitation: f(), windX: f(), windY: f(), snowBlow: f(), homes: f(), farms: f(), fishing: f(), logging: f(), cleared: f(),
-      lava: f(), lavaHeat: f(), lavaSurface: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
+      lava: f(), lavaHeat: f(), lavaSurface: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0, rules: 0,
     };
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
@@ -408,7 +414,14 @@ export class WorldSim {
       // The water has arrived. Land beside it is damper now, which may move the
       // water again, so look once more and keep going until nothing changes.
       // Without this the world would stop wherever the animation happened to be.
-      if (this.settle <= 0 && this.passesLeft-- > 0 && this.refine(cards)) this.settle = RULES.settleSeconds * 5;
+      if (this.settle <= 0) {
+        // `refine` puts the water and the lava exactly on their targets before it looks again.
+        if (this.passesLeft-- > 0) {
+          if (this.refine(cards)) this.settle = RULES.settleSeconds * 5;
+        } else {
+          this.arrive(); // out of looks: at least end exactly where the last one pointed
+        }
+      }
       this.frame.version++;
     }
     this.fell(dt);
@@ -458,6 +471,13 @@ export class WorldSim {
     return this.frame;
   }
 
+  /** Put the water and the lava exactly where they are heading. */
+  private arrive(): void {
+    this.frame.waterSurface.set(this.surfaceTarget);
+    this.frame.river.set(this.riverTarget);
+    this.arriveLava();
+  }
+
   /** Put the lava where it is heading, at once. */
   private arriveLava(): void {
     this.frame.lava.set(this.lavaTarget);
@@ -472,6 +492,7 @@ export class WorldSim {
     lastRiver.set(riverTarget);
     frame.waterSurface.set(surfaceTarget);
     frame.river.set(riverTarget);
+    this.arriveLava();
     this.recompute(cards);
     for (let i = 0; i < n; i++) {
       if (Math.abs(surfaceTarget[i] - lastSurface[i]) > 1e-6 || Math.abs(riverTarget[i] - lastRiver[i]) > 1e-6) return true;
@@ -615,6 +636,7 @@ export class WorldSim {
     // --- 6. people: houses on dry, gentle, liveable land; fields on flat fertile land; boats on open water
     this.settlePeople();
     frame.version++;
+    frame.rules++;
   }
 
   private hadLava = false;

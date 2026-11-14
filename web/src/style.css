@@ -32,7 +32,7 @@ body.bare #ui > :not(#toast) { display: none; }
 #tray-add input::placeholder { color: var(--muted); }
 #tray-add button { padding: 6px 11px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 #tray-add button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
-#tray-add :disabled { opacity: 0.55; cursor: progress; }
+#tray-add :disabled, #tray-add input:read-only { opacity: 0.55; cursor: progress; }
 #tray-status { margin: 0 0 8px; font-size: 11px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
 #tray-status:empty { display: none; }
 #tray-status.guess { color: #e6c27a; }

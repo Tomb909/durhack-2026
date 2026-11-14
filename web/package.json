@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "test:full": "DECK_FULL_TESTS=1 vitest run",
     "harness": "node tools/harness.mjs"
   },
   "dependencies": {

@@ -163,6 +163,7 @@ export class PropLayer {
   private kinds = new Map<CardDef, Kind>();
   private placed: PlacedObject[] = [];
   private key = '';
+  private placedAt = -Infinity;
   private matrix = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private up = new THREE.Vector3(0, 1, 0);
@@ -204,11 +205,19 @@ export class PropLayer {
   }
 
   /** Place and pose every object for this frame and these cards. */
-  update(frame: WorldFrame, cards: LiveCard[]): void {
+  /**
+   * @param live  true in the running app. Placing is not cheap and, while the world settles, it would
+   *              be asked for on every frame: live, ten times a second is soon enough, and the last
+   *              change is always placed. A still picture (a tile, a frozen moment) is placed at
+   *              once, so the same cards always give the same picture.
+   */
+  update(frame: WorldFrame, cards: LiveCard[], live = false): void {
     // Placement depends on the world and where the cards are, not on how far they have faded in.
     const key = `${frame.version}|${frame.w}x${frame.h}|${cards.filter((c) => c.def.prop && c.strength > 0).map((c) => `${c.def.id}@${c.x.toFixed(4)},${c.y.toFixed(4)}`).join(';')}`;
-    if (key !== this.key) {
+    const now = performance.now();
+    if (key !== this.key && (!live || now - this.placedAt >= 100)) {
       this.key = key;
+      this.placedAt = now;
       this.placed = placeProps(frame, cards);
     } else {
       // Same places: only the growing in and out follows the cards.

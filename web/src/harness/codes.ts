@@ -51,10 +51,15 @@ interface Group {
 }
 
 function resolveId(token: string): string {
-  const ids = CARD_DEFS.map((d) => d.id.toLowerCase());
-  if (ids.includes(token)) return CARD_DEFS[ids.indexOf(token)].id;
-  const starts = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id) && d.id.toLowerCase().startsWith(token));
+  // Built-in cards first, by full id and then by any unambiguous start. Only then a made card, by
+  // its full id: a made card called `m` must not change what `m+wa` means.
+  const builtIn = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id));
+  const exact = builtIn.find((d) => d.id.toLowerCase() === token);
+  if (exact) return exact.id;
+  const starts = builtIn.filter((d) => d.id.toLowerCase().startsWith(token));
   if (starts.length === 1) return starts[0].id;
+  const made = CARD_DEFS.find((d) => !BUILT_IN_IDS.has(d.id) && d.id.toLowerCase() === token);
+  if (made && !starts.length) return made.id;
   const known = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id)).map((d) => d.id).join(', ');
   throw new Error(starts.length ? `"${token}" could be ${starts.map((d) => d.id).join(' or ')}` : `no card called "${token}" (cards: ${known})`);
 }

@@ -437,6 +437,10 @@ export async function resolveWord(text: string, options: { fresh?: boolean; ask?
   } catch (error) {
     why = (error as Error).message || 'the model could not be reached';
   }
+  // A guess never takes the place of a card the model has already made: this ask may have been a
+  // second one for the same word (Try again, or the same word typed in the other box).
+  const made = findCard(word);
+  if (made && !isGuess(made)) return { def: made, source: BUILT_IN_IDS.has(made.id) ? 'built-in' : 'stored', why, ms: elapsed() };
   const near = nearMatch(word);
   if (near) return { def: near, source: 'near', why, ms: elapsed() };
   const guess = cleanCard({ ...fallbackCard(word), ms: elapsed() })!;
@@ -508,13 +512,18 @@ export function guessCards(words: string): string[] {
 /** Stored cards from the server, or from the dev server's read-only copy when the Python server is off. */
 async function fetchStored(): Promise<unknown[] | null> {
   for (const url of ['/api/words', '/__harness/words']) {
+    // A server that takes the connection and then says nothing must not hold up the page.
+    const giveUp = new AbortController();
+    const timer = setTimeout(() => giveUp.abort(), 4000);
     try {
-      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: giveUp.signal });
       if (!response.ok || !(response.headers.get('content-type') ?? '').includes('json')) continue;
       const body = await response.json();
       if (body && Array.isArray(body.cards)) return body.cards;
     } catch {
-      /* not there: try the next */
+      /* not there, or too slow: try the next */
+    } finally {
+      clearTimeout(timer);
     }
   }
   return null;

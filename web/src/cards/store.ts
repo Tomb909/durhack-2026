@@ -75,7 +75,7 @@ export class CardStore {
 
   addSim(cardId: string, x: number, y: number): string | null {
     const def = cardDef(cardId);
-    if (!def) return null;
+    if (!def || !Number.isFinite(x) || !Number.isFinite(y)) return null;
     const key = `sim:${this.nextSim++}`;
     this.add(key, def, 'sim', x, y);
     return key;
@@ -83,7 +83,7 @@ export class CardStore {
 
   moveSim(key: string, x: number, y: number): void {
     const card = this.find(key);
-    if (card && card.source === 'sim') {
+    if (card && card.source === 'sim' && Number.isFinite(x) && Number.isFinite(y)) {
       card.tx = Math.min(1, Math.max(0, x));
       card.ty = Math.min(1, Math.max(0, y));
     }
@@ -121,7 +121,7 @@ export class CardStore {
       seen.add(key);
       let card = this.find(key);
       if (!card || card.def !== def) {
-        if (card) card.present = false, (card.key += ':old');
+        if (card) card.present = false, (card.key += `:old${this.nextSim++}`); // its own key: two old cards must not share one
         card = this.add(key, def, 'camera', t.x, t.y);
       }
       card.present = true;

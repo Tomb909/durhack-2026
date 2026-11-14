@@ -126,9 +126,12 @@ describe('the Combinations view filter', () => {
   });
 });
 
-// These run every combination of cards (2^cards), so they get slower with each new card.
+// Every combination of cards doubles with each card added (hundreds of worlds now, half a minute
+// to settle them all), so the whole sweep runs only when asked for: `npm run test:full`.
+// Day to day these check every card alone, every pair, and the showcase mixes.
+const FULL = !!(globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.DECK_FULL_TESTS;
 describe('the settled world depends on the cards alone', { timeout: 120_000 }, () => {
-  const all = [...resolveScenarios({ set: 'all' }), ...resolveScenarios({ codes: MADE_CODES.join(';') })];
+  const all = [...resolveScenarios({ set: FULL ? 'all' : 'showcase,singles,pairs' }), ...resolveScenarios({ codes: MADE_CODES.join(';') })];
   const measured = (sim: WorldSim, s: { cards: Parameters<typeof liveCards>[0] }) => {
     const cards = liveCards(s.cards);
     return measure(sim.settleNow(cards), cards).hash;

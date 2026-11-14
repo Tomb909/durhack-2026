@@ -111,11 +111,13 @@ export class WorldRenderer {
   private lava: THREE.Object3D | null = null;
   private reach = new WorldReach();
   private reachFrame: WorldFrame | null = null;
-  private reachVersion = -1;
+  private reachRules = -1;
   private reachCull = true;
   private governor = new QualityGovernor();
   private lastDrawn = 0;
   private outline: number[][] = DEFAULT_SHAPE.outline;
+  /** This renderer's own proportions. `world` (common.ts) is shared by every renderer on the page. */
+  private aspect = DEFAULT_SHAPE.aspect;
   private beacons: Beacons;
   private merchants: Merchants;
   private time = 0;
@@ -139,7 +141,14 @@ export class WorldRenderer {
    * True: when frames are slow, draw fewer pixels to stay smooth, and sharpen again when
    * there is time to spare. Never sharper than the chosen quality (the Q key).
    */
-  autoQuality = true;
+  get autoQuality(): boolean {
+    return this.auto;
+  }
+  set autoQuality(on: boolean) {
+    this.auto = on;
+    if (this.composer) this.resize();
+  }
+  private auto = true;
   /** False draws every tree, house and person site whether or not anything shows there (slow: only to check that leaving them out changes nothing). */
   cull = true;
 
@@ -187,6 +196,7 @@ export class WorldRenderer {
 
   /** Rebuild everything that depends on the play area's shape and proportions. */
   setShape(shape: WorldShape): void {
+    this.aspect = shape.aspect;
     setWorldAspect(shape.aspect);
     const gw = GW;
     const gh = gridHeight(shape.aspect);
@@ -194,6 +204,7 @@ export class WorldRenderer {
     // The old meshes go once the new ones have been drawn. Their shaders are the same programs:
     // letting go of the old first would throw the compiled programs away and build them all
     // again, a long stall on every change of shape.
+    this.release(this.retired);
     for (const object of this.shaped) {
       this.scene.remove(object);
       this.retired.push(object);
@@ -211,6 +222,19 @@ export class WorldRenderer {
     this.lava = makeLava(this.shared, gw, gh);
     this.shaped = [makeTerrain(this.shared, this.palettes, gw, gh), makeSlabSides(this.shared, shape.outline, gw), this.lava, makeWater(this.shared, gw, gh)];
     for (const object of this.shaped) this.scene.add(object);
+  }
+
+  /** Free these meshes' shapes and materials, and empty the list. */
+  private release(objects: THREE.Object3D[]): void {
+    for (const object of objects) {
+      object.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+    }
+    objects.length = 0;
   }
 
   setQuality(pixelRatio: number): void {
@@ -276,6 +300,7 @@ export class WorldRenderer {
 
   /** The ground point under a screen position, relative to the looked-at middle of the world (for zooming toward the pointer). */
   groundPoint(clientX: number, clientY: number): { x: number; z: number } | null {
+    setWorldAspect(this.aspect);
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
@@ -286,6 +311,7 @@ export class WorldRenderer {
 
   /** Where on the table (0..1, 0..1) a screen point lands, or null if it misses the world. */
   pickTable(clientX: number, clientY: number): { x: number; y: number } | null {
+    setWorldAspect(this.aspect);
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
@@ -327,9 +353,11 @@ export class WorldRenderer {
 
   /** Leave out the tree, house and people sites with nothing to show. Only when the world has changed. */
   private cullSites(frame: WorldFrame): void {
-    if (frame === this.reachFrame && frame.version === this.reachVersion && this.cull === this.reachCull) return;
+    // `rules`, not `version`: the tests read only fields the rules produce (plants, climate, homes,
+    // farms, fishing, logging, rain), none of which change while water eases or forest is felled.
+    if (frame === this.reachFrame && frame.rules === this.reachRules && this.cull === this.reachCull) return;
     this.reachFrame = frame;
-    this.reachVersion = frame.version;
+    this.reachRules = frame.rules;
     this.reachCull = this.cull;
     this.reach.reset(frame);
     for (const part of this.culled) part.cull(this.reach, !this.cull);
@@ -344,6 +372,8 @@ export class WorldRenderer {
   }
 
   render(frame: WorldFrame, cards: LiveCard[], dt: number): void {
+    // Another renderer (the Combinations view's) may have drawn a world of other proportions since.
+    setWorldAspect(this.aspect);
     if (dt > 0) this.pace();
     this.time += dt;
     this.shared.uTime.value = this.time;
@@ -366,8 +396,8 @@ export class WorldRenderer {
       this.shared.uPulseColor.value[i].copy(colour);
     }
     this.shared.uPulseCount.value = count;
-    this.props.update(frame, cards);
-    this.air.update(frame, cards, this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight));
+    this.props.update(frame, cards, dt > 0);
+    this.air.update(frame, cards, (this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight)) * this.renderer.getPixelRatio());
     const grade = this.air.grade;
     this.props.night.value = Math.max(0, -grade.light);
     this.grade.enabled = grade.amount > 0.001 || Math.abs(grade.light) > 0.001;
@@ -381,16 +411,6 @@ export class WorldRenderer {
       this.beacons.update(cards, frame, this.time, this.camera, this.canvas.clientWidth, this.canvas.clientHeight);
     }
     this.composer.render(dt);
-    if (this.retired.length) {
-      for (const object of this.retired) {
-        object.traverse((o) => {
-          if (o instanceof THREE.Mesh) {
-            o.geometry.dispose();
-            (o.material as THREE.Material).dispose();
-          }
-        });
-      }
-      this.retired.length = 0;
-    }
+    this.release(this.retired);
   }
 }

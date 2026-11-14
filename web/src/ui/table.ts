@@ -105,17 +105,19 @@ export class TablePanel {
     if (!form || !input || !status) return;
     const button = form.querySelector('button') as HTMLButtonElement;
     // Typing a word must not steer the camera or open other panels: the page's keys stop here.
-    for (const type of ['keydown', 'keyup'] as const) {
-      form.addEventListener(type, (e) => {
-        e.stopPropagation();
-        if (type === 'keydown' && e.key === 'Escape') input.blur();
-      });
-    }
+    // (Only key presses stop: a key let go must still reach the page, or a W held down while
+    // clicking in here would walk the camera for ever.)
+    form.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') input.blur();
+    });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const text = input.value.trim();
       if (!text || button.disabled) return;
-      button.disabled = input.disabled = true;
+      // Read-only, not disabled: a disabled box loses the keyboard, and the next letters typed
+      // would go to the page (X clears every card, F goes full screen).
+      button.disabled = input.readOnly = true;
       status.className = '';
       status.textContent = `Reading ${text.toUpperCase()}…`;
       try {
@@ -134,7 +136,7 @@ export class TablePanel {
         status.textContent = (error as Error).message;
         status.className = 'guess';
       } finally {
-        button.disabled = input.disabled = false;
+        button.disabled = input.readOnly = false;
         input.focus();
       }
     });

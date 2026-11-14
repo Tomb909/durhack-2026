@@ -22,7 +22,7 @@ const COUNT = { one: [1, 1], few: [3, 4], many: [7, 10] } as const;
 const REACH = 0.2;
 /** Water deeper than this floats a boat; land wetter than this is not dry ground. */
 const AFLOAT = 0.003;
-const DRY = 0.0008;
+const DRY = 0.0003;
 
 export interface PlacedObject {
   def: CardDef;
@@ -43,6 +43,12 @@ export interface PlacedObject {
   phase: number;
   afloat: boolean;
 }
+
+/**
+ * How far below the ground at its middle an object may stand, as a share of its size. On a steep
+ * slope the lowest ground under it is far down: standing there would bury it in the hillside.
+ */
+const MOST_SUNK = 0.6;
 
 /** A number from a card's id and position: the same card in the same place always gives the same objects. */
 function seedFor(card: LiveCard): number {
@@ -83,12 +89,41 @@ function nearest(g: Grid, x: number, y: number, reach: number, suits: (i: number
   return best;
 }
 
+/**
+ * 1 where open water lies within three cells (a 7 x 7 square). Worked out once for a whole
+ * placement: asking it afresh for every cell looked at made a few shore objects cost tens of
+ * milliseconds, on every frame while the world settled.
+ */
+function nearOpenWater(g: Grid): Uint8Array {
+  const { w, h } = g.frame;
+  const open = new Uint8Array(w * h);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (g.depth(i, j) > AFLOAT) open[j * w + i] = 1;
+  const along = new Uint8Array(w * h);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      let any = 0;
+      for (let ii = Math.max(0, i - 3); ii <= Math.min(w - 1, i + 3) && !any; ii++) any = open[j * w + ii];
+      along[j * w + i] = any;
+    }
+  }
+  const near = new Uint8Array(w * h);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      let any = 0;
+      for (let jj = Math.max(0, j - 3); jj <= Math.min(h - 1, j + 3) && !any; jj++) any = along[jj * w + i];
+      near[j * w + i] = any;
+    }
+  }
+  return near;
+}
+
 /** Place every object of every card that has one. */
 export function placeProps(frame: WorldFrame, cards: LiveCard[]): PlacedObject[] {
   const out: PlacedObject[] = [];
   const g = grid(frame);
   const { w, h, mask, aspect } = frame;
   const cell = (x: number, y: number) => ({ i: Math.round(x * (w - 1)), j: Math.round(y * (h - 1)) });
+  let byWater: Uint8Array | null = null; // only worked out if some object wants a shore
   // Cards in a fixed order (by id, then place), so who gets a contested spot never depends on list order.
   const order = cards
     .filter((c) => c.def.prop && c.strength > 0)
@@ -144,17 +179,9 @@ export function placeProps(frame: WorldFrame, cards: LiveCard[]): PlacedObject[]
         }
       } else if (habitat === 'shore') {
         // Dry ground with open water a few steps away; with no water anywhere near, any dry ground.
-        const by = (i: number, j: number) => {
-          if (g.depth(i, j) >= DRY || !inside(i, j) || !clear(i / (w - 1), j / (h - 1))) return false;
-          for (let dj = -3; dj <= 3; dj++) {
-            for (let di = -3; di <= 3; di++) {
-              const ii = i + di;
-              const jj = j + dj;
-              if (ii >= 0 && jj >= 0 && ii < w && jj < h && g.depth(ii, jj) > AFLOAT) return true;
-            }
-          }
-          return false;
-        };
+        const near = (byWater ??= nearOpenWater(g));
+        // The cheap tests first; `clear` looks at every object placed so far.
+        const by = (i: number, j: number) => g.depth(i, j) < DRY && near[j * w + i] === 1 && inside(i, j) && clear(i / (w - 1), j / (h - 1));
         at = nearest(g, cx, cy, REACH, by);
         if (!at) {
           const dry = (i: number, j: number) => g.depth(i, j) < DRY && inside(i, j) && clear(i / (w - 1), j / (h - 1));
@@ -180,11 +207,15 @@ export function placeProps(frame: WorldFrame, cards: LiveCard[]): PlacedObject[]
       if (afloat) ground = sampleField(frame.waterSurface, w, h, at.x, at.y);
       else {
         ground = Infinity;
+        let middle = 0;
         for (const [dx, dy] of [[0, 0], [foot, 0], [-foot, 0], [0, foot], [0, -foot]]) {
           const sx = at.x + dx;
           const sy = at.y + dy * aspect;
-          ground = Math.min(ground, Math.max(sampleField(frame.height, w, h, sx, sy), habitat === 'land' || habitat === 'shore' ? -Infinity : sampleField(frame.waterSurface, w, h, sx, sy)));
+          const here = Math.max(sampleField(frame.height, w, h, sx, sy), habitat === 'land' || habitat === 'shore' ? -Infinity : sampleField(frame.waterSurface, w, h, sx, sy));
+          if (dx === 0 && dy === 0) middle = here;
+          ground = Math.min(ground, here);
         }
+        ground = Math.max(ground, middle - MOST_SUNK * size);
       }
       const placed: PlacedObject = {
         def: card.def, x: at.x, y: at.y, ground,
