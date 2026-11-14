@@ -8,12 +8,13 @@
   </head>
   <body>
     <canvas id="world"></canvas>
+    <div id="labels" aria-hidden="true"></div>
     <div id="ui">
       <button id="status" type="button" title="Phone camera status. Click for connection help.">
         <span class="dot"></span><span id="status-text">Simulated cards</span>
       </button>
 
-      <section id="table-panel" aria-label="Table map and simulated cards">
+      <section id="table-panel" aria-label="Table map and simulated cards" hidden>
         <div id="tray" aria-label="Drag a card onto the table or the world"></div>
         <div id="table">
           <span class="edge far">far side</span>
@@ -28,7 +29,7 @@
       </section>
 
       <div id="toast" role="status"></div>
-      <div id="keys"><b>G</b> setup guide · <b>C</b> card check · <b>P</b> phone · <b>F</b> fullscreen · <b>R</b> rotate table · <b>L</b> re-find border · <b>B</b> beacons · <b>X</b> clear · <b>I</b> instant · <b>H</b> hide panels</div>
+      <div id="keys"><b>G</b> setup guide · <b>C</b> card check · <b>P</b> phone · <b>F</b> fullscreen · <b>R</b> rotate table · <b>L</b> re-find border · <b>B</b> labels · <b>H</b> hide panels</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

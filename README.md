@@ -47,7 +47,8 @@ Nothing needs the internet once it is running.
 | F | Fullscreen |
 | R | Rotate the table 180° (if near and far are swapped) |
 | L | Find the border again |
-| B | Show or hide the card beacons |
+| B | Show or hide the card labels |
+| Tab | Developer option: the table map and the tray of simulated cards |
 | X | Remove all simulated cards |
 | I | Instant: no fading or easing, the world jumps to its final state |
 | H | Hide the panels |
@@ -55,7 +56,7 @@ Nothing needs the internet once it is running.
 
 ### Simulated cards
 
-Drag a card from the tray (bottom left) onto the little table map, or straight onto the world. Drag it off to remove it. They add to whatever the camera sees. If the camera drops out, the real cards stay where they were and become draggable, with no restart.
+A developer option, hidden by default: press **Tab** to show the table map and a tray of cards. Drag a card from the tray onto the map, or straight onto the world. Drag it off to remove it. They add to whatever the camera sees. If the camera drops out, the tray appears by itself and the real cards stay where they were and become draggable, with no restart.
 
 ## Making cards and the sheet
 
@@ -104,7 +105,7 @@ web/src/cards (smoothing) ─► web/src/sim (world rules, no graphics) ─► w
 
 ### No phone, no word reader
 
-The world page needs nothing but itself. `npm --prefix web run dev` and open <http://localhost:5173>: the status reads "Simulated cards" and you drag cards from the tray. The Python server is only for the camera; `uv run deck --no-read` starts it without loading the word reader.
+The world page needs nothing but itself. `npm --prefix web run dev` and open <http://localhost:5173>: the status reads "Simulated cards". Press **Tab** for the card tray and drag cards onto the world. The Python server is only for the camera; `uv run deck --no-read` starts it without loading the word reader.
 
 Cards can also come from the address, already settled, with no dragging and no waiting:
 
@@ -153,6 +154,6 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | `--view` / `view=` | `3d`, `map` (flat top-down, no GPU needed), `both` (3D with a map inset) |
 | `--tile` / `tile=` | Tile width in pixels (default 400). `--tile 1200 --cols 1` for a close look at a few worlds. |
 | `--cols`, `--time`, `--zoom` / `cols=`, `t=`, `zoom=` | Tiles per row, the moment drawn (default 6 s), how close the camera is (default 1.3) |
-| `--no-beacons`, `--png`, `--tiles` / `beacons=0`, `fmt=png`, `tiles=1` | Hide card markers, lossless files, one file per world as well |
+| `--no-beacons`, `--png`, `--tiles` / `beacons=0`, `fmt=png`, `tiles=1` | Hide the card pillars, lossless files, one file per world as well |
 
 Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for a position, and any unambiguous start of an id (`m+w*2`). Ids come from `cards.json`, so a new card works in codes and in every set straight away. Chrome is found automatically; set `CHROME_PATH` if it is somewhere unusual, or use `--serve` to open the sheet in a browser yourself.

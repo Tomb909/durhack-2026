@@ -79,7 +79,9 @@ async function run(): Promise<Result> {
     glCanvas = document.createElement('canvas');
     glCanvas.style.cssText = `position:absolute;left:-10000px;top:0;width:${tileW}px;height:${tileH}px`;
     document.body.appendChild(glCanvas);
-    renderer = new WorldRenderer(glCanvas);
+    // The app's card labels are page elements, not part of the picture, so they cannot be copied
+    // onto the sheet: give them a layer that is never shown. Each tile's title names its cards instead.
+    renderer = new WorldRenderer(glCanvas, document.createElement('div'));
     renderer.setFixedSize(tileW, tileH);
     renderer.sway = false;
     renderer.showBeacons = flag('beacons', true);

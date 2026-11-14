@@ -19,10 +19,10 @@ export const RULES = {
   copiesCeiling: 3.2,
   seaCopiesCeiling: 4.5,
   seaBase: 0.0,
-  plainHeight: 0.046,
-  plainTilt: 0.03, // the land slopes gently down toward the bay
-  plainRoughness: 0.022,
-  bayDepth: 0.11,
+  /** The empty world: gentle hills, all of it above the sea. */
+  landLow: 0.022, // height of the lowest hollow (the sea starts below it)
+  landRelief: 0.07, // from the lowest hollow to the highest hilltop
+  lowlandBias: 1.3, // above 1 = more low ground than high, so floods spread
   /** Temperature runs from -1 (frozen) through 0 (mild) to +1 (scorching). */
   lapse: 1.15, // how much colder it gets per unit of height
   lapseStartsAt: 0.08,
@@ -119,15 +119,21 @@ export class WorldSim {
         const X = u * ASPECT;
         const Y = v;
         const k = j * GW + i;
-        // A gently rolling plain that slopes down to a bay in the near-right corner.
-        const tilt = -RULES.plainTilt * (u - 0.5 + (v - 0.5));
-        const rough = RULES.plainRoughness * 2 * (fbm(X * 2.4, Y * 2.4, 3, 11) - 0.5);
-        const corner = Math.hypot((1 - u) * ASPECT, 1 - v);
-        const bay = RULES.bayDepth * smoothstep(0.46, 0.0, corner);
-        this.base[k] = RULES.plainHeight + tilt + rough - bay;
+        // Light rolling hills (scaled below so the lowest point sits just above the sea).
+        this.base[k] = fbm(X * 1.9, Y * 1.9, 4, 11);
         this.ridge[k] = ridged(X * 3.4, Y * 3.4, 5, 5);
         this.rough[k] = fbm(X * 9, Y * 9, 2, 23) - 0.5;
       }
+    }
+    let lowest = Infinity;
+    let highest = -Infinity;
+    for (let k = 0; k < n; k++) {
+      lowest = Math.min(lowest, this.base[k]);
+      highest = Math.max(highest, this.base[k]);
+    }
+    for (let k = 0; k < n; k++) {
+      const t = (this.base[k] - lowest) / (highest - lowest);
+      this.base[k] = RULES.landLow + RULES.landRelief * Math.pow(t, RULES.lowlandBias);
     }
   }
 

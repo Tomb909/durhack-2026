@@ -40,7 +40,7 @@ export class WorldRenderer {
   private tiltV: ShaderPass;
   private shared: SharedUniforms;
   private fields: FieldTextures;
-  private beacons = new Beacons();
+  private beacons: Beacons;
   private time = 0;
   private quality = 1.5;
   private raycaster = new THREE.Raycaster();
@@ -51,7 +51,8 @@ export class WorldRenderer {
   /** Above 1 moves the camera closer than "the whole world fits". */
   zoom = 1;
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(private canvas: HTMLCanvasElement, labelLayer: HTMLElement) {
+    this.beacons = new Beacons(labelLayer);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -162,9 +163,12 @@ export class WorldRenderer {
       this.shared.uPulseColor.value[i].set(card.def.color);
     }
     this.shared.uPulseCount.value = count;
-    this.beacons.group.visible = this.showBeacons;
-    if (this.showBeacons) this.beacons.update(cards, frame, this.time);
     this.placeCamera();
+    this.camera.updateMatrixWorld();
+    this.beacons.setVisible(this.showBeacons);
+    if (this.showBeacons) {
+      this.beacons.update(cards, frame, this.time, this.camera, this.canvas.clientWidth, this.canvas.clientHeight);
+    }
     this.composer.render(dt);
   }
 }
