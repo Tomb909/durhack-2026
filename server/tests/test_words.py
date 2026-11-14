@@ -21,7 +21,8 @@ def same_on_every_machine(monkeypatch):
     for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(words, "MODEL", words.DEFAULT_MODEL)
-    monkeypatch.setattr(words, "EFFORT", "low")
+    monkeypatch.setattr(words, "EFFORT", "")
+    monkeypatch.setattr(words, "HEDGE_AFTER", 4.0)
 
 
 REPLY = {
@@ -50,24 +51,37 @@ REPLY = {
 }
 
 
-class StubInteractions:
-    """Stands in for `client.aio.interactions` (Gemini's Interactions API)."""
+class StubModels:
+    """Stands in for `client.aio.models` (Gemini's generate_content)."""
 
-    def __init__(self, reply: dict, status: str = "completed", error: Exception | None = None, delay: float = 0.0) -> None:
-        self.reply, self.status, self.error, self.delay = reply, status, error, delay
+    def __init__(self, reply: dict, ended: str = "STOP", error=None, delay=0.0, blocked: str | None = None) -> None:
+        # `delay` and `error` may be lists: one entry per call, in order (the last one repeats).
+        self.reply, self.ended, self.error, self.delay, self.blocked = reply, ended, error, delay, blocked
         self.calls: list[dict] = []
+        self.cancelled = 0
 
-    async def create(self, **kwargs):
+    async def generate_content(self, **kwargs):
+        nth = len(self.calls)
         self.calls.append(kwargs)
-        await asyncio.sleep(self.delay)
-        if self.error:
-            raise self.error
-        return SimpleNamespace(status=self.status, output_text=json.dumps(self.reply))
+        pick = lambda v: v[min(nth, len(v) - 1)] if isinstance(v, list) else v
+        try:
+            await asyncio.sleep(pick(self.delay))
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+        error = pick(self.error)
+        if error:
+            raise error
+        return SimpleNamespace(
+            text=json.dumps(self.reply),
+            candidates=[SimpleNamespace(finish_reason=self.ended)],
+            prompt_feedback=SimpleNamespace(block_reason=self.blocked),
+        )
 
 
-def stub(reply=REPLY, **kwargs) -> tuple[StubInteractions, object]:
-    interactions = StubInteractions(reply, **kwargs)
-    return interactions, SimpleNamespace(aio=SimpleNamespace(interactions=interactions))
+def stub(reply=REPLY, **kwargs) -> tuple[StubModels, object]:
+    models = StubModels(reply, **kwargs)
+    return models, SimpleNamespace(aio=SimpleNamespace(models=models))
 
 
 async def with_client(service: WordService, run):
@@ -153,13 +167,15 @@ def test_makes_stores_and_reuses(tmp_path: Path):
     assert [c["id"] for c in listed["cards"]] == ["castle"]
     assert len(messages.calls) == 2
     call = messages.calls[0]
-    assert call["model"] == "gemini-4-hydrogen" and call["input"] == "<word>CASTLE</word>"
-    assert call["system_instruction"] == PROMPT
-    # The schema rides in response_format (response_mime_type is the old, deprecated way).
-    assert call["response_format"] == {"type": "text", "mime_type": "application/json", "schema": CARD_SCHEMA}
-    assert call["generation_config"] == {"thinking_level": "low"}
-    assert call["store"] is False and call["timeout"] == words.TIMEOUT
-    assert "response_mime_type" not in call and "temperature" not in call["generation_config"]
+    assert call["model"] == words.DEFAULT_MODEL == "gemini-3.5-flash-lite" and call["contents"] == "<word>CASTLE</word>"
+    config = call["config"]
+    assert config["system_instruction"] == PROMPT
+    assert config["response_mime_type"] == "application/json" and config["response_json_schema"] == CARD_SCHEMA
+    assert config["http_options"] == {"timeout": 20000}  # milliseconds
+    # No thinking level unless one is asked for: the model's own default is the fastest.
+    assert "thinking_config" not in config and "temperature" not in config
+    slow = WordService(WordStore(tmp_path / "other.json"), client_factory=lambda: client, effort="high")
+    assert slow._config()["thinking_config"] == {"thinking_level": "high"}
 
 
 def test_same_word_at_once_shares_one_call(tmp_path: Path):
@@ -187,13 +203,38 @@ def test_without_a_key_is_503(tmp_path: Path):
     assert "no GEMINI_API_KEY" in service.describe()
 
 
-def test_an_unfinished_answer_is_no_card(tmp_path: Path):
-    for status in ("incomplete", "failed", "cancelled"):
-        _, client = stub(status=status)
-        service = WordService(WordStore(tmp_path / f"{status}.json"), client_factory=lambda: client)
+def test_an_unfinished_or_declined_answer_is_no_card(tmp_path: Path):
+    for ended in ("MAX_TOKENS", "FinishReason.SAFETY", "RECITATION"):
+        models, client = stub(ended=ended)
+        service = WordService(WordStore(tmp_path / f"{ended}.json"), client_factory=lambda: client)
         with pytest.raises(Unavailable, match="did not finish"):
             asyncio.run(service.resolve("castle"))
-        assert not (tmp_path / f"{status}.json").exists()
+        assert len(models.calls) == 1  # it would end the same way again
+        assert not (tmp_path / f"{ended}.json").exists()
+    _, client = stub(blocked="SAFETY")
+    service = WordService(WordStore(tmp_path / "blocked.json"), client_factory=lambda: client)
+    with pytest.raises(Unavailable, match="declined"):
+        asyncio.run(service.resolve("castle"))
+
+
+def test_an_overloaded_model_is_asked_again_at_once(tmp_path: Path):
+    # About three asks in ten get "503: this model is overloaded" straight back; the next ask usually works.
+    overloaded = Carrying("This model is currently experiencing high demand.", code=503, status="UNAVAILABLE")
+    models, client = stub(error=[overloaded, overloaded, None])
+    service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client)
+    seconds = asyncio.run(_timed(service.resolve("castle")))
+    assert seconds < 1.0 and len(models.calls) == 3
+    assert service.store.get("castle") is not None
+
+
+def test_a_model_that_stays_overloaded_gives_up_after_a_few_asks(tmp_path: Path):
+    overloaded = Carrying("This model is currently experiencing high demand.", code=503, status="UNAVAILABLE")
+    models, client = stub(error=overloaded)
+    service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client)
+    with pytest.raises(Unavailable, match="overloaded"):
+        asyncio.run(service.resolve("castle"))
+    assert len(models.calls) == words.MOST_ASKS
+    assert service.store.all() == []
 
 
 def test_slow_model_times_out(tmp_path: Path):
@@ -201,6 +242,81 @@ def test_slow_model_times_out(tmp_path: Path):
     service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client, timeout=0.05)
     with pytest.raises(Unavailable, match="no answer"):
         asyncio.run(service.resolve("castle"))
+
+
+def test_a_late_answer_is_asked_for_again_and_the_first_to_come_wins(tmp_path: Path):
+    # The first ask stalls (it happens about one time in four); the second, sent alongside, answers at once.
+    models, client = stub(delay=[5.0, 0.01])
+    service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client, hedge_after=0.05)
+    started = asyncio.run(_timed(service.resolve("castle")))
+    assert started < 1.0  # not the five seconds of the stalled ask
+    assert len(models.calls) == 2 and service.calls == 2
+    assert models.cancelled == 1  # the stalled ask was called off, not left running
+    assert service.store.get("castle") is not None
+
+
+async def _timed(job) -> float:
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    await job
+    await asyncio.sleep(0)  # let a called-off ask finish being cancelled
+    return loop.time() - started
+
+
+def test_a_prompt_answer_is_asked_for_once(tmp_path: Path):
+    models, client = stub(delay=0.01)
+    service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client, hedge_after=0.2)
+    asyncio.run(service.resolve("castle"))
+    assert len(models.calls) == 1
+
+
+def test_a_plain_failure_is_not_asked_again(tmp_path: Path):
+    # A refused key will be refused the second time too: say so at once.
+    for name, error, said in [
+        ("refused", Carrying("no", code=403, status="PERMISSION_DENIED"), "key was refused"),
+        ("quota", Carrying("quota", code=429, status="RESOURCE_EXHAUSTED"), "rate limited"),
+        ("wrong-model", Carrying("models/nope is not found", code=404, status="NOT_FOUND"), "404"),
+    ]:
+        models, client = stub(error=error)
+        service = WordService(WordStore(tmp_path / f"{name}.json"), client_factory=lambda: client, hedge_after=0.05)
+        with pytest.raises(Unavailable, match=said):
+            asyncio.run(service.resolve("castle"))
+        assert len(models.calls) == 1, name
+
+
+def test_one_of_two_failing_leaves_the_other(tmp_path: Path):
+    # Both are out; the first then fails, the second answers.
+    models, client = stub(delay=[0.15, 0.2], error=[OSError("reset"), None])
+    service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client, hedge_after=0.05)
+    card, source = asyncio.run(service.resolve("castle"))
+    assert source == "model" and card["id"] == "castle"
+    assert 2 <= len(models.calls) <= words.MOST_ASKS  # the failed one was replaced; late ones may have been added
+
+
+def test_both_failing_is_no_card_and_both_slow_is_a_timeout(tmp_path: Path):
+    models, client = stub(delay=0.02, error=OSError("reset"))
+    service = WordService(WordStore(tmp_path / "a.json"), client_factory=lambda: client, hedge_after=0.05)
+    with pytest.raises(Unavailable, match="could not reach"):
+        asyncio.run(service.resolve("castle"))
+    assert len(models.calls) == words.MOST_ASKS
+    models, client = stub(delay=5.0)
+    service = WordService(WordStore(tmp_path / "b.json"), client_factory=lambda: client, hedge_after=0.05, timeout=0.3)
+
+    async def run():
+        with pytest.raises(Unavailable, match="no answer"):
+            await service.resolve("castle")
+        await asyncio.sleep(0)
+        return models.cancelled
+
+    assert asyncio.run(run()) == words.MOST_ASKS == len(models.calls)  # giving up calls every ask off
+    assert service.store.all() == []
+
+
+def test_asking_again_can_be_turned_off(tmp_path: Path):
+    models, client = stub(delay=0.15)
+    service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client, hedge_after=0)
+    asyncio.run(service.resolve("castle"))
+    assert len(models.calls) == 1
 
 
 def test_bad_requests(tmp_path: Path):
@@ -235,6 +351,13 @@ def test_failures_say_why_whatever_class_the_sdk_raises():
     assert "rate limited" in why_not(Carrying("quota", code=429, status="RESOURCE_EXHAUSTED"))
     wrong = why_not(Carrying("models/gemini-9 is not found", status_code=404))
     assert "404" in wrong and "gemini-9 is not found" in wrong  # the reason is worth reading
+    assert "overloaded" in why_not(Carrying("high demand", code=503, status="UNAVAILABLE"))
+    # Which failures are of the moment (ask again) and which are the answer (do not).
+    again = words.worth_asking_again
+    assert again(Carrying("high demand", code=503, status="UNAVAILABLE")) and again(Carrying("oops", status_code=500))
+    assert again(OSError("no route")) and again(asyncio.TimeoutError())
+    assert not again(Carrying("no", code=403)) and not again(Carrying("quota", code=429)) and not again(Carrying("bad", code=400))
+    assert not again(TypeError("a mistake in the ask itself"))
     assert why_not(OSError("no route")) == "could not reach the model (OSError)"
     assert why_not(Carrying("timed out", status_code=None)) == "could not reach the model (Carrying)"
 
@@ -255,13 +378,17 @@ def test_the_sdks_own_errors_are_understood():
     assert "key was refused" in why_not(compat.PermissionDeniedError("no", response=answer(403), body=None))
     assert "400" in why_not(compat.BadRequestError("thinking_level xlow is not valid", response=answer(400), body=None))
     assert "rate limited" in why_not(errors.ClientError(429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}}))
+    # generate_content's own "overloaded", as the SDK raises it.
+    busy = errors.ServerError(503, {"error": {"code": 503, "message": "This model is currently experiencing high demand.", "status": "UNAVAILABLE"}})
+    assert "overloaded" in why_not(busy) and words.worth_asking_again(busy)
 
 
 def test_failures_are_no_card(tmp_path: Path):
     for name, error, expected in [
-        ("busy", Carrying("quota", status_code=429), "rate limited"),
+        ("quota", Carrying("quota", status_code=429), "rate limited"),
         ("refused", Carrying("no", status_code=403), "key was refused"),
         ("offline", OSError("no route"), "could not reach"),
+        ("overloaded", Carrying("high demand", code=503, status="UNAVAILABLE"), "overloaded"),
     ]:
         _, client = stub(error=error)
         service = WordService(WordStore(tmp_path / f"{name}.json"), client_factory=lambda: client)
@@ -278,7 +405,8 @@ def test_failures_are_no_card(tmp_path: Path):
 def test_start_up_line_names_the_model_and_never_the_key(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("GEMINI_API_KEY", "not-a-real-key-123")
     line = WordService(WordStore(tmp_path / "words.json")).describe()
-    assert "Gemini" in line and "gemini-4-hydrogen" in line and "low" in line
+    assert "Gemini" in line and words.DEFAULT_MODEL in line and "thinking" not in line
+    assert "high thinking" in WordService(WordStore(tmp_path / "w.json"), effort="high").describe()
     assert "not-a-real-key-123" not in line
 
 

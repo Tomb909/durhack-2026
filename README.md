@@ -166,7 +166,7 @@ The same box is under the card tray on the world page (**Tab**): type a word the
 
 For the model, the server needs a Gemini key (from <https://aistudio.google.com/apikey>). Put it in `~/.config/deck-of-worlds/keys.env` as `GEMINI_API_KEY=...`, then `uv run deck`. The file is read when the server starts, from any terminal, worktree or session; it lives outside the repository, so the key cannot be committed. One `NAME=value` per line; a value set in the terminal wins over the file. The server's first lines say which model will read new words, or that it found no key.
 
-The same file (or the terminal) takes two settings, neither needing a code change: `DECK_WORD_MODEL` names another model (default `gemini-4-hydrogen`; `gemini-3.5-flash-lite` is the fastest), and `DECK_WORD_EFFORT` sets how hard it thinks (default `low`; also `minimal`, `medium`, `high`). With no server, no key or no network the word still becomes a card at once: a guess, drawn with a dashed border, with **Try again**. When the model cannot be asked, the reason is shown and logged (the key was refused, over quota, a model name it does not know).
+The same file (or the terminal) takes three settings, none needing a code change: `DECK_WORD_MODEL` names another model (default `gemini-3.5-flash-lite`, the fastest; `gemini-4-hydrogen` takes 7 to 14 s a word), `DECK_WORD_EFFORT` sets a thinking level (unset by default, which is the model's own and the fastest; `low`, `medium`, `high`, and `minimal` on models that take it), and `DECK_WORD_HEDGE` is how many seconds to wait before asking a second time alongside a late answer (default 4; 0 never does). With no server, no key or no network the word still becomes a card at once: a guess, drawn with a dashed border, with **Try again**. When the model cannot be asked, the reason is shown and logged (the key was refused, over quota, a model name it does not know).
 
 **How it works.** A card is data, never code. A generated card is a `CardDef` like those in `cards.json`, and may do any mix of three things (all optional, see `web/src/cards/defs.ts`):
 
@@ -182,13 +182,21 @@ The **abstract fallback** runs in the page and knows nothing about meaning, so i
 
 Every card, from any source, passes through one gate, `cleanCard` in `web/src/cards/words.ts`: every number is clamped, every list limited, colours must be `#rrggbb`, unknown shapes and fields are dropped, and text loses its markup characters. The id comes from the word (`haunted house` → `haunted-house`; a word with no Latin letters gets `w-` and a hash), so a made card can never replace a built-in one. Where objects stand is worked out in `web/src/sim/props.ts` from the world and the cards alone: a boat floats on the nearest open water within reach, or sits beached at the card when there is none; land objects never stand in water; shore objects keep to the waterline; nothing stands outside the play area.
 
-The server side is `server/deck/words.py`: the prompt, the JSON schema the answer must fit, the call to Gemini (the `google-genai` SDK's Interactions API), the store, and one shared call when two requests ask for the same word. `GET /api/words` lists the stored cards. A stored card has the shape of an entry in `cards.json`, so a good one can be promoted by pasting it there.
+The server side is `server/deck/words.py`: the prompt, the JSON schema the answer must fit, the call to Gemini (the `google-genai` SDK's `generate_content`, asked again at once when the model is overloaded), the store, and one shared call when two requests ask for the same word. `GET /api/words` lists the stored cards. A stored card has the shape of an entry in `cards.json`, so a good one can be promoted by pasting it there.
 
 **Limits.** The camera does not make cards yet: an unknown handwritten word still shows "?". Objects are simple shapes and loop gently; nothing walks. Tint and light are one grade over the whole picture, so two cards with strong, different tints average out. The model is asked once per new word, so a new word takes as long as one call; a word seen before is instant.
 
 **Measuring it.** `uv run python tools/word_probe.py` resolves about 20 words of different kinds through a running server (`--url` for another port) and writes the seconds each took, what kind of card came back and its reading to `.deck/probe.json`, then prints the harness command that draws them. Every new word is one model call, which costs money.
 
-No measurements yet: this was built without model credentials, so the model path was tested only against a stubbed client and has not been run for real. Run the probe and put the measured numbers here.
+Measured on 14 November 2026 through the real API, about 80 asks in all, with the prompt and schema as they are:
+
+| How it is asked | A healthy answer | When the model is overloaded (about 3 asks in 10) |
+|---|---|---|
+| `gemini-3.5-flash-lite`, `generate_content` (the default) | 1.6 to 2.6 s | Says so at once (503); asked again straight away |
+| `gemini-3.5-flash-lite`, Interactions API | 1.6 to 4 s | Holds the ask for 33 s or more, whatever the settings |
+| `gemini-4-hydrogen`, Interactions API | 7 to 14 s | The same hold |
+
+As the server now asks (the default model, overloaded asks repeated at once, a late one asked again alongside): 11 new words took 1.9 to 5.7 s each, 2.9 s in the middle; a twelfth was refused for the key's rate limit, which the free tier reaches quickly because repeated asks count too. Objects, places, moods, phrases and words in other scripts (`祭り`) all came back as usable cards. The probe above has not been run as a whole, and nobody has yet judged by eye which kinds of word read well.
 
 ### Harness: every combination, at once
 

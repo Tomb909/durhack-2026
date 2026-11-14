@@ -9,8 +9,15 @@ web/src/cards/words.ts) before any reaches the world.
 With no credentials, no network or a refusal there is no card and the endpoint
 answers 503; the page then makes its own guess, so everything else still works.
 
-The model is Gemini, through the `google-genai` SDK and its Interactions API. It needs
+The model is Gemini, through the `google-genai` SDK (`generate_content`). It needs
 GEMINI_API_KEY: in the terminal, or in the keys file (see "keys" below).
+
+Speed is the point, and two things measured on 14 Nov 2026 decide how the model is asked:
+- About three asks in ten find the model overloaded. `generate_content` says so at once (503),
+  and asking again straight away usually works. The newer Interactions API instead holds an
+  overloaded ask for some 33 s before answering, so it is not used.
+- A healthy answer takes 2 to 3 s. Now and then one is simply late; then the word is asked a
+  second time alongside the first and whichever answers first is used.
 """
 
 from __future__ import annotations
@@ -27,7 +34,9 @@ from typing import Any, Callable
 
 from aiohttp import web
 
-DEFAULT_MODEL = "gemini-4-hydrogen"
+# Measured on 14 Nov 2026 with this prompt: gemini-3.5-flash-lite answers in 2.4 to 4.0 s,
+# gemini-4-hydrogen in 7 to 14 s, and the cards are of the same kind. Speed is the point here.
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 # --- keys ----------------------------------------------------------------------------------
 #
@@ -69,9 +78,25 @@ def has_key() -> bool:
 
 
 MODEL = os.environ.get("DECK_WORD_MODEL") or DEFAULT_MODEL
-# How hard the model thinks (Gemini's thinking level): minimal, low, medium or high.
-EFFORT = os.environ.get("DECK_WORD_EFFORT", "low")
+# How hard the model thinks (Gemini's thinking level: minimal, low, medium or high; not every
+# model takes every level). Left unset, the model's own default is used, which is the fastest.
+EFFORT = os.environ.get("DECK_WORD_EFFORT", "").strip().lower()
 TIMEOUT = 20.0  # seconds: past this the page has long since shown its own guess
+
+
+def _seconds(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.environ.get(name, "")))
+    except ValueError:
+        return default
+
+
+# When no answer has come after this long, the word is asked again alongside the first ask and
+# whichever answers first is used. 0 turns that off; with a slower model, set it above that
+# model's usual time or every word is asked twice.
+HEDGE_AFTER = _seconds("DECK_WORD_HEDGE", 4.0)
+# The most times one word is asked, counting asks repeated because the model was overloaded.
+MOST_ASKS = 5
 MAX_WORD = 40
 MAX_PARTS = 24
 
@@ -317,6 +342,10 @@ class Unavailable(Exception):
     """No card from the model; the message says why, in plain words."""
 
 
+class Busy(Unavailable):
+    """The model could not take this ask (overloaded, or not reached): asking again may well work."""
+
+
 def card_from_reply(word: str, data: dict[str, Any], ms: int) -> dict[str, Any]:
     """The model's flat answer as a cards.json entry. Shapes only: the page checks every value."""
     effects = []
@@ -383,20 +412,39 @@ def default_client() -> Any:
     return genai.Client()
 
 
-def why_not(error: Exception) -> str:
-    """Plain words for whatever the SDK raised.
-
-    The SDK has more than one family of error classes (the Interactions API raises its own, not
-    `google.genai.errors`), so this goes by what the error carries: an HTTP status as
-    `status_code` or `code`, sometimes a status name, and a message.
-    """
+def _status(error: Exception) -> tuple[Any, str, str]:
+    """What an SDK error carries: an HTTP status (as `code` or `status_code`), a status name, a message."""
     status = getattr(error, "status_code", None) or getattr(error, "code", None)
     name = str(getattr(error, "status", "") or "")
     detail = " ".join(str(getattr(error, "message", "") or error).split())[:160]
+    return status, name, detail
+
+
+def worth_asking_again(error: Exception) -> bool:
+    """True for failures of the moment: the model overloaded or erroring inside, or the network."""
+    status, name, _ = _status(error)
+    if isinstance(status, int):
+        return status >= 500
+    if name:
+        return name in ("UNAVAILABLE", "INTERNAL", "DEADLINE_EXCEEDED")
+    # No status at all: the network (the SDK lets its HTTP library's errors through), not a mistake in the ask.
+    library = type(error).__module__.split(".")[0]
+    return isinstance(error, (OSError, asyncio.TimeoutError)) or library in ("httpx", "httpx2", "httpcore", "aiohttp", "anyio", "h2")
+
+
+def why_not(error: Exception) -> str:
+    """Plain words for whatever the SDK raised.
+
+    The SDK has more than one family of error classes, so this goes by what the error carries
+    (see `_status`), not by its class.
+    """
+    status, name, detail = _status(error)
     if status in (401, 403) or name in ("UNAUTHENTICATED", "PERMISSION_DENIED") or "API key not valid" in detail:
         return "the Gemini key was refused"
     if status == 429 or name == "RESOURCE_EXHAUSTED":
         return "the model is busy or over its quota (rate limited)"
+    if status == 503 or name == "UNAVAILABLE":
+        return "the model is overloaded just now"
     if isinstance(status, int):
         # Say what it said: a wrong model name or thinking level is the usual cause, and worth reading.
         return f"the model answered with an error ({status}: {detail})"
@@ -413,12 +461,16 @@ class WordService:
         model: str | None = None,
         effort: str | None = None,
         timeout: float = TIMEOUT,
+        hedge_after: float | None = None,
+        most_asks: int = MOST_ASKS,
     ) -> None:
         self.store = store
         self.client_factory = client_factory or default_client
         self.model = model or MODEL
         self.effort = effort or EFFORT
         self.timeout = timeout
+        self.hedge_after = HEDGE_AFTER if hedge_after is None else hedge_after
+        self.most_asks = max(1, most_asks)
         self._client: Any = None
         self._pending: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self.calls = 0  # model calls made (for tests and the log)
@@ -428,7 +480,8 @@ class WordService:
         from_file = f", {' and '.join(KEYS_FOUND)} from {KEYS_FILE}" if KEYS_FOUND else ""
         if not has_key():
             return f"[words] no GEMINI_API_KEY: new words will be guessed in the page (put the key in {KEYS_FILE})"
-        return f"[words] new words are read by Gemini ({self.model}, {self.effort} thinking){from_file}"
+        thinking = f", {self.effort} thinking" if self.effort else ""
+        return f"[words] new words are read by Gemini ({self.model}{thinking}){from_file}"
 
     def _get_client(self) -> Any:
         if self._client is None:
@@ -438,31 +491,94 @@ class WordService:
                 raise Unavailable(f"no Gemini key (set GEMINI_API_KEY, or put it in {KEYS_FILE})") from error
         return self._client
 
+    def _config(self) -> dict[str, Any]:
+        config: dict[str, Any] = {
+            "system_instruction": PROMPT,
+            "response_mime_type": "application/json",
+            "response_json_schema": CARD_SCHEMA,
+            "http_options": {"timeout": round(self.timeout * 1000)},  # milliseconds
+        }
+        if self.effort:
+            config["thinking_config"] = {"thinking_level": self.effort}
+        return config
+
     async def _call_gemini(self, client: Any, word: str) -> str:
-        """Ask Gemini (the Interactions API). Returns the JSON text of its answer."""
+        """Ask Gemini once. Returns the JSON text of its answer; raises Busy when asking again may work."""
+        self.calls += 1
         try:
-            interaction = await client.aio.interactions.create(
-                model=self.model,
-                input=f"<word>{word}</word>",
-                system_instruction=PROMPT,
-                generation_config={"thinking_level": self.effort},
-                response_format={"type": "text", "mime_type": "application/json", "schema": CARD_SCHEMA},
-                store=False,  # a one-off question: nothing to keep on their side
-                timeout=self.timeout,
+            response = await client.aio.models.generate_content(
+                model=self.model, contents=f"<word>{word}</word>", config=self._config()
             )
         except Exception as error:  # an answer with an error status, or no answer at all
-            raise Unavailable(why_not(error)) from error
-        status = getattr(interaction, "status", "completed")
-        if status != "completed":
-            raise Unavailable(f"the model did not finish its answer ({status})")
-        return interaction.output_text or ""
+            raise (Busy if worth_asking_again(error) else Unavailable)(why_not(error)) from error
+        # Check how it ended before reading anything: a blocked or cut-off reply is no card.
+        if getattr(getattr(response, "prompt_feedback", None), "block_reason", None):
+            raise Unavailable("the model declined this word")
+        candidates = getattr(response, "candidates", None) or []
+        ended = str(getattr(candidates[0], "finish_reason", "") or "") if candidates else ""
+        if ended and not ended.upper().endswith("STOP"):
+            raise Unavailable(f"the model did not finish its answer ({ended.split('.')[-1].lower()})")
+        try:
+            return response.text or ""
+        except Exception as error:  # no text part to read
+            raise Unavailable("the model gave no answer") from error
+
+    async def _first_answer(self, client: Any, word: str) -> str:
+        """The first answer to come, asking more than once when that helps.
+
+        - An ask that finds the model overloaded (or cannot reach it) is replaced at once.
+        - When no answer has come after `hedge_after` seconds, another ask goes out alongside.
+        - A plain failure (a refused key, a spent quota, a word declined) is the answer: asking
+          again would only fail again.
+        Never more than `most_asks` asks for one word.
+        """
+        out: set[asyncio.Future[str]] = set()
+        made = 0
+        failure: Unavailable | None = None
+
+        def ask_again() -> bool:
+            nonlocal made
+            if made >= self.most_asks:
+                return False
+            made += 1
+            out.add(asyncio.ensure_future(self._call_gemini(client, word)))
+            return True
+
+        try:
+            ask_again()
+            while out:
+                may_add = made < self.most_asks and self.hedge_after > 0
+                done, _ = await asyncio.wait(out, timeout=self.hedge_after if may_add else None, return_when=asyncio.FIRST_COMPLETED)
+                if not done:
+                    ask_again()  # late: one more alongside
+                    continue
+                out -= done
+                answers: list[str] = []
+                plain: Unavailable | None = None
+                for ask in done:
+                    try:
+                        answers.append(ask.result())
+                    except Busy as error:
+                        failure = error
+                        ask_again()  # overloaded: straight away, in its place
+                    except Unavailable as error:
+                        plain = error
+                if answers:
+                    return answers[0]
+                if plain is not None:
+                    raise plain
+            assert failure is not None
+            raise failure
+        finally:
+            # Whoever is still out (slower asks, or all of them when the caller gave up) is called off.
+            for ask in out:
+                ask.cancel()
 
     async def _ask(self, word: str) -> dict[str, Any]:
         client = self._get_client()
-        self.calls += 1
         started = time.monotonic()
         try:
-            text = await asyncio.wait_for(self._call_gemini(client, word), timeout=self.timeout)
+            text = await asyncio.wait_for(self._first_answer(client, word), timeout=self.timeout)
         except asyncio.TimeoutError as error:
             raise Unavailable(f"no answer from the model in {self.timeout:.0f} s") from error
         ms = round((time.monotonic() - started) * 1000)

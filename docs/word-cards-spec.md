@@ -76,11 +76,12 @@ Normalising: trim, collapse spaces, at most 40 characters, shown in capitals. Th
 
 ## The model call
 
-On the Python server (`server/deck/`), which is where the key can live and where the camera's unknown words will arrive later. As built, the model is Gemini, through the `google-genai` SDK's Interactions API (the first build also offered Claude; that was taken out).
+On the Python server (`server/deck/`), which is where the key can live and where the camera's unknown words will arrive later. As built, the model is Gemini, through the `google-genai` SDK's `generate_content` (the first build also offered Claude, and then used the SDK's Interactions API; the README says why both went).
 
-- Model `gemini-4-hydrogen` by default, from `DECK_WORD_MODEL` so a faster one can be tried without a code change. Thinking level `low` by default, from `DECK_WORD_EFFORT`.
-- The answer must fit a JSON schema for the card, passed as `response_format` (`type: text`, `mime_type: application/json`, `schema`). Keep the schema flat, and do every range check in code.
-- Check the reply's `status` before reading it; anything but `completed`, or an error, means "no card", and the page falls back.
+- Model `gemini-3.5-flash-lite` by default, from `DECK_WORD_MODEL`. No thinking level unless `DECK_WORD_EFFORT` names one.
+- The answer must fit a JSON schema for the card (`response_mime_type: application/json` with `response_json_schema`). Keep the schema flat, and do every range check in code.
+- Check how the reply ended before reading it; a blocked or cut-off reply, or an error, means "no card", and the page falls back.
+- An overloaded model (503) is asked again at once, and a late answer is asked for again alongside; never more than five asks for a word.
 - A 20 second timeout. Use the async client inside aiohttp. Two requests for the same word share one call.
 - The key: `GEMINI_API_KEY`, from the terminal or from `~/.config/deck-of-worlds/keys.env`. With none, the endpoint answers 503 and everything else still works.
 
