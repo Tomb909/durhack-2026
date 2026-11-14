@@ -31,7 +31,7 @@ export const LAYOUTS: Layout[] = ['cluster', 'spread'];
 const CLUSTER_CENTRE = { x: 0.4, y: 0.42 };
 /** spread: each kind of card in its own place, so you see where they meet. */
 const SPREAD_ANCHORS = [
-  { x: 0.28, y: 0.3 }, { x: 0.62, y: 0.32 }, { x: 0.34, y: 0.68 }, { x: 0.66, y: 0.6 }, { x: 0.48, y: 0.48 },
+  { x: 0.28, y: 0.3 }, { x: 0.62, y: 0.32 }, { x: 0.34, y: 0.68 }, { x: 0.66, y: 0.6 }, { x: 0.48, y: 0.48 }, { x: 0.5, y: 0.8 },
 ];
 const COPY_STEP = 0.05; // copies sit side by side, this far apart
 const ROW_STEP = 0.08;

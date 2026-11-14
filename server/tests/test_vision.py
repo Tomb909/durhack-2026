@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from deck.vision.pipeline import Vision
-from deck.vision.reader import Reader, match, normalise
+from deck.vision.reader import Reader, load_vocabulary, match, normalise
 from deck.vision.synth import Scrap, render_frame
 
-VOCAB = {"MOUNTAIN": "mountain", "WATER": "water", "SUN": "sun", "ICE": "ice", "LIFE": "life"}
+VOCAB = load_vocabulary()  # the same words the app uses (web/src/cards/cards.json)
 
 
 @pytest.fixture(scope="module")
@@ -38,21 +38,24 @@ def test_match_is_forgiving_but_not_ambiguous():
     assert match("LICE", VOCAB)[0] is None  # ICE or LIFE? refuse to guess
     assert match("VOLCANO", VOCAB)[0] is None
     assert normalise("w4ter!") == "WATERI"
+    assert match("PE0PLE", VOCAB) == ("people", 0)
+    assert match("PEPLE", VOCAB) == ("people", 1)
 
 
-def test_reads_all_five_cards_at_any_rotation(reader):
+def test_reads_every_card_at_any_rotation(reader):
     scraps = [
         Scrap("MOUNTAIN", 0.25, 0.25, angle=0),
         Scrap("WATER", 0.7, 0.25, angle=160),
         Scrap("SUN", 0.2, 0.7, angle=95),
         Scrap("ICE", 0.5, 0.6, angle=-40),
         Scrap("LIFE", 0.8, 0.75, angle=200),
+        Scrap("PEOPLE", 0.5, 0.2, angle=20),
     ]
     vision = Vision(reader)
     run(vision, scraps, frames=6)
     assert vision.play_area.locked
     cards = by_card(vision)
-    assert set(cards) == {"mountain", "water", "sun", "ice", "life"}
+    assert set(cards) == {"mountain", "water", "sun", "ice", "life", "people"}
     for scrap in scraps:
         (card,) = cards[scrap.word.lower()]
         assert abs(card["x"] - scrap.x) < 0.03, (scrap.word, card)

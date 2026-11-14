@@ -82,6 +82,31 @@ void main() {
   float ripple = sin((vWorld.x * 0.8 + vWorld.z + 0.35 * fbm2(vWorld.xz * 1.5)) * 38.0);
   col *= 1.0 + 0.07 * desert * ripple;
 
+  // Farmland: a patchwork of fields, each one crop, with furrows and darker hedges.
+  vec4 c = fieldC(vUv);
+  if (c.g > 0.02) {
+    vec2 q = mat2(0.94, -0.34, 0.34, 0.94) * vWorld.xz / 0.30;
+    vec2 cell = floor(q);
+    vec2 f = fract(q);
+    float pick = hash21(cell);
+    float crop = hash21(cell + 17.3);
+    float owned = smoothstep(pick - 0.12, pick + 0.12, c.g * 1.3 - 0.05);
+    vec3 field = crop < 0.35 ? vec3(0.80, 0.68, 0.30)   // ripe wheat
+               : crop < 0.62 ? vec3(0.42, 0.58, 0.22)   // young green
+               : crop < 0.82 ? vec3(0.48, 0.34, 0.20)   // ploughed
+               : vec3(0.70, 0.72, 0.36);                // pale barley
+    float along = hash21(cell + 5.1) < 0.5 ? f.x : f.y;
+    field *= 0.88 + 0.12 * sin(along * 6.2832 * 7.0);
+    float hedge = 1.0 - smoothstep(0.0, 0.06, min(min(f.x, f.y), min(1.0 - f.x, 1.0 - f.y)));
+    field = mix(field, vec3(0.20, 0.30, 0.13), hedge * 0.75);
+    col = mix(col, field * (0.94 + 0.12 * fine), owned * (1.0 - smoothstep(0.004, 0.02, depth)));
+  }
+  // Felled forest stays open, sunny meadow.
+  float felled = fieldD(vUv).r;
+  col = mix(col, col * vec3(1.1, 1.06, 0.86) + vec3(0.03, 0.025, 0.0), felled * 0.6 * smoothstep(0.05, 0.4, plants));
+  // Trodden earth between the houses.
+  col = mix(col, vec3(0.52, 0.44, 0.34) * (0.9 + 0.2 * fine), 0.35 * smoothstep(0.2, 0.9, c.r));
+
   // Snow where it is cold and wet enough: crisp, patchy edge.
   float snow = smoothstep(uFreezing + 0.10, uFreezing - 0.10, temperature + (grain - 0.5) * 0.16)
              * smoothstep(0.22, 0.42, wet);

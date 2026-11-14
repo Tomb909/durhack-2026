@@ -76,12 +76,28 @@ void main() {
   float grow = smoothstep(threshold, threshold + 0.20, a.a * fits) * dry;
   float size = uSize * (0.62 + 0.62 * aRand.y) * (0.78 + 0.45 * a.b) * grow;
 
+  // Woodcutters: once the felled amount here passes this tree's turn, it topples,
+  // lies a while as a log, then is hauled away leaving a stump.
+  float turn = 0.04 + 0.9 * fract(aRand.x * 7.31 + aRand.y * 3.17);
+  float cut = fieldD(aSite).r;
+  float fall = smoothstep(turn, turn + 0.012, cut);
+  float gone = smoothstep(turn + 0.05, turn + 0.06, cut);
+  vec3 q = position;
+  // Topple about the base (ease in, like a real fall), away from the axe.
+  float tip = fall * fall * 1.5;
+  float ct = cos(tip), st = sin(tip);
+  q = vec3(q.x, q.y * ct - q.z * st, q.y * st + q.z * ct);
+  q.y = max(q.y, 0.03 * fall);
+  // Stump: the trunk cut short, the crown gone.
+  vec3 stump = vec3(position.x * 1.15, min(position.y, 0.07), position.z * 1.15) * (1.0 - aLeaf);
+  q = mix(q, stump, gone);
+
   float angle = aRand.z * 6.2832;
   float c = cos(angle), s = sin(angle);
-  vec3 p = vec3(c * position.x - s * position.z, position.y, s * position.x + c * position.z) * size;
+  vec3 p = vec3(c * q.x - s * q.z, q.y, s * q.x + c * q.z) * size;
   // Wind: tops sway.
   float sway = sin(uTime * 1.7 + aRand.w * 6.28 + aSite.x * 18.0) * 0.035 + sin(uTime * 2.9 + aSite.y * 23.0) * 0.015;
-  p.xz += sway * position.y * size * aLeaf;
+  p.xz += sway * position.y * size * aLeaf * (1.0 - fall);
 
   vec2 xz = tableXz(aSite);
   vec3 world = vec3(xz.x, a.r * HSCALE - 0.01, xz.y) + p;
