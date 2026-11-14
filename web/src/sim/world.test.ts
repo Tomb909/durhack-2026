@@ -177,16 +177,17 @@ describe('climate comes from combinations, not single cards', () => {
     expect(peak).toBeLessThan(RULES.freezing);
     expect(peak).toBeLessThan(lowland);
   });
-  it('life grows only where it is warm and wet enough', () => {
+  it('life alone is grass and scrub; forest needs it warm and wet enough', () => {
     const lifeOnly = settle([card('life', 0.4, 0.4)]);
-    expect(at(lifeOnly, lifeOnly.vegetation, 0.4, 0.4)).toBeLessThan(0.05);
+    expect(at(lifeOnly, lifeOnly.vegetation, 0.4, 0.4)).toBeGreaterThan(0.15);
+    expect(fractionWhere(lifeOnly, (i) => lifeOnly.vegetation[i] > 0.4)).toBe(0);
 
     const withWater = settle([card('life', 0.4, 0.4), card('water', 0.4, 0.4)]);
     const cover = fractionWhere(withWater, (i) => withWater.vegetation[i] > 0.4);
     expect(cover).toBeGreaterThan(0.03);
 
     const desert = settle([card('life', 0.4, 0.4), card('sun', 0.4, 0.4)]);
-    expect(at(desert, desert.vegetation, 0.4, 0.4)).toBeLessThan(0.05);
+    expect(at(desert, desert.vegetation, 0.4, 0.4)).toBeLessThan(0.15);
 
     const frozen = settle([card('life', 0.4, 0.4), card('water', 0.4, 0.4), card('ice', 0.4, 0.4), card('ice', 0.42, 0.4)]);
     expect(at(frozen, frozen.vegetation, 0.4, 0.4)).toBeLessThan(0.05);

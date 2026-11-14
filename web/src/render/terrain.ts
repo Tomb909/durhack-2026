@@ -99,6 +99,11 @@ void main() {
   vec3 rock = mix(vec3(0.33, 0.31, 0.30), vec3(0.50, 0.47, 0.43), fine);
   float rocky = smoothstep(0.24, 0.50, slope + (grain - 0.5) * 0.10);
   col = mix(col, rock, rocky * (1.0 - 0.75 * plants));
+  // Frost where it is frozen but too dry for snow: pale, blue, cracked like a dry lake of ice.
+  float frost = smoothstep(uFreezing + 0.10, uFreezing - 0.16, temperature + (grain - 0.5) * 0.16) * (1.0 - snow);
+  float crack = smoothstep(0.035, 0.0, abs(fbm2(vWorld.xz * 3.1 + 7.0) - 0.5)) + smoothstep(0.03, 0.0, abs(fbm2(vWorld.xz * 7.3 + 19.0) - 0.5));
+  vec3 frostCol = vec3(0.70, 0.80, 0.90) * (0.92 + 0.16 * fine) * (1.0 - 0.22 * min(1.0, crack));
+  col = mix(col, frostCol, frost * 0.8 * (1.0 - 0.7 * rocky) * (1.0 - 0.6 * plants));
   col = mix(col, vec3(0.66, 0.71, 0.80), snow * (1.0 - 0.8 * smoothstep(0.45, 0.75, slope)));
 
   // Beach just above the sea (not where frozen).

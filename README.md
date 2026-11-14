@@ -2,7 +2,7 @@
 
 Handwritten word cards on a table, watched by a phone, reshape a 3D world on a laptop. Turn WIND to steer rain, spread LIFE+WATER into a tree line, blow snow off mountains, raise blizzards with ICE, and move boats, merchants, smoke and dust. DurHack 2026.
 
-Put **MOUNTAIN** in a corner and mountains rise there. Add **WATER** and it rains; add more and the sea floods the lowlands. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **LIFE** grows forest only where it is warm and wet enough. The world comes from how the cards combine.
+Put **MOUNTAIN** in a corner and mountains rise there. Add **WATER** and it rains; add more and the sea floods the lowlands. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **LIFE** grows forest only where it is warm and wet enough. Every card shows on its own too: LIFE alone is grass and scattered trees, ICE alone frosts the ground. The world comes from how the cards combine.
 
 ## Run it
 
