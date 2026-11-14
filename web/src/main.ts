@@ -9,7 +9,7 @@ import { audio } from './audio/engine';
 import { VillageLife } from './audio/life';
 import { world } from './render/common';
 import { WorldRenderer } from './render/scene';
-import { SHAPE_PRESETS, WorldSim, shapesDiffer, type WorldShape } from './sim/world';
+import { RECTANGLE_ONLY, SHAPE_PRESETS, WorldSim, shapesDiffer, type WorldShape } from './sim/world';
 import { Combinations } from './ui/combos';
 import { CardCheck, Guide } from './ui/overlays';
 import { TablePanel } from './ui/table';
@@ -241,6 +241,10 @@ window.addEventListener('keydown', (e) => {
       break;
     case 't': {
       // The table's shape (was S, which now walks the view).
+      if (RECTANGLE_ONLY) {
+        toast('Play area is locked to a rectangle');
+        break;
+      }
       if (cameraLive) {
         toast('The camera sets the shape: draw a different border');
         break;

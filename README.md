@@ -53,7 +53,7 @@ Nothing needs the internet once it is running.
 | X | Remove all simulated cards |
 | W A S D | Move the view; hold Shift to go faster |
 | Arrows, + −, 0 | Turn the view, zoom, reset it (see Moving the camera) |
-| T | Developer option: step through play-area shapes (rectangle, circle, blob) when no camera is connected |
+| T | Developer option, currently switched off (the play area is locked to a rectangle): step through play-area shapes when no camera is connected |
 | I | Instant: no fading or easing, the world jumps to its final state |
 | H | Hide the panels |
 | Q | Picture quality |

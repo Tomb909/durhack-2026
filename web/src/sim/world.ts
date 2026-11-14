@@ -21,6 +21,9 @@ export interface WorldShape {
 export const RECT_OUTLINE = [[0, 0], [1, 0], [1, 1], [0, 1]];
 export const DEFAULT_SHAPE: WorldShape = { aspect: A3_ASPECT, outline: RECT_OUTLINE };
 
+/** The play area is always a rectangle: the shape presets (T key) are switched off. Matches RECTANGLE_ONLY in playarea.py. */
+export const RECTANGLE_ONLY: boolean = true;
+
 /** Shapes to try without a camera (S key). */
 export const SHAPE_PRESETS: Record<'rect' | 'circle' | 'blob', WorldShape> = {
   rect: DEFAULT_SHAPE,

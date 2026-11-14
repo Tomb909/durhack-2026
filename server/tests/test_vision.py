@@ -8,6 +8,7 @@ import os
 
 import pytest
 
+from deck.vision import playarea
 from deck.vision.pipeline import Vision
 from deck.vision.reader import Reader, load_vocabulary, match, normalise
 from deck.vision.synth import Scrap, render_frame
@@ -250,8 +251,22 @@ def test_widely_spaced_letters_are_still_one_word(reader):
 
 
 # --- play areas of any shape -------------------------------------------------------
+# Switched off while playarea.RECTANGLE_ONLY is set: the play area is always a rectangle.
+
+any_shape = pytest.mark.skipif(playarea.RECTANGLE_ONLY, reason="play area is locked to a rectangle")
+BORDERS = ["rect"] if playarea.RECTANGLE_ONLY else ["rect", "circle", "blob"]
 
 
+@pytest.mark.skipif(not playarea.RECTANGLE_ONLY, reason="any closed border is a play area")
+def test_a_circle_is_not_taken_as_the_play_area():
+    vision = Vision(None)
+    t = run(vision, [], frames=5, border="rect")
+    run(vision, [], frames=40, start=t, border="circle")  # a different sheet is put down
+    assert vision.play_area.four_sided
+    assert vision.play_area.outline() in (None, [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+
+
+@any_shape
 @pytest.mark.parametrize("border", ["circle", "blob"])
 def test_any_closed_border_is_a_play_area(reader, border):
     # Positions are fractions of the shape's bounding box, as for a rectangle.
@@ -268,6 +283,7 @@ def test_any_closed_border_is_a_play_area(reader, border):
         assert abs(card["y"] - scrap.y) < 0.03, (scrap.word, card)
 
 
+@any_shape
 def test_circle_gives_a_round_world(reader):
     vision = Vision(reader)
     run(vision, [Scrap("SUN", 0.5, 0.5)], frames=5, border="circle")
@@ -288,6 +304,7 @@ def test_rectangle_world_is_unchanged(reader):
     assert vision.play_area.rect_size() == (1050, 742)
 
 
+@any_shape
 def test_scrap_outside_the_circle_is_ignored(reader):
     # Two identical small scraps: one in the corner of the circle's bounding box
     # (outside the circle, clear of its line), one in the middle.
@@ -324,7 +341,7 @@ def area_state(vision: Vision, now: float):
     return np.array(area.corners), vision.snapshot(now=now)["playArea"]["shape"], area.rect_size()
 
 
-@pytest.mark.parametrize("border", ["rect", "circle", "blob"])
+@pytest.mark.parametrize("border", BORDERS)
 def test_a_hand_reaching_in_does_not_change_the_play_area(border):
     import numpy as np
 
@@ -341,6 +358,7 @@ def test_a_hand_reaching_in_does_not_change_the_play_area(border):
         t = run(vision, scraps, frames=3, start=t, border=border)
 
 
+@any_shape
 def test_a_card_under_a_hand_in_a_circle_is_held(reader):
     scraps = [Scrap("SUN", 0.5, 0.45), Scrap("ICE", 0.3, 0.6)]
     vision = Vision(reader)
@@ -356,7 +374,7 @@ def test_a_card_under_a_hand_in_a_circle_is_held(reader):
         assert abs(after[card][1] - x) < 0.02 and abs(after[card][2] - y) < 0.02
 
 
-@pytest.mark.parametrize("border", ["rect", "circle", "blob"])
+@pytest.mark.parametrize("border", BORDERS)
 def test_a_nudged_phone_is_still_followed_for_any_border(border):
     import numpy as np
 
@@ -385,6 +403,7 @@ def test_a_re_propped_phone_is_picked_up_again():
     assert abs(shift[0] - 0.06 * 1920) < 5 and abs(shift[1] - 0.03 * 1080) < 5, shift
 
 
+@any_shape
 def test_a_new_border_replaces_the_old_one():
     vision = Vision(None)
     t = run(vision, [], frames=5, border="rect")
@@ -394,7 +413,7 @@ def test_a_new_border_replaces_the_old_one():
     assert abs(vision.play_area.aspect - 1.0) < 0.04
 
 
-@pytest.mark.parametrize("border", ["rect", "circle", "blob"])
+@pytest.mark.parametrize("border", BORDERS)
 def test_locking_with_a_hand_in_the_way_comes_right_when_it_leaves(border):
     import numpy as np
 
