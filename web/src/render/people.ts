@@ -3,7 +3,9 @@
 // the vertex shader from the homes / fishing textures, so nothing runs on the CPU.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { GLSL_COMMON, type SharedUniforms } from './common';
+import type { LiveCard } from '../cards/store';
+import { sampleField, type WorldFrame } from '../sim/world';
+import { HSCALE, GLSL_COMMON, type SharedUniforms, world } from './common';
 
 /** Flat colour per part. `part`: 0 = walls / hull, 1 = roof / sail (gets the per-instance tint). */
 function paint(geometry: THREE.BufferGeometry, colour: [number, number, number], part: number): THREE.BufferGeometry {
@@ -301,6 +303,183 @@ void main() {
   gl_FragColor = vec4(lit, 1.0);
 }
 `;
+
+const merchantVertex = /* glsl */ `
+${GLSL_COMMON}
+attribute vec3 color;
+varying vec3 vColor;
+varying vec3 vWorld;
+varying float vTemperature;
+varying float vRain;
+varying float vRoof;
+void main() {
+  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+  vec2 site = tableUv(worldPosition.xz);
+  vec4 a = fieldA(site);
+  vec4 b = fieldB(site);
+  vColor = color;
+  vWorld = worldPosition.xyz;
+  vTemperature = a.g;
+  vRain = b.b;
+  vRoof = 0.0;
+  gl_Position = projectionMatrix * viewMatrix * worldPosition;
+}
+`;
+
+function merchantBody(): THREE.BufferGeometry {
+  const horse: [number, number, number] = [0.43, 0.25, 0.13];
+  const harness: [number, number, number] = [0.22, 0.16, 0.10];
+  const wood: [number, number, number] = [0.40, 0.23, 0.11];
+  const clothes: [number, number, number] = [0.27, 0.36, 0.58];
+  return mergeGeometries([
+    paint(new THREE.SphereGeometry(1, 8, 6).scale(0.075, 0.04, 0.035).translate(0.075, 0.12, 0), horse, 0),
+    paint(new THREE.BoxGeometry(0.045, 0.095, 0.036).rotateZ(-0.45).translate(0.13, 0.16, 0), horse, 0),
+    paint(new THREE.SphereGeometry(1, 7, 5).scale(0.031, 0.023, 0.025).translate(0.166, 0.207, 0), horse, 0),
+    paint(new THREE.ConeGeometry(0.009, 0.025, 5).translate(0.15, 0.235, -0.012), horse, 0),
+    paint(new THREE.ConeGeometry(0.009, 0.025, 5).translate(0.15, 0.235, 0.012), horse, 0),
+    ...[0.035, 0.115].flatMap((x) =>
+      [-0.022, 0.022].map((z) =>
+        paint(new THREE.CylinderGeometry(0.006, 0.008, 0.07, 5).translate(x, 0.04, z), horse, 0),
+      ),
+    ),
+    paint(new THREE.BoxGeometry(0.14, 0.065, 0.11).translate(-0.09, 0.12, 0), wood, 0),
+    paint(new THREE.BoxGeometry(0.16, 0.012, 0.125).translate(-0.09, 0.158, 0), wood, 0),
+    ...[-1, 1].map((side) =>
+      paint(new THREE.BoxGeometry(0.12, 0.006, 0.008).translate(-0.015, 0.09, side * 0.04), harness, 0),
+    ),
+    paint(new THREE.BoxGeometry(0.025, 0.045, 0.025).translate(-0.09, 0.195, 0), clothes, 0),
+    paint(new THREE.SphereGeometry(0.014, 6, 5).translate(-0.09, 0.226, 0), [0.72, 0.52, 0.35], 0),
+  ]);
+}
+
+function merchantWheel(): THREE.BufferGeometry {
+  const spokes = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4].map((angle) =>
+    paint(new THREE.BoxGeometry(0.064, 0.004, 0.008).rotateZ(angle), [0.24, 0.15, 0.08], 0),
+  );
+  return mergeGeometries([
+    paint(new THREE.TorusGeometry(0.034, 0.006, 4, 10), [0.24, 0.15, 0.08], 0),
+    ...spokes,
+  ]);
+}
+
+const MERCHANT_SPEED = 0.32;
+
+export interface TradeRoute {
+  key: string;
+  from: LiveCard;
+  to: LiveCard;
+}
+
+/** Connect every settlement to the nearest already-connected settlement. */
+export function tradeRoutes(cards: readonly LiveCard[]): TradeRoute[] {
+  const settlements = cards.filter((card) => card.def.id === 'people' && card.strength > 0.15);
+  if (settlements.length < 2) return [];
+
+  const connected = new Set([0]);
+  const routes: TradeRoute[] = [];
+  while (connected.size < settlements.length) {
+    let best: { from: number; to: number; distance: number } | undefined;
+    for (const from of connected) {
+      for (let to = 0; to < settlements.length; to++) {
+        if (connected.has(to)) continue;
+        const dx = settlements[to].x - settlements[from].x;
+        const dy = (settlements[to].y - settlements[from].y) / world.aspect;
+        const distance = Math.hypot(dx, dy);
+        if (distance < 0.001) continue;
+        if (!best || distance < best.distance) best = { from, to, distance };
+      }
+    }
+    if (!best) break;
+    const from = settlements[best.from];
+    const to = settlements[best.to];
+    const key = [from.key, to.key].sort().join(':');
+    routes.push({ key, from, to });
+    connected.add(best.to);
+  }
+  return routes;
+}
+
+interface Convoy {
+  group: THREE.Group;
+  wheels: THREE.Group[];
+}
+
+function makeConvoy(body: THREE.BufferGeometry, wheel: THREE.BufferGeometry, material: THREE.ShaderMaterial): Convoy {
+  const group = new THREE.Group();
+  const bodyMesh = new THREE.Mesh(body, material);
+  bodyMesh.frustumCulled = false;
+  group.add(bodyMesh);
+  const wheels = [-1, 1].map((side) => {
+    const axle = new THREE.Group();
+    axle.position.set(-0.09, 0.045, side * 0.069);
+    const mesh = new THREE.Mesh(wheel, material);
+    mesh.frustumCulled = false;
+    axle.add(mesh);
+    group.add(axle);
+    return axle;
+  });
+  return { group, wheels };
+}
+
+/** Tiny horse-drawn carts linking the active PEOPLE settlements. */
+export class Merchants {
+  readonly group = new THREE.Group();
+  private body = merchantBody();
+  private wheel = merchantWheel();
+  private material: THREE.ShaderMaterial;
+  private convoys = new Map<string, Convoy>();
+
+  constructor(shared: SharedUniforms) {
+    this.material = new THREE.ShaderMaterial({
+      uniforms: { ...shared },
+      vertexShader: merchantVertex,
+      fragmentShader: fragment,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  update(cards: LiveCard[], frame: WorldFrame, time: number): void {
+    const routes = tradeRoutes(cards);
+    const seen = new Set<string>();
+    for (const route of routes) {
+      seen.add(route.key);
+      let convoy = this.convoys.get(route.key);
+      if (!convoy) {
+        convoy = makeConvoy(this.body, this.wheel, this.material);
+        this.convoys.set(route.key, convoy);
+        this.group.add(convoy.group);
+      }
+
+      const dx = (route.to.x - route.from.x) * world.w;
+      const dz = (route.to.y - route.from.y) * world.d;
+      const distance = Math.hypot(dx, dz);
+      let hash = 0;
+      for (const char of route.key) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) | 0;
+      const offset = ((hash >>> 0) % 1000) / 1000 * 2;
+      const phase = ((time * MERCHANT_SPEED) / distance + offset) % 2;
+      const forward = phase <= 1;
+      const progress = forward ? phase : 2 - phase;
+      const x = route.from.x + (route.to.x - route.from.x) * progress;
+      const y = route.from.y + (route.to.y - route.from.y) * progress;
+      const ground = Math.max(
+        sampleField(frame.height, frame.w, frame.h, x, y),
+        sampleField(frame.waterSurface, frame.w, frame.h, x, y),
+      ) * HSCALE;
+
+      convoy.group.position.set((x - 0.5) * world.w, ground + Math.abs(Math.sin(time * 8 + offset)) * 0.003, (y - 0.5) * world.d);
+      convoy.group.rotation.y = Math.atan2(forward ? -dz : dz, forward ? dx : -dx);
+      convoy.group.rotation.z = Math.sin(time * 8 + offset) * 0.012;
+      const wheelTurn = (time * MERCHANT_SPEED * (forward ? 1 : -1)) / 0.034;
+      for (const axle of convoy.wheels) axle.rotation.z = wheelTurn + offset;
+    }
+
+    for (const [key, convoy] of this.convoys) {
+      if (seen.has(key)) continue;
+      this.group.remove(convoy.group);
+      this.convoys.delete(key);
+    }
+  }
+}
 
 /** Three puffs of chimney smoke per house (part = which puff). Same sites as the houses. */
 function smoke(): THREE.BufferGeometry {

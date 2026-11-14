@@ -18,7 +18,7 @@ import { CALM, worldMood, type Mood } from './mood';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
 import { makeTerrain } from './terrain';
-import { makePeople } from './people';
+import { makePeople, Merchants } from './people';
 import { makeTrees } from './trees';
 import { makeWater } from './water';
 import { makeWeather } from './weather';
@@ -42,6 +42,7 @@ export class WorldRenderer {
   private shaped: THREE.Object3D[] = [];
   private outline: number[][] = DEFAULT_SHAPE.outline;
   private beacons: Beacons;
+  private merchants: Merchants;
   private time = 0;
   private quality = 1.5;
   private raycaster = new THREE.Raycaster();
@@ -71,10 +72,12 @@ export class WorldRenderer {
     this.gpuName = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unknown GPU';
 
     this.shared = makeSharedUniforms();
+    this.merchants = new Merchants(this.shared);
     this.scene.add(makeBackdrop(this.shared));
     this.setShape(DEFAULT_SHAPE);
     this.scene.add(makeTrees(this.shared));
     this.scene.add(makePeople(this.shared));
+    this.scene.add(this.merchants.group);
     this.scene.add(makeWeather(this.shared));
     this.scene.add(this.beacons.group);
 
@@ -216,6 +219,7 @@ export class WorldRenderer {
     this.shared.uSea.value = frame.seaLevel;
     this.fields.update(frame);
     this.followMood(frame, dt);
+    this.merchants.update(cards, frame, this.time);
     const count = Math.min(MAX_PULSES, cards.length);
     for (let i = 0; i < count; i++) {
       const card = cards[i];
