@@ -68,6 +68,7 @@ export class CardCheck {
   private root: HTMLElement;
   private body: HTMLElement;
   private timer = 0;
+  private rows = new Map<number, HTMLTableRowElement>();
   constructor(private latest: () => Snapshot | null) {
     const { root, body } = overlay('check', 'Card check');
     this.root = root;
@@ -95,18 +96,60 @@ export class CardCheck {
       this.body.innerHTML = '<p class="hint">The camera has not found the play area yet. Make sure the whole border is in view.</p>';
       return;
     }
-    const stamp = Date.now();
-    const known = snapshot.cards.map(
-      (c) => `<tr><td><img src="/api/crop/${c.id}.jpg?t=${stamp}" alt=""></td><td class="ok">✓ ${c.card.toUpperCase()}</td><td>${c.visible ? 'in view' : 'covered, held in place'}</td></tr>`,
-    );
-    const unknown = snapshot.candidates.map(
-      (c) => `<tr><td><img src="/api/crop/${c.id}.jpg?t=${stamp}" alt=""></td><td class="no">✗ not a card yet</td><td>read as “${c.text || '…'}”</td></tr>`,
-    );
-    const rows = [...known, ...unknown].join('');
-    this.body.innerHTML =
-      `<p class="hint">Put a freshly written scrap inside the play area. A tick within a second means it will work.</p>` +
-      (rows
-        ? `<table><thead><tr><th>What the camera sees</th><th>Recognised as</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-        : '<p class="hint">No scraps in view.</p>');
+    // Build the table once, then keep one row per scrap and update it in place,
+    // so nothing flickers between refreshes.
+    let tbody = this.body.querySelector('tbody');
+    if (!tbody) {
+      this.rows.clear();
+      this.body.innerHTML =
+        '<p class="hint">Put a freshly written scrap inside the play area. A tick within a second means it will work.</p>' +
+        '<table><thead><tr><th>What the camera sees</th><th>Recognised as</th><th></th></tr></thead><tbody></tbody></table>' +
+        '<p class="hint empty">No scraps in view.</p>';
+      tbody = this.body.querySelector('tbody')!;
+    }
+    const entries = [
+      ...snapshot.cards.map((c) => ({ id: c.id, cls: 'ok', label: `✓ ${c.card.toUpperCase()}`, note: c.visible ? 'in view' : 'covered, held in place' })),
+      ...snapshot.candidates.map((c) => ({ id: c.id, cls: 'no', label: '✗ not a card yet', note: `read as “${c.text || '…'}”` })),
+    ];
+    const seen = new Set<number>();
+    for (const entry of entries) {
+      seen.add(entry.id);
+      let row = this.rows.get(entry.id);
+      if (!row) {
+        row = document.createElement('tr');
+        row.innerHTML = '<td><img alt=""></td><td></td><td></td>';
+        tbody.appendChild(row);
+        this.rows.set(entry.id, row);
+      }
+      void this.swap(row.querySelector('img')!, `/api/crop/${entry.id}.jpg`);
+      const [, what, note] = Array.from(row.children) as HTMLElement[];
+      if (what.textContent !== entry.label) what.textContent = entry.label;
+      what.className = entry.cls;
+      if (note.textContent !== entry.note) note.textContent = entry.note;
+    }
+    for (const [id, row] of this.rows) {
+      if (!seen.has(id)) {
+        row.remove();
+        this.rows.delete(id);
+      }
+    }
+    (this.body.querySelector('.empty') as HTMLElement).hidden = entries.length > 0;
+  }
+
+  /** Load a fresh picture in the background; show it only once it is ready. */
+  private async swap(img: HTMLImageElement, url: string): Promise<void> {
+    if (img.dataset.busy) return;
+    img.dataset.busy = '1';
+    try {
+      const response = await fetch(`${url}?t=${Date.now()}`);
+      if (response.ok) {
+        const old = img.src;
+        img.src = URL.createObjectURL(await response.blob());
+        if (old.startsWith('blob:')) setTimeout(() => URL.revokeObjectURL(old), 1000);
+      }
+    } catch {
+      /* keep the old picture */
+    }
+    delete img.dataset.busy;
   }
 }

@@ -18,7 +18,8 @@
   .pill.ok { background: #15803d; } .pill.bad { background: #b91c1c; } .pill.warn { background: #b45309; }
   table { width: 100%; border-collapse: collapse; }
   td, th { text-align: left; padding: 5px 6px; border-bottom: 1px solid #262c38; vertical-align: middle; }
-  td img { height: 30px; border-radius: 3px; background: #fff; display: block; max-width: 170px; }
+  td img { height: 30px; min-width: 40px; border-radius: 3px; background: #fff; display: block; max-width: 170px; }
+  td { height: 42px; }
   .qr { background: #fff; border-radius: 8px; width: 100%; display: block; }
   code { font-size: 12px; word-break: break-all; color: #9ecbff; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
@@ -45,6 +46,7 @@
     <img class="view" id="rect" alt="Rectified play area with detections">
     <h2 style="margin-top:14px">Card check</h2>
     <table><thead><tr><th>Scrap</th><th>Read as</th><th>Card</th><th>Where</th></tr></thead><tbody id="cards"></tbody></table>
+    <p id="empty" style="color:#8f9aad">No scraps in view.</p>
   </div>
   <div class="panel">
     <h2>Connect the phone</h2>
@@ -55,6 +57,24 @@
 <script>
 const $ = id => document.getElementById(id);
 let urls = '';
+const rowEls = new Map();
+// Load a fresh picture in the background and show it only when it is ready,
+// so pictures never blank out between refreshes.
+async function swap(img, url) {
+  if (img.dataset.busy) return;
+  img.dataset.busy = '1';
+  try {
+    const response = await fetch(url + '?t=' + Date.now());
+    if (response.ok) {
+      const next = URL.createObjectURL(await response.blob());
+      const old = img.src;
+      img.src = next;
+      if (old.startsWith('blob:')) setTimeout(() => URL.revokeObjectURL(old), 1000);
+    }
+  } catch (e) { /* keep the old picture */ }
+  delete img.dataset.busy;
+}
+function setHtml(el, html) { if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; } }
 async function post(path) { return (await fetch(path, { method: 'POST' })).json(); }
 $('flip').onclick = () => post('/api/flip');
 $('relock').onclick = () => post('/api/relock');
@@ -76,14 +96,26 @@ async function tick() {
         : '<p>No network found.</p>';
     }
     const rows = [...info.cards.map(c => ({ ...c, known: true })), ...info.candidates.map(c => ({ ...c, known: false }))];
-    $('cards').innerHTML = rows.map(c => `<tr>
-      <td><img src="/api/crop/${c.id}.jpg?t=${Date.now()}" alt=""></td>
-      <td>${c.known ? '' : (c.text || '…') + ' <span style="color:#8f9aad">' + (c.confidence ?? '') + '</span>'}</td>
-      <td>${c.known ? '<span class="pill ok">✓ ' + c.card.toUpperCase() + '</span>' + (c.visible ? '' : ' <span class="pill">hidden</span>') : '<span class="pill warn">not a card</span>'}</td>
-      <td>${c.x.toFixed(2)}, ${c.y.toFixed(2)}</td></tr>`).join('') || '<tr><td colspan="4" style="color:#8f9aad">No scraps in view.</td></tr>';
+    const seen = new Set();
+    for (const c of rows) {
+      seen.add(c.id);
+      let tr = rowEls.get(c.id);
+      if (!tr) {
+        tr = document.createElement('tr');
+        tr.innerHTML = '<td><img alt=""></td><td></td><td></td><td></td>';
+        $('cards').appendChild(tr);
+        rowEls.set(c.id, tr);
+      }
+      swap(tr.querySelector('img'), `/api/crop/${c.id}.jpg`);
+      setHtml(tr.children[1], c.known ? '' : (c.text || '…') + ' <span style="color:#8f9aad">' + (c.confidence ?? '') + '</span>');
+      setHtml(tr.children[2], c.known ? '<span class="pill ok">✓ ' + c.card.toUpperCase() + '</span>' + (c.visible ? '' : ' <span class="pill">hidden</span>') : '<span class="pill warn">not a card</span>');
+      setHtml(tr.children[3], `${c.x.toFixed(2)}, ${c.y.toFixed(2)}`);
+    }
+    for (const [id, tr] of rowEls) if (!seen.has(id)) { tr.remove(); rowEls.delete(id); }
+    $('empty').hidden = rows.length > 0;
     if (info.camera.connected) {
-      $('frame').src = '/api/frame.jpg?t=' + Date.now();
-      if (info.playArea.locked) $('rect').src = '/api/rectified.jpg?t=' + Date.now();
+      swap($('frame'), '/api/frame.jpg');
+      if (info.playArea.locked) swap($('rect'), '/api/rectified.jpg');
     }
   } catch (e) {
     $('cam').className = 'pill bad'; $('cam').textContent = 'server not running';

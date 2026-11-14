@@ -19,6 +19,7 @@ from .reader import Reading
 
 GATE_MM = 70.0  # a scrap cannot move further than this between frames
 REMOVE_AFTER_CLEAR = 0.45  # seconds of visibly empty paper before a card is removed
+REMOVE_AFTER_MISSES = 3  # ...and at least this many frames in a row (matters on a slow link)
 CANDIDATE_REMOVE_AFTER = 0.25
 HIDDEN_LIMIT = 30.0  # give up on a covered card after this long
 VOTES_TO_CONFIRM = 2
@@ -50,6 +51,7 @@ class Track:
     reads: int = 0
     last_read: float = 0.0
     clear_since: float | None = None
+    misses: int = 0  # frames in a row with no matching ink
     ref_long: float = 0.0  # word length when the identity was confirmed
     last_verify: float = 0.0
     dissent: Counter = field(default_factory=Counter)
@@ -105,8 +107,10 @@ class Tracker:
                 track.last_seen = now
                 track.visible = True
                 track.clear_since = None
+                track.misses = 0
             else:
                 track.visible = False
+                track.misses += 1
 
         # --- new scraps
         for di, det in enumerate(detections):
@@ -179,7 +183,7 @@ class Tracker:
             if track.clear_since is None:
                 track.clear_since = now
             limit = REMOVE_AFTER_CLEAR if track.card else CANDIDATE_REMOVE_AFTER
-            if now - track.clear_since < limit:
+            if now - track.clear_since < limit or track.misses < REMOVE_AFTER_MISSES:
                 survivors.append(track)
         self.tracks = survivors
 

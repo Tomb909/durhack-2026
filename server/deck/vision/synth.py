@@ -25,6 +25,7 @@ class Scrap:
     y: float  # 0..1 down the play area
     angle: float = 0.0  # degrees
     letter_mm: float = 18.0
+    pad_mm: float = 11.0  # blank margin around the word
 
 
 def _scrap_image(scrap: Scrap) -> tuple[np.ndarray, np.ndarray]:
@@ -34,7 +35,7 @@ def _scrap_image(scrap: Scrap) -> tuple[np.ndarray, np.ndarray]:
     scale = scrap.letter_mm * s / 22.0  # Hershey capitals are ~22 px tall at scale 1
     thickness = max(2, int(round(2.6 * s)))
     (tw, th), _ = cv2.getTextSize(scrap.word, font, scale, thickness)
-    pad = int(11 * s)
+    pad = int(scrap.pad_mm * s)
     w, h = tw + 2 * pad, th + 2 * pad
     img = np.full((h, w, 3), 250, np.uint8)
     cv2.putText(img, scrap.word, (pad, pad + th), font, scale, (25, 25, 25), thickness, cv2.LINE_AA)
@@ -85,11 +86,13 @@ def render_frame(
     shift: tuple[float, float] = (0.0, 0.0),
     hand: tuple[float, float] | None = None,
     seed: int = 0,
+    shadow: float | None = None,
 ) -> np.ndarray:
     """A camera frame: the sheet on a wooden table, seen at a slight angle.
 
     `tilt` narrows the far edge (perspective). `shift` moves the sheet in the
-    frame (a nudged phone). `hand` puts an arm reaching to that play-area
+    frame (a nudged phone). `shadow` dims the left half of the picture to that
+    fraction of its brightness, with a soft edge (the phone's own shadow). `hand` puts an arm reaching to that play-area
     position (0..1, 0..1).
     """
     rng = np.random.default_rng(seed)
@@ -126,6 +129,10 @@ def render_frame(
         mid = base + 0.72 * (tip - base)
         cv2.line(frame, tuple(int(v) for v in mid), tuple(int(v) for v in tip), (120, 150, 205), 120)  # hand
         cv2.circle(frame, tuple(int(v) for v in tip), 70, (120, 150, 205), -1)
+
+    if shadow is not None:
+        ramp = np.clip((np.arange(fw, dtype=np.float32) - 0.50 * fw) / (0.06 * fw), 0.0, 1.0)
+        frame = (frame.astype(np.float32) * (shadow + (1.0 - shadow) * ramp)[None, :, None]).astype(np.uint8)
 
     # Uneven lighting and a little sensor noise.
     gx = np.linspace(0.82, 1.06, fw, dtype=np.float32)[None, :, None]

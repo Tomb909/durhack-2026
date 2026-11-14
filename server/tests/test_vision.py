@@ -128,3 +128,62 @@ def test_nudged_phone_keeps_tracking(reader):
     assert {c["id"] for c in vision.tracker.cards()} == ids
     assert abs(cards["mountain"][0]["x"] - 0.3) < 0.03
     assert abs(cards["life"][0]["y"] - 0.7) < 0.03
+
+
+def test_cards_in_a_deep_shadow_are_read_and_the_shadow_is_not_an_object(reader):
+    # The phone's own shadow: half the sheet at about a third of the brightness.
+    scraps = [Scrap("WATER", 0.2, 0.4, angle=20), Scrap("LIFE", 0.3, 0.75, angle=-70), Scrap("SUN", 0.8, 0.3)]
+    vision = Vision(reader)
+    run(vision, scraps, frames=8, shadow=0.34)
+    assert set(by_card(vision)) == {"water", "life", "sun"}
+    covered = (vision.result.occluder > 0).mean()
+    assert covered < 0.01, f"{covered:.1%} of the sheet was treated as a covering object"
+
+
+def test_card_removed_from_a_shadow_is_let_go(reader):
+    vision = Vision(reader)
+    t = run(vision, [Scrap("WATER", 0.2, 0.4), Scrap("SUN", 0.8, 0.3)], frames=6, shadow=0.34)
+    run(vision, [Scrap("SUN", 0.8, 0.3)], frames=8, start=t, shadow=0.34)
+    assert "water" not in by_card(vision)
+
+
+def test_shadow_arriving_over_a_card_does_not_lose_it(reader):
+    scraps = [Scrap("ICE", 0.25, 0.5), Scrap("SUN", 0.8, 0.3)]
+    vision = Vision(reader)
+    t = run(vision, scraps, frames=6)
+    run(vision, scraps, frames=10, start=t, shadow=0.4)  # someone leans over
+    cards = by_card(vision)
+    assert "ice" in cards and cards["ice"][0]["visible"]
+
+
+def test_small_words_on_scraps_stacked_close_stay_separate(reader):
+    # Small writing on scraps cut close to the word and stacked: the lines of
+    # writing are nearer to each other than the letters are tall.
+    scraps = [
+        Scrap("WATER", 0.6, 0.40, angle=12, letter_mm=11, pad_mm=3.5),
+        Scrap("WATER", 0.6, 0.47, angle=12, letter_mm=11, pad_mm=3.5),
+        Scrap("WATER", 0.6, 0.54, angle=12, letter_mm=11, pad_mm=3.5),
+    ]
+    vision = Vision(reader)
+    t = run(vision, scraps, frames=8)
+    assert len(by_card(vision).get("water", [])) == 3
+    ids = sorted(c["id"] for c in vision.tracker.cards())
+    run(vision, scraps, frames=20, start=t)
+    assert sorted(c["id"] for c in vision.tracker.cards()) == ids  # steady: no card comes and goes
+
+
+def test_widely_spaced_letters_are_still_one_word(reader):
+    from deck.vision.detect import detect
+    from deck.vision.synth import render_sheet
+    import cv2
+
+    # Letters drawn one by one with big gaps along the line.
+    sheet = render_sheet([])
+    x = 500
+    for letter in "MOUNTAIN":
+        cv2.putText(sheet, letter, (x, 600), cv2.FONT_HERSHEY_SIMPLEX, 2.0, (25, 25, 25), 8, cv2.LINE_AA)
+        x += 75
+    inner = sheet[92:-92, 92:-92]
+    rect = cv2.resize(inner, (1050, 742), interpolation=cv2.INTER_AREA)
+    words = detect(rect).detections
+    assert len(words) == 1, [round(d.long) for d in words]

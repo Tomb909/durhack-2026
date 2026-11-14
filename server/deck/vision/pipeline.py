@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 from . import RECT_H, RECT_W
-from .detect import Detection, DetectResult, detect
+from .detect import Backdrop, Detection, DetectResult, detect
 from .playarea import PlayArea
 from .reader import Reader, Reading, crop_word
 from .tracker import Tracker
@@ -29,6 +29,7 @@ class Vision:
         self.play_area = PlayArea()
         self.play_area.flip = flip
         self.tracker = Tracker()
+        self.backdrop = Backdrop()
         self.lock = threading.Lock()
         # Latest results, for debug views and the phone overlay.
         self.frame: np.ndarray | None = None
@@ -46,11 +47,13 @@ class Vision:
         with self.lock:
             self.play_area.flip = flip
             self.tracker.reset()
+            self.backdrop.reset()
 
     def relock(self) -> None:
         with self.lock:
             self.play_area.relock()
             self.tracker.reset()
+            self.backdrop.reset()
 
     # --- one frame ------------------------------------------------------------
 
@@ -72,7 +75,7 @@ class Vision:
             else:
                 self.to_image = np.linalg.inv(homography)
                 self.rect = cv2.warpPerspective(frame, homography, (RECT_W, RECT_H), flags=cv2.INTER_AREA)
-                self.result = detect(self.rect)
+                self.result = detect(self.rect, self.backdrop, now)
                 read: Callable[[Detection], Reading] | None = None
                 if self.reader is not None:
                     read = self._read

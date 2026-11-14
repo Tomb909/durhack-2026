@@ -63,7 +63,7 @@ body.bare #ui > :not(#toast) { display: none; }
 .overlay .hint b { color: var(--text); }
 .overlay table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 .overlay th, .overlay td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.overlay td img { height: 44px; max-width: 320px; border-radius: 4px; background: #fff; display: block; }
+.overlay td img { height: 44px; min-width: 60px; max-width: 320px; border-radius: 4px; background: #fff; display: block; }
 .overlay td.ok { color: #4ade80; font-weight: 800; font-size: 18px; }
 .overlay td.no { color: #fbbf24; font-weight: 700; }
 @media (max-width: 900px) { .overlay .steps { grid-template-columns: repeat(2, 1fr); } }
