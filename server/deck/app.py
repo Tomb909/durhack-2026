@@ -350,6 +350,11 @@ class Server:
         path.write_bytes(self.worker.latest_jpeg)
         return web.json_response({"saved": str(path.relative_to(ROOT))})
 
+    async def api_shot(self, request: web.Request) -> web.Response:
+        """Development aid: the world page can save a picture of itself to .deck/shot.jpg."""
+        (DATA / "shot.jpg").write_bytes(await request.read())
+        return web.json_response({"ok": True})
+
     async def ca_cert(self, request: web.Request) -> web.Response:
         return web.Response(
             body=self.certs.ca_path.read_bytes(),
@@ -372,6 +377,7 @@ class Server:
         app.router.add_get("/api/rectified.jpg", self.api_rectified)
         app.router.add_get("/api/crop/{id}.jpg", self.api_crop)
         app.router.add_post("/api/snap", self.api_snap)
+        app.router.add_post("/api/shot", self.api_shot)
         app.router.add_post("/api/{name:flip|relock}", self.api_command)
         app.router.add_get("/ca.crt", self.ca_cert)
         if (WEB_DIST / "assets").exists():

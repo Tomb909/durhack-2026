@@ -151,5 +151,13 @@ function tick(now: number): void {
 }
 requestAnimationFrame(tick);
 
+/** Development aid: save a picture of the world to the server (.deck/shot.jpg). */
+async function shot(): Promise<string> {
+  view.render(sim.step(store.cards, store.moving, 0), store.cards, 0);
+  const blob = await (await fetch(canvas.toDataURL('image/jpeg', 0.88))).blob();
+  await fetch('/api/shot', { method: 'POST', body: blob });
+  return `${canvas.width}x${canvas.height}`;
+}
+
 // Handy when poking around in the browser console.
-Object.assign(window, { deck: { store, sim, view, link } });
+Object.assign(window, { deck: { store, sim, view, link, shot } });
