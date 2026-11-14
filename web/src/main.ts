@@ -10,9 +10,10 @@ import { TablePanel } from './ui/table';
 const canvas = document.getElementById('world') as HTMLCanvasElement;
 const store = new CardStore();
 const sim = new WorldSim();
-const view = new WorldRenderer(canvas);
+const view = new WorldRenderer(canvas, document.getElementById('labels')!);
 const table = new TablePanel(document.getElementById('table-panel')!, store, canvas, (x, y) => view.pickTable(x, y));
 const link = new Link();
+const tablePanel = document.getElementById('table-panel') as HTMLElement;
 
 // --- status, toast, connect panel -------------------------------------------------
 
@@ -65,7 +66,9 @@ function cameraLost(): void {
   cameraLive = false;
   const adopted = store.adoptTracked();
   table.setCandidates([]);
-  toast(adopted ? 'Camera lost. The cards stay put: drag them with the mouse.' : 'Camera lost. Simulated cards still work.', 6);
+  // The card tray is normally hidden; bring it out so the demo can carry on by mouse.
+  tablePanel.hidden = false;
+  toast(adopted ? 'Camera lost. The cards stay put: drag them with the mouse.' : 'Camera lost. Drag cards from the tray.', 6);
 }
 
 link.onSnapshot = (snapshot) => {
@@ -104,6 +107,12 @@ const qualities = [1, 1.5, 2];
 let quality = 1;
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'Tab') {
+    // Developer option: the table map and the tray of simulated cards.
+    e.preventDefault();
+    tablePanel.hidden = !tablePanel.hidden;
+    return;
+  }
   switch (e.key.toLowerCase()) {
     case 'f':
       if (document.fullscreenElement) void document.exitFullscreen();

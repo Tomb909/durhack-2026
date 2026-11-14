@@ -47,14 +47,15 @@ Nothing needs the internet once it is running.
 | F | Fullscreen |
 | R | Rotate the table 180° (if near and far are swapped) |
 | L | Find the border again |
-| B | Show or hide the card beacons |
+| B | Show or hide the card labels |
+| Tab | Developer option: the table map and the tray of simulated cards |
 | X | Remove all simulated cards |
 | H | Hide the panels |
 | Q | Picture quality |
 
 ### Simulated cards
 
-Drag a card from the tray (bottom left) onto the little table map, or straight onto the world. Drag it off to remove it. They add to whatever the camera sees. If the camera drops out, the real cards stay where they were and become draggable, with no restart.
+A developer option, hidden by default: press **Tab** to show the table map and a tray of cards. Drag a card from the tray onto the map, or straight onto the world. Drag it off to remove it. They add to whatever the camera sees. If the camera drops out, the tray appears by itself and the real cards stay where they were and become draggable, with no restart.
 
 ## Making cards and the sheet
 

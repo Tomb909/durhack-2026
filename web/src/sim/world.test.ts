@@ -27,14 +27,15 @@ const flooded = (f: WorldFrame) => fractionWhere(f, (i) => f.height[i] < f.seaLe
 
 describe('empty world', () => {
   const f = settle([]);
-  it('is a mild, mostly dry plain with a low sea and no life', () => {
+  it('is mild, dry, lifeless, gently hilly, and nowhere under water', () => {
     expect(at(f, f.temperature, 0.3, 0.3)).toBeCloseTo(0, 1);
     expect(at(f, f.wetness, 0.3, 0.3)).toBeLessThan(RULES.rainStart);
     expect(Math.max(...f.vegetation)).toBe(0);
     expect(Math.max(...f.precipitation)).toBe(0);
-    expect(flooded(f)).toBeGreaterThan(0.01);
-    expect(flooded(f)).toBeLessThan(0.15);
+    expect(flooded(f)).toBe(0);
+    expect(fractionWhere(f, (i) => f.waterSurface[i] > f.height[i])).toBe(0);
     expect(Math.max(...f.height)).toBeLessThan(0.12);
+    expect(Math.max(...f.height) - Math.min(...f.height)).toBeGreaterThan(0.04);
   });
 });
 
@@ -79,8 +80,10 @@ describe('water', () => {
   });
   it('floods the lowlands by the third copy', () => {
     const land = (count: number) => flooded(settle(Array.from({ length: count }, (_, i) => card('water', 0.2 + 0.05 * i, 0.2))));
-    expect(land(1)).toBeLessThan(0.25);
-    expect(land(3)).toBeGreaterThan(0.3);
+    expect(land(1)).toBeLessThan(0.02);
+    expect(land(2)).toBeGreaterThan(0.01);
+    expect(land(2)).toBeLessThan(0.25);
+    expect(land(3)).toBeGreaterThan(0.25);
     expect(land(3)).toBeGreaterThan(land(1) + 0.2);
     expect(land(3)).toBeLessThan(0.75);
   });
