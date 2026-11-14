@@ -82,7 +82,7 @@ class Vision:
                 read: Callable[[Detection], Reading] | None = None
                 if self.reader is not None:
                     read = self._read
-                self.tracker.update(self.result.detections, self.result.occluder, now, read)
+                self.tracker.update(self.result.detections, self.result.occluder, now, read, self.result.ink)
             self.process_ms = (time.perf_counter() - started) * 1000.0
 
     def _read(self, det: Detection) -> Reading:
