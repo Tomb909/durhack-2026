@@ -123,9 +123,14 @@ void main() {
   // Snow settles on upward faces when it is cold.
   float snow = smoothstep(uFreezing + 0.12, uFreezing - 0.05, vTemperature) * smoothstep(0.25, 0.7, n.y) * vLeaf;
   col = mix(col, vec3(0.68, 0.73, 0.82), snow * 0.85);
-  float overcast = 1.0 - 0.38 * vRain;
+  float overcast = 1.0 - 0.28 * vRain;
+  float shade = sunlight(vWorld, n);
   float ndl = max(dot(n, uSunDir), 0.0);
-  vec3 lit = col * (vec3(1.0, 0.94, 0.84) * 1.45 * ndl * overcast + vec3(0.50, 0.62, 0.85) * (0.42 + 0.2 * n.y));
+  // Leaves with the sun behind them glow through, gold-green, like light through a canopy.
+  vec3 view = normalize(cameraPosition - vWorld);
+  float through = (pow(max(dot(-view, uSunDir), 0.0), 3.0) * 0.8 + 0.25 * max(-dot(n, uSunDir), 0.0)) * vLeaf;
+  vec3 sunlit = SUN_LIGHT * 0.85 * (ndl + through * vec3(1.0, 1.15, 0.45));
+  vec3 lit = col * (sunlit * shade * overcast + SKY_LIGHT * (0.40 + 0.2 * n.y) * (0.8 + 0.2 * shade));
   gl_FragColor = vec4(lit, 1.0);
 }
 `;

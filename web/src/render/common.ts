@@ -23,7 +23,15 @@ export const HSCALE = 4.2;
 /** How far down the world goes before it is lost in the dark. Deep enough that it never reads as a thin slab. */
 export const SLAB_BOTTOM = -9;
 
-export const SUN_DIR = new THREE.Vector3(-0.55, 0.62, 0.56).normalize();
+/**
+ * Toward the sun: low (about 31 degrees) so everything casts a long shadow, from the
+ * left and a little behind the world as first seen, so its glitter on the water and
+ * its light through the leaves face the viewer while the near faces stay lit.
+ */
+export const SUN_DIR = new THREE.Vector3(-0.72, 0.48, -0.3).normalize();
+/** Size of the sun's shadow map (texels a side) and of the cloud cover map. */
+export const SHADOW_SIZE = 2048;
+export const CLOUD_MAP_SIZE = 256;
 
 export interface SharedUniforms {
   [name: string]: THREE.IUniform;
@@ -45,6 +53,12 @@ export interface SharedUniforms {
   uPulse: THREE.IUniform<THREE.Vector4[]>;
   uPulseColor: THREE.IUniform<THREE.Color[]>;
   uPulseCount: THREE.IUniform<number>;
+  /** Depth of everything that casts a shadow, seen from the sun (see scene.ts). */
+  uShadowMap: THREE.IUniform<THREE.Texture | null>;
+  /** How much cloud lies between each point and the sun (0..1), seen from the sun. */
+  uCloudMap: THREE.IUniform<THREE.Texture | null>;
+  /** Scene position to the sun's view (both maps). */
+  uSunMatrix: THREE.IUniform<THREE.Matrix4>;
 }
 
 export const MAX_PULSES = 16;
@@ -66,6 +80,9 @@ export function makeSharedUniforms(): SharedUniforms {
     uPulse: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Vector4(0, 0, 99, 0)) },
     uPulseColor: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Color(1, 1, 1)) },
     uPulseCount: { value: 0 },
+    uShadowMap: { value: null },
+    uCloudMap: { value: null },
+    uSunMatrix: { value: new THREE.Matrix4() },
   };
 }
 
@@ -82,6 +99,9 @@ uniform float uTime;
 uniform vec3 uSunDir;
 uniform float uFreezing;
 uniform vec4 uMood;
+uniform sampler2D uShadowMap;
+uniform sampler2D uCloudMap;
+uniform mat4 uSunMatrix;
 
 uniform vec2 uWorld;
 #define WORLD_W uWorld.x
@@ -119,6 +139,64 @@ float fbm2(vec2 p) {
   float a = 0.5;
   for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
   return s;
+}
+
+// --- Light ------------------------------------------------------------------------
+// Late-afternoon sun and a cool sky. Every surface takes its sunlight through
+// sunlight(): the land's own relief (mountains shade valleys), everything that
+// stands on it (trees, houses, people: a shadow map), and the clouds overhead.
+const vec3 SUN_LIGHT = vec3(1.0, 0.86, 0.68) * 2.45;
+const vec3 SKY_LIGHT = vec3(0.36, 0.52, 0.95) * 0.62;
+const vec3 BOUNCE_LIGHT = vec3(0.70, 0.50, 0.32) * 0.20;
+const float SHADOW_TEXEL = ${(1 / SHADOW_SIZE).toFixed(6)};
+
+// The land's relief: walk toward the sun over the height texture; soft-edged.
+float reliefShadow(vec3 p) {
+  float res = 1.0;
+  float t = 0.05;
+  for (int i = 0; i < 22; i++) {
+    vec3 q = p + uSunDir * t;
+    vec2 uv = tableUv(q.xz);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
+    float gap = q.y - fieldA(uv).r * HSCALE;
+    res = min(res, 8.0 * gap / t);
+    if (res < 0.0) break;
+    t += 0.07 + t * 0.14;
+  }
+  return smoothstep(0.0, 1.0, res);
+}
+
+vec3 sunSpace(vec3 p) {
+  vec4 s = uSunMatrix * vec4(p, 1.0);
+  return s.xyz / s.w * 0.5 + 0.5;
+}
+
+// Trees, houses and people: a shadow map, softened over a small disc of taps.
+float castShadow(vec3 p) {
+  vec3 c = sunSpace(p);
+  if (c.x <= 0.0 || c.x >= 1.0 || c.y <= 0.0 || c.y >= 1.0 || c.z >= 1.0) return 1.0;
+  float bias = 0.0009;
+  float lit = 0.0;
+  float angle = hash21(p.xz * 91.7) * 6.2832;
+  mat2 spin = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * 2.39996;
+    vec2 o = spin * vec2(cos(a), sin(a)) * sqrt((float(i) + 0.5) / 8.0) * 2.2 * SHADOW_TEXEL;
+    lit += step(c.z - bias, texture2D(uShadowMap, c.xy + o).r);
+  }
+  return lit / 8.0;
+}
+
+// Clouds: soft, moving shade where they pass between the land and the sun.
+float cloudShade(vec3 p) {
+  vec3 c = sunSpace(p);
+  float cover = texture2D(uCloudMap, c.xy).r;
+  return 1.0 - 0.55 * smoothstep(0.0, 0.9, cover);
+}
+
+float sunlight(vec3 p, vec3 n) {
+  vec3 q = p + n * 0.02;
+  return reliefShadow(q) * castShadow(q) * cloudShade(q);
 }
 `;
 

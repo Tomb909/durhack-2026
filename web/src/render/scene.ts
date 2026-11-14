@@ -6,16 +6,16 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
 import type { LiveCard } from '../cards/store';
 import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
 import { makeBackdrop } from './backdrop';
 import { Beacons } from './beacons';
 import { CameraRig } from './camera';
-import { MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
+import { MAX_PULSES, SUN_DIR, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
 import { CALM, worldMood, type Mood } from './mood';
 import { makePalettes } from './palette';
+import { AmbientPass, castsShadow, GradeShader, SunShadows } from './post';
 import { makeSlabSides } from './slab';
 import { makeTerrain } from './terrain';
 import { makePeople, Merchants } from './people';
@@ -35,6 +35,9 @@ export class WorldRenderer {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 400);
   private composer: EffectComposer;
+  private sun: SunShadows;
+  private grade: ShaderPass;
+  private sunOnScreen = new THREE.Vector3();
   private bloom: UnrealBloomPass;
   private shared: SharedUniforms;
   private fields!: FieldTextures;
@@ -73,25 +76,34 @@ export class WorldRenderer {
     this.gpuName = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unknown GPU';
 
     this.shared = makeSharedUniforms();
+    this.sun = new SunShadows(this.renderer, this.shared);
     this.merchants = new Merchants(this.shared);
     this.scene.add(makeBackdrop(this.shared));
     this.setShape(DEFAULT_SHAPE);
-    this.scene.add(makeTrees(this.shared));
-    this.scene.add(makePeople(this.shared));
+    // Everything that stands on the land casts a shadow.
+    const trees = makeTrees(this.shared);
+    const people = makePeople(this.shared);
+    for (const o of [trees, people, this.merchants.group]) castsShadow(o);
+    this.scene.add(trees);
+    this.scene.add(people);
     this.scene.add(this.merchants.group);
     this.scene.add(makeWeather(this.shared));
     this.scene.add(makeWindEffects(this.shared));
     this.scene.add(this.beacons.group);
 
+    // HDR, multisampled, and keeping its depth for the ambient occlusion.
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
+    // Float depth: fine enough that flat ground stays flat to the ambient occlusion.
+    target.depthTexture = new THREE.DepthTexture(4, 4);
+    target.depthTexture.type = THREE.FloatType;
     this.composer = new EffectComposer(this.renderer, target);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.22, 0.55, 1.6);
+    this.composer.addPass(new AmbientPass(this.camera));
+    // Only the brightest things bloom: the sun on water and snow, glitter, glowing leaves.
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.42, 0.5, 1.7);
     this.composer.addPass(this.bloom);
-    const vignette = new ShaderPass(VignetteShader);
-    vignette.uniforms.offset.value = 1.05;
-    vignette.uniforms.darkness.value = 1.0;
-    this.composer.addPass(vignette);
+    this.grade = new ShaderPass(GradeShader);
+    this.composer.addPass(this.grade);
     this.composer.addPass(new OutputPass());
 
     this.resize();
@@ -101,6 +113,7 @@ export class WorldRenderer {
   /** Rebuild everything that depends on the play area's shape and proportions. */
   setShape(shape: WorldShape): void {
     setWorldAspect(shape.aspect);
+    this.sun.fit();
     const gw = GW;
     const gh = gridHeight(shape.aspect);
     this.outline = shape.outline;
@@ -143,6 +156,7 @@ export class WorldRenderer {
     this.renderer.setSize(width, height, false);
     this.composer.setPixelRatio(ratio);
     this.composer.setSize(width, height);
+    this.grade.uniforms.uResolution.value.set(width * ratio, height * ratio);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
   }
@@ -235,6 +249,13 @@ export class WorldRenderer {
     if (this.showBeacons) {
       this.beacons.update(cards, frame, this.time, this.camera, this.canvas.clientWidth, this.canvas.clientHeight);
     }
+    this.sun.render(this.scene);
+    this.grade.uniforms.uTime.value = this.time;
+    // The sun's place on screen (far away along its direction), for the grade's warm wash.
+    this.sunOnScreen.copy(SUN_DIR).multiplyScalar(60).project(this.camera);
+    // Behind the camera, the projection flips: then there is no wash to see.
+    if (this.sunOnScreen.z > 1) this.grade.uniforms.uSun.value.set(-9, -9);
+    else this.grade.uniforms.uSun.value.set(this.sunOnScreen.x * 0.5 + 0.5, this.sunOnScreen.y * 0.5 + 0.5);
     this.composer.render(dt);
   }
 }
