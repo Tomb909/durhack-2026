@@ -18,11 +18,13 @@ export interface Metrics {
   forest: number; // well covered by plants
   frozen: number; // below freezing
   desert: number; // dry land with almost no moisture
+  homes: number; // villages
+  farms: number; // farmland
   /** Fingerprint of the whole world: equal worlds have equal fingerprints. */
   hash: string;
 }
 
-export const METRIC_KEYS = ['sea', 'peak', 'flooded', 'fresh', 'rain', 'snow', 'forest', 'frozen', 'desert'] as const;
+export const METRIC_KEYS = ['sea', 'peak', 'flooded', 'fresh', 'rain', 'snow', 'forest', 'frozen', 'desert', 'homes', 'farms'] as const;
 
 /** Plain names for the numbers, for people. `share` ones are percentages of the map. */
 export const METRIC_LABELS: Record<(typeof METRIC_KEYS)[number], { label: string; share: boolean }> = {
@@ -35,6 +37,8 @@ export const METRIC_LABELS: Record<(typeof METRIC_KEYS)[number], { label: string
   forest: { label: 'Forest', share: true },
   frozen: { label: 'Frozen', share: true },
   desert: { label: 'Desert', share: true },
+  homes: { label: 'Villages', share: true },
+  farms: { label: 'Farmland', share: true },
 };
 
 export function liveCards(cards: Placement[], prefix = 'h'): LiveCard[] {
@@ -43,9 +47,9 @@ export function liveCards(cards: Placement[], prefix = 'h'): LiveCard[] {
 
 export function measure(frame: WorldFrame): Metrics {
   const n = frame.w * frame.h;
-  const { height, temperature, wetness, vegetation, waterSurface, river, precipitation, seaLevel } = frame;
+  const { height, temperature, wetness, vegetation, waterSurface, river, precipitation, homes, farms, fishing, logging, cleared, seaLevel } = frame;
   let peak = -Infinity;
-  let flooded = 0, fresh = 0, rain = 0, snow = 0, forest = 0, frozen = 0, desert = 0;
+  let flooded = 0, fresh = 0, rain = 0, snow = 0, forest = 0, frozen = 0, desert = 0, village = 0, farmland = 0;
   let hash = 0x811c9dc5;
   const mix = (v: number) => {
     // FNV-1a over values rounded to 4 places, so harmless float noise does not change it.
@@ -62,14 +66,17 @@ export function measure(frame: WorldFrame): Metrics {
     if (vegetation[i] > 0.4) forest++;
     if (cold) frozen++;
     if (!sea && wetness[i] < 0.1) desert++;
+    if (homes[i] > 0.25) village++;
+    if (farms[i] > 0.25) farmland++;
     mix(h); mix(temperature[i]); mix(wetness[i]); mix(vegetation[i]); mix(waterSurface[i]); mix(river[i]); mix(precipitation[i]);
+    mix(homes[i]); mix(farms[i]); mix(fishing[i]); mix(logging[i]); mix(cleared[i]);
   }
   mix(seaLevel);
   const pct = (count: number) => Math.round((count / n) * 1000) / 10;
   return {
     sea: Math.round(seaLevel * 1e4) / 1e4,
     peak: Math.round(peak * 1e3) / 1e3,
-    flooded: pct(flooded), fresh: pct(fresh), rain: pct(rain), snow: pct(snow), forest: pct(forest), frozen: pct(frozen), desert: pct(desert),
+    flooded: pct(flooded), fresh: pct(fresh), rain: pct(rain), snow: pct(snow), forest: pct(forest), frozen: pct(frozen), desert: pct(desert), homes: pct(village), farms: pct(farmland),
     hash: (hash >>> 0).toString(16).padStart(8, '0'),
   };
 }

@@ -148,7 +148,7 @@ Every combination of the cards appears as a tile, with what is on the table and 
 
 | Control | Does |
 |---|---|
-| **A switch per card** | Switch a card off to leave it out, on to bring it back. The view shows every combination of the cards that are on: five cards is 32 worlds, four is 16. The number beside the title is how many are showing. |
+| **A switch per card** | Switch a card off to leave it out, on to bring it back. The view shows every combination of the cards that are on: six cards is 64 worlds, five is 32. A modifier card such as BIG starts switched off, because it only changes the card beside it. The number beside the title is how many are showing. |
 | **− ×1 +** beside a card | How many copies of that card, wherever it appears, from 1 to 3. Three Waters flood the lowlands; three Mountains make a far taller range. |
 | **3D / Map / Both** | The world as the app draws it, flat from above (nothing hidden behind clouds), or 3D with the map in the corner. |
 | **S / M / L** | Tile size: small to see many at once, large to look closely. |
@@ -188,7 +188,7 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | Option (command line / address) | Meaning |
 |---|---|
 | `"water*3" "life+sun"` / `c=water*3;life+sun` | Your own combination codes, one world each. `name=code` names one. |
-| `--set` / `set=` | `showcase` (default), `singles`, `pairs`, `subsets` (all 32), `copies` (each card ×1 to ×3), `all`. Comma separated. |
+| `--set` / `set=` | `showcase` (default), `singles`, `pairs`, `subsets` (every mix of the cards, 64 with six cards), `copies` (each card ×1 to ×3), `all`. Comma separated. |
 | `--layout` / `layout=` | Where cards without a position go: `cluster` (together, default) or `spread` (each kind apart) |
 | `--view` / `view=` | `3d`, `map` (flat top-down, no GPU needed), `both` (3D with a map inset) |
 | `--tile` / `tile=` | Tile width in pixels (default 400). `--tile 1200 --cols 1` for a close look at a few worlds. |
@@ -202,5 +202,7 @@ Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for 
 
 - **A new card** in `cards.json` needs nothing: it gets its own switch in the Combinations view, joins every set, and works in codes.
 - **A new thing the world can have** (a new array on the world's frame in `sim/world.ts`): add it to `measure()` in `web/src/harness/metrics.ts` so the fingerprint covers it, give it a number there if it is worth comparing (`METRIC_KEYS` and `METRIC_LABELS`), and a colour in `web/src/harness/map.ts`.
+- **A modifier card** (one with `modifier` in `cards.json`, like BIG) is left out of the ready-made sets and starts switched off in the Combinations view. Write it in a code to see it: `big+mountain`.
+- **Things that build up over time** are not in the harness, which shows each world the moment it settles. Woodcutters' felled forest (`cleared`) is the one so far.
 - **A change to how the app draws** shows up in the tiles by itself: they use the app's own renderer. Anything drawn as a page element rather than in the 3D picture (the card labels, for one) does not appear in tiles.
 - `npm --prefix web test` checks that the settled world depends on the cards alone and that the animated world ends up there. If a rule change breaks that, the harness would stop matching the app.

@@ -30,7 +30,7 @@ describe('combination codes', () => {
   });
   it('lists every combination of cards exactly once', () => {
     const subsets = resolveScenarios({ set: 'subsets' });
-    expect(subsets.length).toBe(2 ** CARD_DEFS.length);
+    expect(subsets.length).toBe(2 ** CARD_DEFS.filter((d) => !d.modifier).length); // modifiers are not in the ready-made sets
     expect(new Set(subsets.map((s) => s.code)).size).toBe(subsets.length);
     expect(resolveScenarios({}).length).toBeGreaterThan(10); // the showcase
     expect(resolveScenarios({ codes: 'flood=water*3; life+sun' }).map((s) => s.name)).toEqual(['flood', 'life_sun']);
@@ -80,6 +80,9 @@ describe('the settled world depends on the cards alone', { timeout: 30_000 }, ()
       // Working the world out again from where it stands, and letting it run, must not move anything.
       sim.step(cards, true, 1 / 60);
       for (let i = 0; i < 600; i++) sim.step(cards, false, 1 / 60);
+      // Felled forest is meant to build up as time runs (the land remembers), so it is set aside here:
+      // everything that comes from the cards alone must be unchanged.
+      sim.frame.cleared.fill(0);
       expect(measure(sim.frame).hash, s.name).toBe(once);
     }
   });

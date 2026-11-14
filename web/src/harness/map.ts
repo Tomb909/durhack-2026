@@ -18,14 +18,17 @@ const ROCK: RGB = [120, 118, 122];
 const SNOW: RGB = [244, 248, 252];
 const FOREST: RGB = [34, 128, 58];
 const RAIN: RGB = [40, 60, 120];
+const FARM: RGB = [206, 190, 92];
+const HOME: RGB = [222, 96, 48];
+const BOAT: RGB = [250, 240, 214];
 
 export const MAP_LEGEND: [label: string, colour: RGB][] = [
-  ['sea', SEA_DEEP], ['river/lake', FRESH], ['forest', FOREST], ['desert', SAND], ['snow/ice', SNOW], ['rock', ROCK], ['rain (dots)', RAIN],
+  ['sea', SEA_DEEP], ['river/lake', FRESH], ['forest', FOREST], ['desert', SAND], ['snow/ice', SNOW], ['rock', ROCK], ['farmland', FARM], ['villages', HOME], ['rain (dots)', RAIN],
 ];
 
 /** Draw the world into a canvas the size of the grid (scale it up when copying). */
 export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | OffscreenCanvas): void {
-  const { w, h, height, temperature, wetness, vegetation, waterSurface, river, precipitation, seaLevel } = frame;
+  const { w, h, height, temperature, wetness, vegetation, waterSurface, river, precipitation, homes, farms, fishing, seaLevel } = frame;
   canvas.width = w;
   canvas.height = h;
   const g = canvas.getContext('2d') as CanvasRenderingContext2D;
@@ -43,6 +46,7 @@ export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | Offscreen
         c = lerp(GROUND, SAND, ramp(0.2, 0.05, wetness[k]) * ramp(0.1, 0.5, t));
         c = lerp(c, ROCK, ramp(0.12, 0.3, ground));
         c = lerp(c, FOREST, Math.min(1, vegetation[k]) * 0.9);
+        c = lerp(c, FARM, Math.min(1, farms[k]) * 0.85);
         c = lerp(c, SNOW, cold * ramp(0.2, 0.45, wetness[k] + ramp(0.15, 0.4, ground)));
         // Light from the far left, so mountains read as mountains.
         const slope = height[j * w + Math.max(0, i - 1)] - height[j * w + Math.min(w - 1, i + 1)] + height[Math.max(0, j - 1) * w + i] - height[Math.min(h - 1, j + 1) * w + i];
@@ -51,6 +55,9 @@ export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | Offscreen
         const water = Math.max(ramp(0.0005, 0.003, waterSurface[k] - ground), ramp(0.25, 0.7, river[k]));
         c = lerp(c, lerp(FRESH, SEA_ICE, cold), water);
       }
+      // People: houses as a scatter of roof-coloured cells, fishing boats as pale specks on the water.
+      if (homes[k] > 0.25 && (i * 7 + j * 3) % 5 < 2) c = lerp(c, HOME, 0.9);
+      if (fishing[k] > 0.3 && (i * 5 + j * 11) % 23 === 0) c = BOAT;
       // Falling rain or snow: a dot pattern, so the ground stays readable underneath.
       if (precipitation[k] > 0.05 && (i + j * 2) % 4 === 0 && j % 2 === 0) c = lerp(c, cold > 0.5 ? SNOW : RAIN, 0.35 + 0.5 * precipitation[k]);
       const o = k * 4;
