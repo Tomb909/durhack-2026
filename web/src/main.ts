@@ -1,18 +1,44 @@
 // Deck of Worlds: cards in, world out.
 //   cards (camera + simulated)  ->  CardStore (smoothing)  ->  WorldSim (rules)  ->  WorldRenderer (picture)
 import { CardStore } from './cards/store';
+import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { WorldRenderer } from './render/scene';
-import { WorldSim } from './sim/world';
+import { SHAPE_PRESETS, WorldSim, shapesDiffer, type WorldShape } from './sim/world';
+import { Combinations } from './ui/combos';
 import { CardCheck, Guide } from './ui/overlays';
 import { TablePanel } from './ui/table';
 
 const canvas = document.getElementById('world') as HTMLCanvasElement;
 const store = new CardStore();
-const sim = new WorldSim();
-const view = new WorldRenderer(canvas);
+let sim = new WorldSim();
+const view = new WorldRenderer(canvas, document.getElementById('labels')!);
 const table = new TablePanel(document.getElementById('table-panel')!, store, canvas, (x, y) => view.pickTable(x, y));
 const link = new Link();
+const tablePanel = document.getElementById('table-panel') as HTMLElement;
+
+// --- play-area shape ----------------------------------------------------------------
+
+let shape: WorldShape = sim.shape;
+let pendingShape: WorldShape | null = null;
+let lastRebuild = -Infinity;
+const REBUILD_EVERY_MS = 1500;
+
+/** Ask for the world to take a new shape. Applied in the main loop, at most every 1.5 s. */
+function wantShape(next: WorldShape): void {
+  if (shapesDiffer(next, pendingShape ?? shape)) pendingShape = next;
+  else if (pendingShape && !shapesDiffer(next, shape)) pendingShape = null;
+}
+
+function applyShape(now: number): void {
+  if (!pendingShape || now - lastRebuild < REBUILD_EVERY_MS) return;
+  shape = pendingShape;
+  pendingShape = null;
+  lastRebuild = now;
+  sim = new WorldSim(shape);
+  view.setShape(shape);
+  table.setShape(shape);
+}
 
 // --- status, toast, connect panel -------------------------------------------------
 
@@ -65,7 +91,9 @@ function cameraLost(): void {
   cameraLive = false;
   const adopted = store.adoptTracked();
   table.setCandidates([]);
-  toast(adopted ? 'Camera lost. The cards stay put: drag them with the mouse.' : 'Camera lost. Simulated cards still work.', 6);
+  // The card tray is normally hidden; bring it out so the demo can carry on by mouse.
+  tablePanel.hidden = false;
+  toast(adopted ? 'Camera lost. The cards stay put: drag them with the mouse.' : 'Camera lost. Drag cards from the tray.', 6);
 }
 
 link.onSnapshot = (snapshot) => {
@@ -78,6 +106,8 @@ link.onSnapshot = (snapshot) => {
       connectPanel.hidden = true;
       toast('Phone camera connected');
     }
+    // Keep the last shape when the border is hidden or the camera drops.
+    if (snapshot.playArea.shape) wantShape(snapshot.playArea.shape);
     store.setTracked(snapshot.cards);
     table.setCandidates(snapshot.candidates);
     if (snapshot.playArea.found) setStatus('live', `Camera · play area found · ${snapshot.cards.length} cards`);
@@ -96,6 +126,42 @@ link.onDown = () => {
 link.connect();
 setStatus('off', 'Simulated cards');
 
+// --- cards by code, with no waiting -------------------------------------------------
+//   ?cards=water*3+life@0.8,0.6   start with these cards, already settled
+//   ?instant                      no fading or easing at all (also the I key)
+//   ?still=6                      freeze the picture at this moment (seconds)
+// The same from the console: deck.set('life+water+sun')
+
+const params = new URLSearchParams(location.search);
+store.instant = params.has('instant');
+const still = params.has('still') ? Number(params.get('still')) || 6 : null;
+if (still !== null) view.sway = false;
+
+/** Replace the simulated cards with a combination code and jump to the settled world. */
+function setCards(code: string, layout: Layout = 'cluster'): string {
+  store.setSim(parseCode(code, layout));
+  sim.settleNow(store.cards);
+  return tidyCode(code);
+}
+// Asking for either is developing: bring out the card tray (normally behind Tab).
+if (params.has('cards') || params.has('instant')) tablePanel.hidden = false;
+if (params.has('cards')) {
+  try {
+    setCards(params.get('cards')!, params.get('layout') === 'spread' ? 'spread' : 'cluster');
+  } catch (error) {
+    toast(`Cards in the address: ${(error as Error).message}`, 8);
+  }
+}
+
+// --- every combination, side by side (the button, V, or ?combos in the address) -----
+
+const combos = new Combinations([document.getElementById('ui')!, canvas], (code, layout) => {
+  setCards(code, layout);
+  tablePanel.hidden = false; // you asked to see it live: have the cards to hand
+});
+document.getElementById('combos-open')!.addEventListener('click', () => combos.open());
+if (params.has('combos')) combos.open();
+
 // --- keys -------------------------------------------------------------------------
 
 const guide = new Guide();
@@ -104,6 +170,13 @@ const qualities = [1, 1.5, 2];
 let quality = 1;
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (combos.isOpen) return; // that view has its own keys
+  if (e.key === 'Tab') {
+    // Developer option: the table map and the tray of simulated cards.
+    e.preventDefault();
+    tablePanel.hidden = !tablePanel.hidden;
+    return;
+  }
   switch (e.key.toLowerCase()) {
     case 'f':
       if (document.fullscreenElement) void document.exitFullscreen();
@@ -134,8 +207,28 @@ window.addEventListener('keydown', (e) => {
       view.setQuality(qualities[quality]);
       toast(`Quality ${qualities[quality]}× · ${view.gpuName}`);
       break;
+    case 's': {
+      if (cameraLive) {
+        toast('The camera sets the shape: draw a different border');
+        break;
+      }
+      const names = Object.keys(SHAPE_PRESETS) as (keyof typeof SHAPE_PRESETS)[];
+      const current = names.findIndex((name) => !shapesDiffer(SHAPE_PRESETS[name], pendingShape ?? shape));
+      const name = names[(current + 1) % names.length];
+      wantShape(SHAPE_PRESETS[name]);
+      lastRebuild = -Infinity;
+      toast(`Play area: ${name}`);
+      break;
+    }
     case 'x':
       store.clearSim();
+      break;
+    case 'v':
+      combos.open();
+      break;
+    case 'i':
+      store.instant = !store.instant;
+      toast(store.instant ? 'Instant: no fading, the world jumps to its final state' : 'Animated');
       break;
     case 'g':
       cardCheck.hide();
@@ -159,10 +252,14 @@ let last = performance.now();
 function tick(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  applyShape(now);
   store.update(dt);
-  const frame = sim.step(store.cards, store.moving, dt);
+  const frame = store.instant && store.moving ? sim.settleNow(store.cards) : sim.step(store.cards, store.moving, dt);
   table.update();
-  view.render(frame, store.cards, dt);
+  // Behind the Combinations view nothing can be seen: do not spend the GPU drawing it.
+  if (combos.isOpen) view.advance(dt);
+  else if (still !== null) view.renderAt(frame, store.cards, still);
+  else view.render(frame, store.cards, dt);
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
@@ -176,4 +273,10 @@ async function shot(): Promise<string> {
 }
 
 // Handy when poking around in the browser console.
-Object.assign(window, { deck: { store, sim, view, link, shot } });
+Object.assign(window, {
+  deck: {
+    store, view, link, shot, set: setCards,
+    get sim() { return sim; },
+    get shape() { return shape; },
+  },
+});

@@ -10,10 +10,10 @@ import { HorizontalTiltShiftShader } from 'three/addons/shaders/HorizontalTiltSh
 import { VerticalTiltShiftShader } from 'three/addons/shaders/VerticalTiltShiftShader.js';
 import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
 import type { LiveCard } from '../cards/store';
-import { GH, GW, type WorldFrame } from '../sim/world';
+import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
 import { makeBackdrop } from './backdrop';
 import { Beacons } from './beacons';
-import { MAX_PULSES, WORLD_D, WORLD_W, makeSharedUniforms, type SharedUniforms } from './common';
+import { MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
@@ -39,16 +39,24 @@ export class WorldRenderer {
   private tiltH: ShaderPass;
   private tiltV: ShaderPass;
   private shared: SharedUniforms;
-  private fields: FieldTextures;
-  private beacons = new Beacons();
+  private fields!: FieldTextures;
+  private palettes = makePalettes();
+  /** Meshes that depend on the play area's shape; rebuilt by setShape. */
+  private shaped: THREE.Object3D[] = [];
+  private outline: number[][] = DEFAULT_SHAPE.outline;
+  private beacons: Beacons;
   private time = 0;
   private quality = 1.5;
   private raycaster = new THREE.Raycaster();
   private plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.25);
+  private fixed: { width: number; height: number } | null = null;
   showBeacons = true;
   sway = true;
+  /** Above 1 moves the camera closer than "the whole world fits". */
+  zoom = 1;
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(private canvas: HTMLCanvasElement, labelLayer: HTMLElement) {
+    this.beacons = new Beacons(labelLayer);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -59,15 +67,9 @@ export class WorldRenderer {
     this.gpuName = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unknown GPU';
 
     this.shared = makeSharedUniforms();
-    this.fields = new FieldTextures(GW, GH, this.renderer.extensions.has('OES_texture_float_linear'));
-    this.shared.uFieldA.value = this.fields.a;
-    this.shared.uFieldB.value = this.fields.b;
-
     this.scene.add(makeBackdrop(this.shared.uTime));
-    this.scene.add(makeTerrain(this.shared, makePalettes()));
-    this.scene.add(makeSlabSides(this.shared));
+    this.setShape(DEFAULT_SHAPE);
     this.scene.add(makeTrees(this.shared));
-    this.scene.add(makeWater(this.shared));
     this.scene.add(makeWeather(this.shared));
     this.scene.add(this.beacons.group);
 
@@ -90,15 +92,45 @@ export class WorldRenderer {
     window.addEventListener('resize', () => this.resize());
   }
 
+  /** Rebuild everything that depends on the play area's shape and proportions. */
+  setShape(shape: WorldShape): void {
+    setWorldAspect(shape.aspect);
+    const gw = GW;
+    const gh = gridHeight(shape.aspect);
+    this.outline = shape.outline;
+    for (const object of this.shaped) {
+      this.scene.remove(object);
+      object.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+    }
+    if (this.fields) this.fields.dispose();
+    this.fields = new FieldTextures(gw, gh, this.renderer.extensions.has('OES_texture_float_linear'));
+    this.shared.uFieldA.value = this.fields.a;
+    this.shared.uFieldB.value = this.fields.b;
+    setSharedWorld(this.shared, gw, gh);
+    this.shaped = [makeTerrain(this.shared, this.palettes, gw, gh), makeSlabSides(this.shared, shape.outline, gw), makeWater(this.shared, gw, gh)];
+    for (const object of this.shaped) this.scene.add(object);
+  }
+
   setQuality(pixelRatio: number): void {
     this.quality = pixelRatio;
     this.resize();
   }
 
+  /** Draw at exactly this many pixels, whatever the window or screen (used by the harness). */
+  setFixedSize(width: number, height: number): void {
+    this.fixed = { width, height };
+    this.resize();
+  }
+
   resize(): void {
-    const width = this.canvas.clientWidth || window.innerWidth;
-    const height = this.canvas.clientHeight || window.innerHeight;
-    const ratio = Math.min(window.devicePixelRatio || 1, this.quality);
+    const width = this.fixed?.width ?? (this.canvas.clientWidth || window.innerWidth);
+    const height = this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight);
+    const ratio = this.fixed ? 1 : Math.min(window.devicePixelRatio || 1, this.quality);
     this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(width, height, false);
     this.composer.setPixelRatio(ratio);
@@ -115,7 +147,7 @@ export class WorldRenderer {
     const half = THREE.MathUtils.degToRad(FOV / 2);
     const halfH = Math.atan(Math.tan(half) * this.camera.aspect);
     // Far enough back that the whole chunk fits, whatever the window shape.
-    const distance = Math.max((WORLD_W / 2 + 0.9) / Math.tan(halfH), (WORLD_D / 2 + 1.9) / Math.tan(half));
+    const distance = Math.max((world.w / 2 + 0.9) / Math.tan(halfH), (world.d / 2 + 1.9) / Math.tan(half)) / this.zoom;
     const azimuth = this.sway ? SWAY * Math.sin((this.time * Math.PI * 2) / SWAY_PERIOD) : 0;
     const flat = Math.cos(ELEVATION) * distance;
     this.camera.position.set(TARGET.x + Math.sin(azimuth) * flat, TARGET.y + Math.sin(ELEVATION) * distance, TARGET.z + Math.cos(azimuth) * flat);
@@ -129,10 +161,23 @@ export class WorldRenderer {
     this.raycaster.setFromCamera(ndc, this.camera);
     const hit = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(this.plane, hit)) return null;
-    const x = hit.x / WORLD_W + 0.5;
-    const y = hit.z / WORLD_D + 0.5;
+    const x = hit.x / world.w + 0.5;
+    const y = hit.z / world.d + 0.5;
     if (x < -0.03 || x > 1.03 || y < -0.03 || y > 1.03) return null;
+    const near = outlineDistance(this.outline, x, y);
+    if (!near.inside && near.distance > 0.03) return null;
     return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+  }
+
+  /** Let time pass without drawing (the world is hidden behind something). */
+  advance(dt: number): void {
+    this.time += dt;
+  }
+
+  /** Draw the world as it looks at one fixed moment: same inputs, same picture. */
+  renderAt(frame: WorldFrame, cards: LiveCard[], time: number): void {
+    this.time = time;
+    this.render(frame, cards, 0);
   }
 
   render(frame: WorldFrame, cards: LiveCard[], dt: number): void {
@@ -147,9 +192,12 @@ export class WorldRenderer {
       this.shared.uPulseColor.value[i].set(card.def.color);
     }
     this.shared.uPulseCount.value = count;
-    this.beacons.group.visible = this.showBeacons;
-    if (this.showBeacons) this.beacons.update(cards, frame, this.time);
     this.placeCamera();
+    this.camera.updateMatrixWorld();
+    this.beacons.setVisible(this.showBeacons);
+    if (this.showBeacons) {
+      this.beacons.update(cards, frame, this.time, this.camera, this.canvas.clientWidth, this.canvas.clientHeight);
+    }
     this.composer.render(dt);
   }
 }

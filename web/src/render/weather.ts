@@ -62,7 +62,8 @@ uniform float uSnow;
 varying float vAlpha;
 varying vec2 vQuad;
 void main() {
-  float streak = (1.0 - abs(vQuad.x - 0.5) * 2.0) * smoothstep(0.0, 0.3, vQuad.y) ;
+  // max(): a streak thinner than a pixel is sampled off its edge, where this would go negative and draw black.
+  float streak = max(0.0, 1.0 - abs(vQuad.x - 0.5) * 2.0) * smoothstep(0.0, 0.3, vQuad.y);
   float flake = 1.0 - smoothstep(0.25, 0.5, length(vQuad - 0.5));
   float shape = mix(streak, flake, uSnow);
   vec3 col = mix(vec3(0.72, 0.84, 1.0), vec3(1.0), uSnow);

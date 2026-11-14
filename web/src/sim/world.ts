@@ -9,10 +9,100 @@ import type { LiveCard } from '../cards/store';
 import { Hydrology, type HydrologyRules } from './hydrology';
 import { fbm, ridged } from './noise';
 
-/** Grid size. The world has the play area's proportions (A3 landscape). */
+/** Grid width. The height follows the play area's proportions. */
 export const GW = 192;
-export const GH = 136;
-export const ASPECT = 420 / 297;
+export const A3_ASPECT = 420 / 297;
+
+/** The play area's shape: proportions (long / short side) and outline (points 0..1, x right, y near). */
+export interface WorldShape {
+  aspect: number;
+  outline: number[][];
+}
+
+export const RECT_OUTLINE = [[0, 0], [1, 0], [1, 1], [0, 1]];
+export const DEFAULT_SHAPE: WorldShape = { aspect: A3_ASPECT, outline: RECT_OUTLINE };
+
+/** Shapes to try without a camera (S key). */
+export const SHAPE_PRESETS: Record<'rect' | 'circle' | 'blob', WorldShape> = {
+  rect: DEFAULT_SHAPE,
+  circle: {
+    aspect: 1,
+    outline: Array.from({ length: 96 }, (_, k) => {
+      const a = (k / 96) * Math.PI * 2;
+      return [0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a)];
+    }),
+  },
+  blob: (() => {
+    const raw = Array.from({ length: 120 }, (_, k) => {
+      const a = (k / 120) * Math.PI * 2;
+      const r = 1 + 0.16 * Math.sin(3 * a + 0.6) + 0.09 * Math.cos(5 * a - 1.1) + 0.05 * Math.sin(7 * a);
+      return [r * Math.cos(a) * 1.35, r * Math.sin(a)];
+    });
+    const xs = raw.map((p) => p[0]);
+    const ys = raw.map((p) => p[1]);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    return { aspect: (x1 - x0) / (y1 - y0), outline: raw.map(([x, y]) => [(x - x0) / (x1 - x0), (y - y0) / (y1 - y0)]) };
+  })(),
+};
+
+/** Distance from (x, y) to the outline (in play-area units, 0..1 each way), and whether it is inside. */
+export function outlineDistance(outline: number[][], x: number, y: number): { inside: boolean; distance: number } {
+  let inside = false;
+  let best = Infinity;
+  for (let a = 0, b = outline.length - 1; a < outline.length; b = a++) {
+    const [ax, ay] = outline[a];
+    const [bx, by] = outline[b];
+    if ((ay > y) !== (by > y) && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
+    const ex = bx - ax;
+    const ey = by - ay;
+    const len = ex * ex + ey * ey;
+    const t = len > 0 ? Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / len)) : 0;
+    best = Math.min(best, Math.hypot(x - ax - t * ex, y - ay - t * ey));
+  }
+  return { inside, distance: best };
+}
+
+/** True when two shapes differ enough to rebuild the world: proportions by >3% or the outline moved. */
+export function shapesDiffer(a: WorldShape, b: WorldShape, moved = 0.025): boolean {
+  if (Math.abs(a.aspect - b.aspect) / b.aspect > 0.03) return true;
+  const far = (p: number[][], q: number[][]) => p.some(([x, y]) => outlineDistance(q, x, y).distance > moved);
+  return far(a.outline, b.outline) || far(b.outline, a.outline);
+}
+
+/** Grid height for a shape's proportions (136 for A3). */
+export const gridHeight = (aspect: number) => Math.round((GW - 1) / aspect) + 1;
+/** Grid height of the default (A3) world. Shaped worlds use `sim.h` / `frame.h` instead. */
+export const GH = gridHeight(A3_ASPECT);
+
+/**
+ * Signed distance (in cells, positive inside) from every cell to the outline.
+ * Cell (i, j) sits at (i / (w-1), j / (h-1)) on the play area.
+ */
+export function shapeDistance(outline: number[][], w: number, h: number): Float32Array {
+  const px = outline.map((p) => p[0] * (w - 1));
+  const py = outline.map((p) => p[1] * (h - 1));
+  const m = px.length;
+  const out = new Float32Array(w * h);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      let best = Infinity;
+      let inside = false;
+      for (let a = 0, b = m - 1; a < m; b = a++) {
+        const ax = px[a], ay = py[a], bx = px[b], by = py[b];
+        if ((ay > j) !== (by > j) && i < ((bx - ax) * (j - ay)) / (by - ay) + ax) inside = !inside;
+        const ex = bx - ax, ey = by - ay;
+        const len = ex * ex + ey * ey;
+        const t = len > 0 ? Math.max(0, Math.min(1, ((i - ax) * ex + (j - ay) * ey) / len)) : 0;
+        const dx = i - ax - t * ex, dy = j - ay - t * ey;
+        const d = dx * dx + dy * dy;
+        if (d < best) best = d;
+      }
+      const d = Math.sqrt(best);
+      out[j * w + i] = inside ? d : -d;
+    }
+  }
+  return out;
+}
 
 /** Every tunable number in one place. */
 export const RULES = {
@@ -20,10 +110,10 @@ export const RULES = {
   copiesCeiling: 3.2,
   seaCopiesCeiling: 4.5,
   seaBase: 0.0,
-  plainHeight: 0.046,
-  plainTilt: 0.03, // the land slopes gently down toward the bay
-  plainRoughness: 0.022,
-  bayDepth: 0.11,
+  /** The empty world: gentle hills, all of it above the sea. */
+  landLow: 0.022, // height of the lowest hollow (the sea starts below it)
+  landRelief: 0.07, // from the lowest hollow to the highest hilltop
+  lowlandBias: 1.3, // above 1 = more low ground than high, so floods spread
   /** Temperature runs from -1 (frozen) through 0 (mild) to +1 (scorching). */
   lapse: 1.15, // how much colder it gets per unit of height
   lapseStartsAt: 0.08,
@@ -38,6 +128,8 @@ export const RULES = {
   plantColdLimit: -0.45,
   plantColdGood: -0.2,
   settleSeconds: 0.35, // how fast rivers and lakes ease to their new shape
+  /** Land beside water is damper, which can move the water again. Look this many times at most. */
+  settlePasses: 12,
   hydrology: {
     riverStart: 90,
     riverFull: 420,
@@ -49,7 +141,7 @@ export const RULES = {
   } satisfies HydrologyRules,
 };
 
-/** What the renderer receives. All arrays are GW x GH, row 0 = far edge. */
+/** What the renderer receives. All arrays are w x h, row 0 = far edge. */
 export interface WorldFrame {
   w: number;
   h: number;
@@ -64,6 +156,11 @@ export interface WorldFrame {
   river: Float32Array;
   /** 0..1 rain or snow falling here. */
   precipitation: Float32Array;
+  /** Signed distance to the play area's outline in cells, positive inside. */
+  mask: Float32Array;
+  /** Long / short side. */
+  aspect: number;
+  outline: number[][];
   seaLevel: number;
   /** Increases whenever the arrays change. */
   version: number;
@@ -80,50 +177,73 @@ type LocalField = Exclude<FieldName, 'seaLevel'>;
 
 export class WorldSim {
   readonly frame: WorldFrame;
-  private n = GW * GH;
-  private base = new Float32Array(this.n);
-  private ridge = new Float32Array(this.n);
-  private rough = new Float32Array(this.n);
+  readonly shape: WorldShape;
+  readonly w = GW;
+  readonly h: number;
+  private n: number;
+  private aspect: number;
+  /** 1 for cells inside the play area. */
+  private inside: Uint8Array;
+  private base: Float32Array;
+  private ridge: Float32Array;
+  private rough: Float32Array;
   /** Summed card pushes per property (after the copies ceiling). */
-  private push: Record<LocalField, Float32Array> = {
-    height: new Float32Array(this.n),
-    temperature: new Float32Array(this.n),
-    wetness: new Float32Array(this.n),
-    life: new Float32Array(this.n),
-  };
-  private copies = new Float32Array(this.n);
-  private surfaceTarget = new Float32Array(this.n);
-  private riverTarget = new Float32Array(this.n);
-  private nearWater = new Float32Array(this.n);
-  private scratch = new Float32Array(this.n);
-  private hydrology = new Hydrology(GW, GH);
+  private push: Record<LocalField, Float32Array>;
+  private copies: Float32Array;
+  private surfaceTarget: Float32Array;
+  private riverTarget: Float32Array;
+  private nearWater: Float32Array;
+  private scratch: Float32Array;
+  private hydrology: Hydrology;
+  private lastSurface: Float32Array;
+  private lastRiver: Float32Array;
   private settle = 0;
+  private passesLeft = 0;
   private started = false;
 
-  constructor() {
-    const n = this.n;
+  constructor(shape: WorldShape = DEFAULT_SHAPE) {
+    this.shape = shape;
+    const aspect = (this.aspect = shape.aspect);
+    const w = this.w;
+    const h = (this.h = gridHeight(aspect));
+    const n = (this.n = w * h);
+    const f = () => new Float32Array(n);
+    this.base = f(); this.ridge = f(); this.rough = f();
+    this.push = { height: f(), temperature: f(), wetness: f(), life: f() };
+    this.copies = f(); this.surfaceTarget = f(); this.riverTarget = f(); this.nearWater = f(); this.scratch = f();
+    this.lastSurface = f(); this.lastRiver = f();
+    this.hydrology = new Hydrology(w, h);
+    const mask = shapeDistance(shape.outline, w, h);
+    this.inside = new Uint8Array(n);
+    for (let i = 0; i < n; i++) this.inside[i] = mask[i] >= -0.01 ? 1 : 0;
     this.frame = {
-      w: GW, h: GH,
-      height: new Float32Array(n), temperature: new Float32Array(n), wetness: new Float32Array(n),
-      vegetation: new Float32Array(n), waterSurface: new Float32Array(n), river: new Float32Array(n),
-      precipitation: new Float32Array(n), seaLevel: RULES.seaBase, version: 0,
+      w, h,
+      height: f(), temperature: f(), wetness: f(),
+      vegetation: f(), waterSurface: f(), river: f(),
+      precipitation: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
     };
-    for (let j = 0; j < GH; j++) {
-      for (let i = 0; i < GW; i++) {
-        const u = i / (GW - 1);
-        const v = j / (GH - 1);
-        const X = u * ASPECT;
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const u = i / (w - 1);
+        const v = j / (h - 1);
+        const X = u * aspect;
         const Y = v;
-        const k = j * GW + i;
-        // A gently rolling plain that slopes down to a bay in the near-right corner.
-        const tilt = -RULES.plainTilt * (u - 0.5 + (v - 0.5));
-        const rough = RULES.plainRoughness * 2 * (fbm(X * 2.4, Y * 2.4, 3, 11) - 0.5);
-        const corner = Math.hypot((1 - u) * ASPECT, 1 - v);
-        const bay = RULES.bayDepth * smoothstep(0.46, 0.0, corner);
-        this.base[k] = RULES.plainHeight + tilt + rough - bay;
+        const k = j * w + i;
+        // Light rolling hills (scaled below so the lowest point sits just above the sea).
+        this.base[k] = fbm(X * 1.9, Y * 1.9, 4, 11);
         this.ridge[k] = ridged(X * 3.4, Y * 3.4, 5, 5);
         this.rough[k] = fbm(X * 9, Y * 9, 2, 23) - 0.5;
       }
+    }
+    let lowest = Infinity;
+    let highest = -Infinity;
+    for (let k = 0; k < n; k++) {
+      lowest = Math.min(lowest, this.base[k]);
+      highest = Math.max(highest, this.base[k]);
+    }
+    for (let k = 0; k < n; k++) {
+      const t = (this.base[k] - lowest) / (highest - lowest);
+      this.base[k] = RULES.landLow + RULES.landRelief * Math.pow(t, RULES.lowlandBias);
     }
   }
 
@@ -132,6 +252,7 @@ export class WorldSim {
     if (cardsMoving || !this.started) {
       this.recompute(cards);
       this.settle = RULES.settleSeconds * 5;
+      this.passesLeft = RULES.settlePasses;
       if (!this.started) {
         this.frame.waterSurface.set(this.surfaceTarget);
         this.frame.river.set(this.riverTarget);
@@ -148,25 +269,45 @@ export class WorldSim {
         waterSurface[i] += (st[i] - waterSurface[i]) * k;
         river[i] += (rt[i] - river[i]) * k;
       }
+      // The water has arrived. Land beside it is damper now, which may move the
+      // water again, so look once more and keep going until nothing changes.
+      // Without this the world would stop wherever the animation happened to be.
+      if (this.settle <= 0 && this.passesLeft-- > 0 && this.refine(cards)) this.settle = RULES.settleSeconds * 5;
       this.frame.version++;
     }
     return this.frame;
   }
 
-  /** Jump straight to the settled state (used by tests). */
+  /**
+   * Jump straight to the settled state: what the cards alone give, starting
+   * from a dry world. Depends on nothing that came before, so the same cards
+   * always give the same world. The live loop (`step`) ends up here too.
+   */
   settleNow(cards: LiveCard[]): WorldFrame {
+    this.started = false; // forget the old water
     this.recompute(cards);
-    // Wetness near water depends on where the water was; iterate to a fixed point.
-    for (let i = 0; i < 3; i++) {
-      this.frame.waterSurface.set(this.surfaceTarget);
-      this.frame.river.set(this.riverTarget);
-      this.recompute(cards);
-    }
+    this.started = true;
+    for (let i = 0; i < RULES.settlePasses; i++) if (!this.refine(cards)) break;
     this.frame.waterSurface.set(this.surfaceTarget);
     this.frame.river.set(this.riverTarget);
-    this.started = true;
+    this.settle = 0;
+    this.passesLeft = 0;
     this.frame.version++;
     return this.frame;
+  }
+
+  /** Let the water reach its target and work the world out again. True if that moved the water. */
+  private refine(cards: LiveCard[]): boolean {
+    const { n, frame, surfaceTarget, riverTarget, lastSurface, lastRiver } = this;
+    lastSurface.set(surfaceTarget);
+    lastRiver.set(riverTarget);
+    frame.waterSurface.set(surfaceTarget);
+    frame.river.set(riverTarget);
+    this.recompute(cards);
+    for (let i = 0; i < n; i++) {
+      if (Math.abs(surfaceTarget[i] - lastSurface[i]) > 1e-6 || Math.abs(riverTarget[i] - lastRiver[i]) > 1e-6) return true;
+    }
+    return false;
   }
 
   private recompute(cards: LiveCard[]): void {
@@ -247,11 +388,11 @@ export class WorldSim {
         RULES.wetBase + push.wetness[i] - RULES.evaporation * Math.max(0, t) + RULES.wetNearWater * this.nearWater[i]));
       wetness[i] = wet;
 
-      precipitation[i] = smoothstep(RULES.rainStart, RULES.rainFull, wet);
+      precipitation[i] = this.inside[i] ? smoothstep(RULES.rainStart, RULES.rainFull, wet) : 0;
     }
 
     // --- 4. water on land
-    this.hydrology.compute(height, sea, precipitation, this.surfaceTarget, this.riverTarget, RULES.hydrology);
+    this.hydrology.compute(height, sea, precipitation, this.surfaceTarget, this.riverTarget, RULES.hydrology, this.inside);
 
     // --- 5. plants: only where Life reaches AND the climate suits AND it is not under water
     for (let i = 0; i < n; i++) {
@@ -260,7 +401,7 @@ export class WorldSim {
         smoothstep(RULES.plantWetMin, RULES.plantWetGood, wetness[i]) *
         smoothstep(RULES.plantColdLimit, RULES.plantColdGood, temperature[i]);
       const submerged = smoothstep(0.0, 0.004, this.surfaceTarget[i] - height[i]);
-      vegetation[i] = life * suits * (1 - submerged);
+      vegetation[i] = this.inside[i] ? life * suits * (1 - submerged) : 0;
     }
     frame.version++;
   }
@@ -269,8 +410,9 @@ export class WorldSim {
   private addCopies(group: LiveCard[], radius: number): void {
     const copies = this.copies;
     copies.fill(0);
+    const { w: GW, h: GH } = this;
     const sigmaX = radius * (GW - 1); // radius is a fraction of the world's width
-    const sigmaY = radius * ASPECT * (GH - 1);
+    const sigmaY = radius * this.aspect * (GH - 1);
     const reach = 3.3;
     for (const card of group) {
       const cx = card.x * (GW - 1);
@@ -292,7 +434,7 @@ export class WorldSim {
 
   /** A blurred map of open water, so nearby land can be damper. */
   private updateNearWater(): void {
-    const { n, frame, nearWater, scratch } = this;
+    const { n, frame, nearWater, scratch, w: GW, h: GH } = this;
     for (let i = 0; i < n; i++) nearWater[i] = frame.waterSurface[i] - frame.height[i] > 0.0005 && this.started ? 1 : 0;
     const radius = 4;
     for (let pass = 0; pass < 2; pass++) {
@@ -318,7 +460,7 @@ export class WorldSim {
 }
 
 /** Read a field at a play-area position (0..1, 0..1), bilinear. */
-export function sampleField(field: Float32Array, x: number, y: number): number {
+export function sampleField(field: Float32Array, GW: number, GH: number, x: number, y: number): number {
   const fx = Math.min(GW - 1.001, Math.max(0, x * (GW - 1)));
   const fy = Math.min(GH - 1.001, Math.max(0, y * (GH - 1)));
   const ix = Math.floor(fx);

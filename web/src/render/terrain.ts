@@ -1,7 +1,6 @@
 // The land: a grid mesh pushed up by the height texture and coloured by climate.
 import * as THREE from 'three';
-import { GH, GW } from '../sim/world';
-import { GLSL_COMMON, WORLD_D, WORLD_W, type SharedUniforms } from './common';
+import { GLSL_COMMON, world, type SharedUniforms } from './common';
 
 const vertex = /* glsl */ `
 ${GLSL_COMMON}
@@ -48,6 +47,7 @@ float sunShadow(vec3 p) {
 }
 
 void main() {
+  if (fieldB(vUv).a < 0.499) discard; // outside the play area
   vec4 a = fieldA(vUv);
   vec4 b = fieldB(vUv);
   float h = a.r;
@@ -125,8 +125,10 @@ void main() {
 }
 `;
 
-export function makeTerrain(shared: SharedUniforms, palettes: { bare: THREE.Texture; green: THREE.Texture }): THREE.Mesh {
-  const geometry = new THREE.PlaneGeometry(WORLD_W, WORLD_D, (GW - 1) * 2, (GH - 1) * 2);
+export function makeTerrain(
+  shared: SharedUniforms, palettes: { bare: THREE.Texture; green: THREE.Texture }, gw: number, gh: number,
+): THREE.Mesh {
+  const geometry = new THREE.PlaneGeometry(world.w, world.d, (gw - 1) * 2, (gh - 1) * 2);
   geometry.rotateX(-Math.PI / 2);
   const material = new THREE.ShaderMaterial({
     uniforms: { ...shared, uPaletteBare: { value: palettes.bare }, uPaletteGreen: { value: palettes.green } },

@@ -98,20 +98,35 @@ export class Hydrology {
    * @param rain     rainfall per cell (0..1)
    * @param surface  out: water surface height (just under the ground where dry)
    * @param river    out: river strength 0..1
+   * @param inside   optional: 1 for cells inside the play area. Outside cells stay dry
+   *                 and the inside cells along the shape's edge drain off the world.
    */
   compute(
     height: Float32Array, sea: number, rain: Float32Array,
     surface: Float32Array, river: Float32Array, rules: HydrologyRules,
+    inside?: Uint8Array | null,
   ): void {
     const { w, h, n, filled, parent, order, visited, flow, lakeFlow } = this;
+    const raw = this.scratch;
     visited.fill(0);
+    raw.fill(0);
     this.heapSize = 0;
+    if (inside) {
+      for (let i = 0; i < n; i++) {
+        if (inside[i]) continue;
+        visited[i] = 1;
+        filled[i] = height[i];
+        parent[i] = -1;
+      }
+    }
 
-    // Outlets: every sea cell and every cell on the edge of the world.
+    // Outlets: every sea cell and every cell on the edge of the world (or of the shape).
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const i = y * w + x;
-        const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1;
+        if (inside && !inside[i]) continue;
+        const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1 ||
+          (inside != null && (!inside[i - 1] || !inside[i + 1] || !inside[i - w] || !inside[i + w]));
         if (edge || height[i] < sea) {
           filled[i] = Math.max(height[i], sea);
           parent[i] = -1;
@@ -151,7 +166,6 @@ export class Hydrology {
     }
 
     // Every cell of a hollow shares the flow leaving at its spill point.
-    const raw = this.scratch;
     for (let k = 0; k < count; k++) {
       const c = order[k];
       const depth = filled[c] - height[c];
@@ -188,8 +202,15 @@ export class Hydrology {
         river[i] = Math.max(raw[i], 0.7 * Math.max(l, r, u, d));
       }
     }
+    if (inside) {
+      for (let i = 0; i < n; i++) {
+        if (inside[i]) continue;
+        river[i] = 0;
+        surface[i] = height[i] - rules.dryOffset;
+      }
+    }
     for (let i = 0; i < n; i++) {
-      if (raw[i] === 0 && river[i] > 0 && height[i] >= sea && filled[i] - height[i] <= rules.lakeMinDepth) {
+      if (raw[i] === 0 && river[i] > 0 && (!inside || inside[i]) && height[i] >= sea && filled[i] - height[i] <= rules.lakeMinDepth) {
         const r = river[i];
         surface[i] = height[i] + rules.riverDepth * r - rules.dryOffset * (1 - r);
       }

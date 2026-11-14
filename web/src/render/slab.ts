@@ -1,27 +1,87 @@
 // The cut sides of the floating chunk: layered earth, and water in cross-section.
 import * as THREE from 'three';
-import { GH, GW } from '../sim/world';
-import { GLSL_COMMON, type SharedUniforms } from './common';
+import { GLSL_COMMON, world, type SharedUniforms } from './common';
 
-/** A ribbon of quads round the four edges. Each column has a top and a bottom vertex. */
-function makeEdgeGeometry(): THREE.BufferGeometry {
+/** Corners sharper than this get a crease (separate normals) instead of a smooth turn. */
+const CREASE_COS = Math.cos((35 * Math.PI) / 180);
+
+/**
+ * A ribbon of quads round the play area's outline, inset about half a cell so the
+ * terrain's edge sits just over its top. Each column has a top and a bottom vertex.
+ */
+function makeEdgeGeometry(outline: number[][], gw: number): THREE.BufferGeometry {
+  const W = world.w;
+  const D = world.d;
+  const cell = W / (gw - 1);
+  const inset = 0.5 * cell;
+  // Outline in world units (x right, z near), without repeated points.
+  const pts: [number, number][] = [];
+  for (const [u, v] of outline) {
+    const p: [number, number] = [u * W, v * D];
+    const last = pts[pts.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 1e-6) pts.push(p);
+  }
+  if (pts.length > 2 && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 1e-6) pts.pop();
+  const m = pts.length;
+  let area = 0;
+  for (let i = 0; i < m; i++) {
+    const [x0, z0] = pts[i];
+    const [x1, z1] = pts[(i + 1) % m];
+    area += x0 * z1 - x1 * z0;
+  }
+  // Outward normal of edge i (from pts[i] to pts[i+1]).
+  const edgeNormal = (i: number): [number, number] => {
+    const [x0, z0] = pts[i];
+    const [x1, z1] = pts[(i + 1) % m];
+    const dx = x1 - x0;
+    const dz = z1 - z0;
+    const len = Math.hypot(dx, dz) || 1;
+    return area < 0 ? [-dz / len, dx / len] : [dz / len, -dx / len];
+  };
+  const normals = pts.map((_, i) => edgeNormal(i));
+  // Inset each vertex along the mitre of its two edges; smooth its normal unless it is a crease.
+  const inner: [number, number][] = [];
+  const smooth: ([number, number] | null)[] = [];
+  for (let i = 0; i < m; i++) {
+    const a = normals[(i + m - 1) % m];
+    const b = normals[i];
+    const dot = a[0] * b[0] + a[1] * b[1];
+    const k = Math.min(2, 1 / Math.max(0.25, 1 + dot));
+    inner.push([pts[i][0] - (a[0] + b[0]) * k * inset, pts[i][1] - (a[1] + b[1]) * k * inset]);
+    const sx = a[0] + b[0];
+    const sz = a[1] + b[1];
+    const sl = Math.hypot(sx, sz) || 1;
+    smooth.push(dot >= CREASE_COS ? [sx / sl, sz / sl] : null);
+  }
+
   const uvs: number[] = [];
   const tops: number[] = [];
-  const normals: number[] = [];
+  const normalData: number[] = [];
   const along: number[] = [];
   const index: number[] = [];
-  let offset = 0;
   let distance = 0;
-  const edge = (from: [number, number], to: [number, number], normal: [number, number, number], steps: number, length: number) => {
+  for (let e = 0; e < m; e++) {
+    const f = (e + 1) % m;
+    const [x0, z0] = inner[e];
+    const [x1, z1] = inner[f];
+    const length = Math.hypot(x1 - x0, z1 - z0);
+    const steps = Math.max(1, Math.ceil(length / cell));
+    const n0 = smooth[e] ?? normals[e];
+    const n1 = smooth[f] ?? normals[e];
     const start = uvs.length / 2;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      const u = from[0] + (to[0] - from[0]) * t;
-      const v = from[1] + (to[1] - from[1]) * t;
+      const x = x0 + (x1 - x0) * t;
+      const z = z0 + (z1 - z0) * t;
+      let nx = n0[0] + (n1[0] - n0[0]) * t;
+      let nz = n0[1] + (n1[1] - n0[1]) * t;
+      const nl = Math.hypot(nx, nz) || 1;
+      nx /= nl;
+      nz /= nl;
       for (const top of [1, 0]) {
-        uvs.push(u, v);
+        uvs.push(x / W, z / D);
         tops.push(top);
-        normals.push(...normal);
+        normalData.push(nx, 0, nz);
         along.push(distance + t * length);
       }
     }
@@ -29,20 +89,15 @@ function makeEdgeGeometry(): THREE.BufferGeometry {
       const a = start + i * 2;
       index.push(a, a + 1, a + 2, a + 2, a + 1, a + 3);
     }
-    offset += (steps + 1) * 2;
     distance += length;
-  };
-  edge([0, 1], [1, 1], [0, 0, 1], GW - 1, 10); // near
-  edge([1, 1], [1, 0], [1, 0, 0], GH - 1, 7.07); // right
-  edge([1, 0], [0, 0], [0, 0, -1], GW - 1, 10); // far
-  edge([0, 0], [0, 1], [-1, 0, 0], GH - 1, 7.07); // left
+  }
   const geometry = new THREE.BufferGeometry();
   const count = uvs.length / 2;
   geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
   geometry.setAttribute('aUv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
   geometry.setAttribute('aTop', new THREE.BufferAttribute(new Float32Array(tops), 1));
   geometry.setAttribute('aAlong', new THREE.BufferAttribute(new Float32Array(along), 1));
-  geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normalData), 3));
   geometry.setIndex(index);
   return geometry;
 }
@@ -176,14 +231,14 @@ void main() {
 }
 `;
 
-export function makeSlabSides(shared: SharedUniforms): THREE.Group {
+export function makeSlabSides(shared: SharedUniforms, outline: number[][], gw: number): THREE.Group {
   const group = new THREE.Group();
   const earth = new THREE.Mesh(
-    makeEdgeGeometry(),
+    makeEdgeGeometry(outline, gw),
     new THREE.ShaderMaterial({ uniforms: { ...shared }, vertexShader: earthVertex, fragmentShader: earthFragment, side: THREE.DoubleSide }),
   );
   const water = new THREE.Mesh(
-    makeEdgeGeometry(),
+    makeEdgeGeometry(outline, gw),
     new THREE.ShaderMaterial({
       uniforms: { ...shared }, vertexShader: waterVertex, fragmentShader: waterFragment,
       transparent: true, depthWrite: false, side: THREE.DoubleSide,
@@ -193,7 +248,7 @@ export function makeSlabSides(shared: SharedUniforms): THREE.Group {
   earth.frustumCulled = false;
   water.frustumCulled = false;
   const falls = new THREE.Mesh(
-    makeEdgeGeometry(),
+    makeEdgeGeometry(outline, gw),
     new THREE.ShaderMaterial({
       uniforms: { ...shared }, vertexShader: fallVertex, fragmentShader: fallFragment,
       transparent: true, depthWrite: false, side: THREE.DoubleSide,
