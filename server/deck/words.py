@@ -32,6 +32,39 @@ from aiohttp import web
 
 DEFAULT_MODELS = {"anthropic": "claude-opus-5-5", "gemini": "gemini-4-hydrogen"}
 
+# --- keys ----------------------------------------------------------------------------------
+#
+# One file in the home folder, outside every checkout, so the key is written once and found from
+# any terminal, worktree or session, and can never be committed. Lines are NAME=value.
+KEYS_FILE = Path(os.environ.get("DECK_KEYS_FILE") or Path.home() / ".config" / "deck-of-worlds" / "keys.env")
+_KEY_NAMES = re.compile(r"(GEMINI_API_KEY|GOOGLE_API_KEY|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|DECK_[A-Z0-9_]+)\Z")
+
+
+def load_keys(path: Path = KEYS_FILE) -> list[str]:
+    """Read the keys file into the environment. Returns the names it set (never the values).
+
+    The terminal wins: a name already set there is left alone. Only the names this server
+    uses are read, so the file cannot change anything else about the process.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    found = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.removeprefix("export ").split("=", 1)
+        name, value = name.strip(), value.strip().strip("\"'")
+        if value and _KEY_NAMES.match(name) and not os.environ.get(name):
+            os.environ[name] = value
+            found.append(name)
+    return found
+
+
+KEYS_FOUND = load_keys()
+
 
 def _provider() -> str:
     named = os.environ.get("DECK_WORD_PROVIDER", "").strip().lower()
@@ -383,6 +416,11 @@ class WordService:
         self._client: Any = None
         self._pending: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self.calls = 0  # model calls made (for tests and the log)
+
+    def describe(self) -> str:
+        """One line for the server's start-up: who will read new words, and where the key came from."""
+        from_file = f", {' and '.join(KEYS_FOUND)} from {KEYS_FILE}" if KEYS_FOUND else ""
+        return f"[words] new words are read by {self.provider} ({self.model}, {self.effort} effort){from_file}"
 
     def _get_client(self) -> Any:
         if self.provider not in DEFAULT_MODELS:

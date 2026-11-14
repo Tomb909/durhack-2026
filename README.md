@@ -154,6 +154,8 @@ For the model, start the server with a key in its environment, then `uv run deck
 | Gemini | `GEMINI_API_KEY` (from <https://aistudio.google.com/apikey>) | `gemini-4-hydrogen` |
 | Claude | `ANTHROPIC_API_KEY`, or `ant auth login` | `claude-opus-5-5` |
 
+To set a key once for every terminal, worktree and session, put it in `~/.config/deck-of-worlds/keys.env` as `GEMINI_API_KEY=...` (one `NAME=value` per line; the same file takes `ANTHROPIC_API_KEY` and the `DECK_WORD_*` settings below). The server reads it when it starts and says so. It lives outside the repository, so it cannot be committed. A value set in the terminal wins over the file.
+
 A Gemini key in the environment means Gemini; otherwise Claude. `DECK_WORD_PROVIDER` (`gemini` or `anthropic`) picks one by name, `DECK_WORD_MODEL` names another model (`gemini-3.5-flash-lite` is the fastest Gemini), and `DECK_WORD_EFFORT` (default `low`; also `medium`, `high`) sets how hard it thinks, all without a code change. With no server, no credentials or no network the word still becomes a card at once: a guess, drawn with a dashed border, with **Try again**.
 
 **How it works.** A card is data, never code. A generated card is a `CardDef` like those in `cards.json`, and may do any mix of three things (all optional, see `web/src/cards/defs.ts`):
