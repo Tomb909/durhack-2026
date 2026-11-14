@@ -145,7 +145,16 @@ A prototype: type any word or phrase in the Combinations view and it becomes a w
 
 **Try it.** Open the Combinations view (**V**), type `castle`, `haunted house`, `jazz`, `swamp` or `火山` in **Add a word** and press Enter. A chip says the word is being read; a few seconds later it is a card with a switch, copies and **only**, and the tiles show it alone and with every card that is on. **only** (on any card) shows just the combinations that include that card; adding a word turns it on for that word, because the view stops at 64 tiles. Open a tile large to see how the word was read, what the card does and how long it took. **Show in the live world** works, and the card is in the card panel (**Tab**).
 
-For the model, start the server with credentials the Anthropic SDK can find (`ant auth login`, or `ANTHROPIC_API_KEY`), then `uv run deck`. `DECK_WORD_MODEL` (default `claude-opus-5-5`) and `DECK_WORD_EFFORT` (default `low`) change the model and effort without a code change. With no server, no credentials or no network the word still becomes a card at once: a guess, drawn with a dashed border, with **Try again**.
+The same box is under the card tray on the world page (**Tab**): type a word there and its card joins the tray and lands on the table.
+
+For the model, start the server with a key in its environment, then `uv run deck`. Two providers work:
+
+| Provider | Key | Default model |
+|---|---|---|
+| Gemini | `GEMINI_API_KEY` (from <https://aistudio.google.com/apikey>) | `gemini-4-hydrogen` |
+| Claude | `ANTHROPIC_API_KEY`, or `ant auth login` | `claude-opus-5-5` |
+
+A Gemini key in the environment means Gemini; otherwise Claude. `DECK_WORD_PROVIDER` (`gemini` or `anthropic`) picks one by name, `DECK_WORD_MODEL` names another model (`gemini-3.5-flash-lite` is the fastest Gemini), and `DECK_WORD_EFFORT` (default `low`; also `medium`, `high`) sets how hard it thinks, all without a code change. With no server, no credentials or no network the word still becomes a card at once: a guess, drawn with a dashed border, with **Try again**.
 
 **How it works.** A card is data, never code. A generated card is a `CardDef` like those in `cards.json`, and may do any mix of three things (all optional, see `web/src/cards/defs.ts`):
 

@@ -8,6 +8,12 @@ web/src/cards/words.ts) before any reaches the world.
 
 With no credentials, no network or a refusal there is no card and the endpoint
 answers 503; the page then makes its own guess, so everything else still works.
+
+Two model providers, chosen when the server starts:
+  anthropic  Claude, through the `anthropic` SDK (ANTHROPIC_API_KEY or `ant auth login`)
+  gemini     Gemini, through the `google-genai` SDK (GEMINI_API_KEY)
+DECK_WORD_PROVIDER picks one by name. Left unset, a Gemini key in the environment
+means Gemini, and anything else means Claude.
 """
 
 from __future__ import annotations
@@ -24,7 +30,19 @@ from typing import Any, Callable
 
 from aiohttp import web
 
-MODEL = os.environ.get("DECK_WORD_MODEL", "claude-opus-5-5")
+DEFAULT_MODELS = {"anthropic": "claude-opus-5-5", "gemini": "gemini-4-hydrogen"}
+
+
+def _provider() -> str:
+    named = os.environ.get("DECK_WORD_PROVIDER", "").strip().lower()
+    if named:
+        return named
+    return "gemini" if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") else "anthropic"
+
+
+PROVIDER = _provider()
+MODEL = os.environ.get("DECK_WORD_MODEL") or DEFAULT_MODELS.get(PROVIDER, "")
+# How hard the model thinks: Claude's effort, Gemini's thinking level. Both take low, medium and high.
 EFFORT = os.environ.get("DECK_WORD_EFFORT", "low")
 TIMEOUT = 20.0  # seconds: past this the page has long since shown its own guess
 MAX_WORD = 40
@@ -331,11 +349,17 @@ def card_from_reply(word: str, data: dict[str, Any], ms: int) -> dict[str, Any]:
     return card
 
 
-def default_client() -> Any:
-    """The async SDK client. It finds credentials itself (environment or `ant auth login` profile)."""
-    import anthropic
+def default_client(provider: str) -> Any:
+    """The provider's SDK client. Each finds its own credentials in the environment."""
+    if provider == "gemini":
+        from google import genai
 
-    return anthropic.AsyncAnthropic(timeout=TIMEOUT, max_retries=0)
+        return genai.Client()  # GEMINI_API_KEY
+    if provider == "anthropic":
+        import anthropic
+
+        return anthropic.AsyncAnthropic(timeout=TIMEOUT, max_retries=0)  # ANTHROPIC_API_KEY or `ant auth login`
+    raise ValueError(f"unknown provider {provider!r}")
 
 
 class WordService:
@@ -344,50 +368,47 @@ class WordService:
     def __init__(
         self,
         store: WordStore,
-        client_factory: Callable[[], Any] = default_client,
-        model: str = MODEL,
-        effort: str = EFFORT,
+        client_factory: Callable[[], Any] | None = None,
+        model: str | None = None,
+        effort: str | None = None,
         timeout: float = TIMEOUT,
+        provider: str | None = None,
     ) -> None:
         self.store = store
-        self.client_factory = client_factory
-        self.model = model
-        self.effort = effort
+        self.provider = provider or PROVIDER
+        self.client_factory = client_factory or (lambda: default_client(self.provider))
+        self.model = model or (MODEL if self.provider == PROVIDER else DEFAULT_MODELS.get(self.provider, ""))
+        self.effort = effort or EFFORT
         self.timeout = timeout
         self._client: Any = None
         self._pending: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self.calls = 0  # model calls made (for tests and the log)
 
     def _get_client(self) -> Any:
+        if self.provider not in DEFAULT_MODELS:
+            raise Unavailable(f"DECK_WORD_PROVIDER is {self.provider!r}; use anthropic or gemini")
         if self._client is None:
             try:
                 self._client = self.client_factory()
             except Exception as error:  # the SDK found no way to authenticate
-                raise Unavailable(f"no credentials for the model ({error.__class__.__name__})") from error
+                raise Unavailable(f"no credentials for {self.provider} ({error.__class__.__name__})") from error
         return self._client
 
-    async def _ask(self, word: str) -> dict[str, Any]:
+    async def _call_anthropic(self, client: Any, word: str) -> str:
+        """Ask Claude. Returns the JSON text of its answer."""
         import anthropic
 
-        client = self._get_client()
-        self.calls += 1
-        started = time.monotonic()
         try:
-            response = await asyncio.wait_for(
-                client.beta.messages.create(
-                    model=self.model,
-                    max_tokens=16000,
-                    system=PROMPT,
-                    messages=[{"role": "user", "content": f"<word>{word}</word>"}],
-                    output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": CARD_SCHEMA}},
-                    # If a safety classifier declines, the API retries on its recommended model in the same call.
-                    betas=["server-side-fallback-2026-07-01"],
-                    fallbacks="default",
-                ),
-                timeout=self.timeout,
+            response = await client.beta.messages.create(
+                model=self.model,
+                max_tokens=16000,
+                system=PROMPT,
+                messages=[{"role": "user", "content": f"<word>{word}</word>"}],
+                output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": CARD_SCHEMA}},
+                # If a safety classifier declines, the API retries on its recommended model in the same call.
+                betas=["server-side-fallback-2026-07-01"],
+                fallbacks="default",
             )
-        except asyncio.TimeoutError as error:
-            raise Unavailable(f"no answer from the model in {self.timeout:.0f} s") from error
         except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as error:
             raise Unavailable("the model's credentials were refused") from error
         except anthropic.RateLimitError as error:
@@ -401,13 +422,53 @@ class WordService:
             if isinstance(error, anthropic.CredentialsError) or "authentication" in str(error).lower():
                 raise Unavailable("no credentials for the model") from error
             raise
-        ms = round((time.monotonic() - started) * 1000)
         # Check why it stopped before reading anything: a refusal or a cut-off reply is no card.
         if response.stop_reason == "refusal":
             raise Unavailable("the model declined this word")
         if response.stop_reason == "max_tokens":
             raise Unavailable("the model's answer was cut off")
-        text = next((block.text for block in response.content if block.type == "text"), None)
+        return next((block.text for block in response.content if block.type == "text"), None) or ""
+
+    async def _call_gemini(self, client: Any, word: str) -> str:
+        """Ask Gemini (the Interactions API). Returns the JSON text of its answer."""
+        from google.genai import errors
+
+        try:
+            interaction = await client.aio.interactions.create(
+                model=self.model,
+                input=f"<word>{word}</word>",
+                system_instruction=PROMPT,
+                generation_config={"thinking_level": self.effort},
+                response_format={"type": "text", "mime_type": "application/json", "schema": CARD_SCHEMA},
+                store=False,  # a one-off question: nothing to keep on their side
+                timeout=self.timeout,
+            )
+        except errors.APIError as error:
+            status = getattr(error, "status", None) or getattr(error, "code", None)
+            if status in (401, 403, "UNAUTHENTICATED", "PERMISSION_DENIED"):
+                raise Unavailable("the model's credentials were refused") from error
+            if status in (429, "RESOURCE_EXHAUSTED"):
+                raise Unavailable("the model is busy or over its quota (rate limited)") from error
+            # Say what it said: a wrong model name or thinking level is the usual cause, and worth reading.
+            detail = " ".join(str(getattr(error, "message", "") or error).split())[:160]
+            raise Unavailable(f"the model answered with an error ({status}: {detail})") from error
+        except Exception as error:  # the network: the SDK lets its HTTP library's errors through
+            raise Unavailable(f"could not reach the model ({error.__class__.__name__})") from error
+        status = getattr(interaction, "status", "completed")
+        if status != "completed":
+            raise Unavailable(f"the model did not finish its answer ({status})")
+        return interaction.output_text or ""
+
+    async def _ask(self, word: str) -> dict[str, Any]:
+        client = self._get_client()
+        self.calls += 1
+        started = time.monotonic()
+        call = self._call_gemini if self.provider == "gemini" else self._call_anthropic
+        try:
+            text = await asyncio.wait_for(call(client, word), timeout=self.timeout)
+        except asyncio.TimeoutError as error:
+            raise Unavailable(f"no answer from the model in {self.timeout:.0f} s") from error
+        ms = round((time.monotonic() - started) * 1000)
         if not text:
             raise Unavailable("the model gave no answer")
         try:
@@ -457,8 +518,8 @@ class WordService:
             return web.json_response({"reason": str(error)}, status=503)
         ms = round((time.monotonic() - started) * 1000)
         if source == "model":
-            print(f"[words] {card['word']!r}: made in {ms} ms", flush=True)
-        return web.json_response({"card": card, "source": source, "ms": ms})
+            print(f"[words] {card['word']!r}: made in {ms} ms by {self.model}", flush=True)
+        return web.json_response({"card": card, "source": source, "ms": ms, "model": self.model})
 
     async def handle_words(self, request: web.Request) -> web.Response:
         return web.json_response({"cards": self.store.all()})
