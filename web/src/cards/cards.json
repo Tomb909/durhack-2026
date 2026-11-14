@@ -1,62 +1,12 @@
 [
-  {
-    "id": "big",
-    "word": "BIG",
-    "aliases": [],
-    "icon": "🔍",
-    "color": "#c084fc",
-    "effects": [],
-    "modifier": { "type": "radius", "multiplier": 1.5, "heightMultiplier": 1.5, "maxDistance": 0.3 }
-  },
-  {
-    "id": "mountain",
-    "word": "MOUNTAIN",
-    "aliases": ["MOUNTAINS"],
-    "icon": "⛰️",
-    "color": "#b08a5a",
-    "effects": [{ "field": "height", "amount": 0.5, "radius": 0.15 }]
-  },
-  {
-    "id": "water",
-    "word": "WATER",
-    "aliases": [],
-    "icon": "💧",
-    "color": "#3aa0ff",
-    "effects": [
-      { "field": "wetness", "amount": 0.5, "radius": 0.2 },
-      { "field": "seaLevel", "amount": 0.017, "global": true }
-    ]
-  },
-  {
-    "id": "sun",
-    "word": "SUN",
-    "aliases": [],
-    "icon": "☀️",
-    "color": "#ffc23a",
-    "effects": [{ "field": "temperature", "amount": 0.62, "radius": 0.24 }]
-  },
-  {
-    "id": "ice",
-    "word": "ICE",
-    "aliases": [],
-    "icon": "❄️",
-    "color": "#bfe9ff",
-    "effects": [{ "field": "temperature", "amount": -0.62, "radius": 0.24 }]
-  },
-  {
-    "id": "life",
-    "word": "LIFE",
-    "aliases": [],
-    "icon": "🌱",
-    "color": "#58c46a",
-    "effects": [{ "field": "life", "amount": 1.0, "radius": 0.24 }]
-  },
-  {
-    "id": "people",
-    "word": "PEOPLE",
-    "aliases": ["PERSON", "HUMANS"],
-    "icon": "🏠",
-    "color": "#e8743b",
-    "effects": [{ "field": "people", "amount": 1.0, "radius": 0.13 }]
-  }
+  {"id": "big", "word": "BIG", "aliases": [], "icon": "🔍", "color": "#c084fc", "effects": [], "modifier": {"type": "radius", "multiplier": 1.5, "heightMultiplier": 1.5, "maxDistance": 0.3}},
+  {"id": "mountain", "word": "MOUNTAIN", "aliases": ["MOUNTAINS"], "icon": "⛰️", "color": "#b08a5a", "effects": [{"field": "height", "amount": 0.5, "radius": 0.15}]},
+  {"id": "water", "word": "WATER", "aliases": [], "icon": "💧", "color": "#3aa0ff", "effects": [{"field": "wetness", "amount": 0.5, "radius": 0.2}, {"field": "seaLevel", "amount": 0.017, "global": true}]},
+  {"id": "sun", "word": "SUN", "aliases": [], "icon": "☀️", "color": "#ffc23a", "effects": [{"field": "temperature", "amount": 0.62, "radius": 0.24}]},
+  {"id": "ice", "word": "ICE", "aliases": [], "icon": "❄️", "color": "#bfe9ff", "effects": [{"field": "temperature", "amount": -0.62, "radius": 0.24}]},
+  {"id": "life", "word": "LIFE", "aliases": [], "icon": "🌱", "color": "#58c46a", "effects": [{"field": "life", "amount": 1.0, "radius": 0.24}]},
+  {"id": "people", "word": "PEOPLE", "aliases": ["PERSON", "HUMANS"], "icon": "🏠", "color": "#e8743b", "effects": [{"field": "people", "amount": 1.0, "radius": 0.13}]},
+  {"id": "nuke", "word": "NUKE", "aliases": ["BOMB", "NUCLEAR"], "icon": "☢️", "color": "#ff5a2a", "kind": "event", "effects": []},
+  {"id": "tsunami", "word": "TSUNAMI", "aliases": ["TIDALWAVE"], "icon": "🌊", "color": "#2a7bff", "kind": "event", "effects": []},
+  {"id": "tornado", "word": "TORNADO", "aliases": ["TWISTER"], "icon": "🌪️", "color": "#9aa6b2", "kind": "event", "effects": []}
 ]

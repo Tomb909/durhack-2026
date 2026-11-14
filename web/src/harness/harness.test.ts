@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CARD_DEFS } from '../cards/defs';
+import { CARD_DEFS, isEvent } from '../cards/defs';
 import { CardStore } from '../cards/store';
 import { WorldSim } from '../sim/world';
 import { nameOf, parseCode, resolveScenarios, tidyCode } from './codes';
@@ -30,7 +30,7 @@ describe('combination codes', () => {
   });
   it('lists every combination of cards exactly once', () => {
     const subsets = resolveScenarios({ set: 'subsets' });
-    expect(subsets.length).toBe(2 ** CARD_DEFS.filter((d) => !d.modifier).length); // modifiers are not in the ready-made sets
+    expect(subsets.length).toBe(2 ** CARD_DEFS.filter((d) => !d.modifier && !isEvent(d)).length); // modifiers and action cards are not in the ready-made sets
     expect(new Set(subsets.map((s) => s.code)).size).toBe(subsets.length);
     expect(resolveScenarios({}).length).toBeGreaterThan(10); // the showcase
     expect(resolveScenarios({ codes: 'flood=water*3; life+sun' }).map((s) => s.name)).toEqual(['flood', 'life_sun']);

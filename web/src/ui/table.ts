@@ -1,7 +1,7 @@
 // The small table map in the corner. It shows where every card is (real cards
 // seen by the camera and simulated ones), and it is also where simulated cards
 // are made: drag one from the tray onto the map or straight onto the world.
-import { CARD_DEFS } from '../cards/defs';
+import { CARD_DEFS, isEvent } from '../cards/defs';
 import { modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { CardStore, LiveCard } from '../cards/store';
 import type { Candidate } from '../net/link';
@@ -44,9 +44,9 @@ export class TablePanel {
     const tray = root.querySelector('#tray') as HTMLElement;
     for (const def of CARD_DEFS) {
       const el = document.createElement('div');
-      el.className = 'tray-card';
+      el.className = isEvent(def) ? 'tray-card event' : 'tray-card';
       el.title = `Drag ${def.word} onto the table`;
-      el.innerHTML = `<span class="icon">${def.icon}</span>${def.word}`;
+      el.innerHTML = `<span class="icon">${def.icon}</span><span class="word">${def.word}</span>`;
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         const ghost = document.createElement('div');

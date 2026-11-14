@@ -9,7 +9,7 @@
 //
 // Card ids come from cards.json, so a new card can be used in codes straight away.
 // (Codes split on "_", so an id containing "_" cannot be written in one.)
-import { CARD_DEFS } from '../cards/defs';
+import { CARD_DEFS, isEvent } from '../cards/defs';
 
 export interface Placement {
   id: string;
@@ -132,8 +132,12 @@ function scenario(code: string, layout: Layout, name?: string): Scenario {
 
 // --- ready-made sets ---------------------------------------------------------------
 
-/** The cards that do something by themselves. A modifier (BIG) only changes a card beside it, so it is left out of the ready-made sets: write it in a code (`big+mountain`) to see it. */
-const ids = () => CARD_DEFS.filter((d) => !d.modifier).map((d) => d.id);
+/**
+ * The cards that shape a settled world by themselves. A modifier (BIG) only changes a card beside it, so it is
+ * left out of the ready-made sets: write it in a code (`big+mountain`) to see it. Action cards (nuke, tsunami,
+ * tornado) happen once in running time and never change a settled world, so they are left out too.
+ */
+const ids = () => CARD_DEFS.filter((d) => !d.modifier && !isEvent(d)).map((d) => d.id);
 
 /** Every way of choosing cards, one copy each: 2^n codes, fewest cards first. */
 function subsets(): string[] {

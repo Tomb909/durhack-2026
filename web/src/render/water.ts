@@ -80,6 +80,10 @@ void main() {
   float alpha = mix(0.62, 0.95, max(deep, river * 0.8));
   alpha = mix(alpha, 0.97, frozen);
   alpha *= smoothstep(0.0002, 0.0016, depth);
+  // A tsunami's water is churned white.
+  float froth = smoothstep(0.0005, 0.012, fieldC(vUv).a) * (0.55 + 0.45 * vnoise(vWorld.xz * 18.0 + uTime * 2.5));
+  col = mix(col, vec3(0.94, 0.97, 1.0), froth * 0.85);
+  alpha = max(alpha, froth);
   gl_FragColor = vec4(col, alpha);
 }
 `;

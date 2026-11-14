@@ -31,9 +31,14 @@ export interface CardDef {
   color: string;
   effects: CardEffect[];
   modifier?: CardModifier;
+  /** 'event': an action card. It happens once when placed (see sim/events.ts) instead of shaping the land. */
+  kind?: 'event';
 }
 
 export const CARD_DEFS: CardDef[] = raw as CardDef[];
+
+/** Cards that shape the land (everything but the action cards). */
+export const isEvent = (def: CardDef) => def.kind === 'event';
 
 const byId = new Map<string, CardDef>(CARD_DEFS.map((d) => [d.id, d]));
 

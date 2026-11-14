@@ -7,7 +7,7 @@
 // Each world is settled at once and drawn at one frozen moment (see harness/),
 // so the same choices always show the same pictures. The cards come from
 // cards.json: a new card gets its own switch here with no extra work.
-import { CARD_DEFS, cardDef } from '../cards/defs';
+import { CARD_DEFS, cardDef, isEvent } from '../cards/defs';
 import { parseCode, type Layout, type Placement, type Scenario } from '../harness/codes';
 import { combinations, copiesOf, defaultFilter, MOST_COPIES, type ComboFilter } from '../harness/filter';
 import { METRIC_KEYS, METRIC_LABELS, type Metrics } from '../harness/metrics';
@@ -188,7 +188,7 @@ export class Combinations {
   private buildControls(): void {
     const p = this.prefs;
     // One switch per card, with its number of copies beside it.
-    this.cards.innerHTML = CARD_DEFS.map((def) => `
+    this.cards.innerHTML = CARD_DEFS.filter((def) => !isEvent(def)).map((def) => `
       <span class="combos-card" data-card="${esc(def.id)}" style="--c:${esc(def.color)}">
         <button type="button" class="combos-toggle" data-do="card" role="switch"><span class="combos-switch" aria-hidden="true"></span><span class="combos-icon" aria-hidden="true">${esc(def.icon)}</span>${esc(def.word)}</button>
         <span class="combos-copies" role="group" aria-label="Copies of ${esc(titleCase(def.word))}">

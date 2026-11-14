@@ -8,7 +8,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
 import type { LiveCard } from '../cards/store';
-import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
+import { DEFAULT_SHAPE, GW, RULES, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
 import { makeBackdrop } from './backdrop';
 import { Beacons } from './beacons';
 import { CameraRig } from './camera';
@@ -18,6 +18,7 @@ import { CALM, worldMood, type Mood } from './mood';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
 import { makeTerrain } from './terrain';
+import { EventVisuals } from './events';
 import { makePeople } from './people';
 import { makeTrees } from './trees';
 import { makeWater } from './water';
@@ -42,6 +43,7 @@ export class WorldRenderer {
   private shaped: THREE.Object3D[] = [];
   private outline: number[][] = DEFAULT_SHAPE.outline;
   private beacons: Beacons;
+  private events = new EventVisuals();
   private time = 0;
   private quality = 1.5;
   private raycaster = new THREE.Raycaster();
@@ -75,6 +77,7 @@ export class WorldRenderer {
     this.setShape(DEFAULT_SHAPE);
     this.scene.add(makeTrees(this.shared));
     this.scene.add(makePeople(this.shared));
+    this.scene.add(this.events.group);
     this.scene.add(makeWeather(this.shared));
     this.scene.add(this.beacons.group);
 
@@ -214,6 +217,9 @@ export class WorldRenderer {
     this.time += dt;
     this.shared.uTime.value = this.time;
     this.shared.uSea.value = frame.seaLevel;
+    // Nuclear winter: snow and ice reach far warmer places for a while.
+    this.shared.uFreezing.value = RULES.freezing + 0.75 * frame.winter;
+    this.events.update(frame, this.time);
     this.fields.update(frame);
     this.followMood(frame, dt);
     const count = Math.min(MAX_PULSES, cards.length);

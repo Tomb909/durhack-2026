@@ -6,6 +6,7 @@
 import type { FieldName } from '../cards/defs';
 import { heightMultiplier, modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { LiveCard } from '../cards/store';
+import { Events, type WorldEvent } from './events';
 import { Hydrology, type HydrologyRules } from './hydrology';
 import { fbm, ridged } from './noise';
 
@@ -188,6 +189,18 @@ export interface WorldFrame {
    * the land remembers. Kept apart from `vegetation` (which follows the cards alone).
    */
   cleared: Float32Array;
+  /** Action cards (sim/events.ts): 0..1 wrecked by an event, heals over time. */
+  damage: Float32Array;
+  /** 0..1 burnt ground (a nuke), heals slowly. */
+  scorch: Float32Array;
+  /** Water level of a passing tsunami (0 = none). */
+  surge: Float32Array;
+  /** 0..1 water boiled away by a nuke. */
+  steam: Float32Array;
+  /** 0..1 nuclear winter: the whole world turns cold for a while. */
+  winter: number;
+  /** Events playing out now, for the renderer. */
+  events: WorldEvent[];
   /** Signed distance to the play area's outline in cells, positive inside. */
   mask: Float32Array;
   /** Long / short side. */
@@ -252,7 +265,7 @@ export class WorldSim {
       w, h,
       height: f(), temperature: f(), wetness: f(),
       vegetation: f(), waterSurface: f(), river: f(),
-      precipitation: f(), homes: f(), farms: f(), fishing: f(), logging: f(), cleared: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
+      precipitation: f(), homes: f(), farms: f(), fishing: f(), logging: f(), cleared: f(), damage: f(), scorch: f(), surge: f(), steam: f(), winter: 0, events: [], mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
     };
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
@@ -308,7 +321,32 @@ export class WorldSim {
       this.frame.version++;
     }
     this.fell(dt);
+    this.runEvents(cards, dt);
     return this.frame;
+  }
+
+  private events = new Events();
+  /** Action cards: start the new ones, advance the rest, and redraw while anything is happening or healing. */
+  private runEvents(cards: LiveCard[], dt: number): void {
+    if (dt <= 0) return;
+    const f = this.frame;
+    const reshaped = this.events.step(cards, dt, {
+      w: this.w, h: this.h, aspect: this.aspect, inside: this.inside, height: f.height, temperature: f.temperature,
+      waterSurface: f.waterSurface, seaLevel: f.seaLevel, base: this.base, damage: f.damage, scorch: f.scorch, surge: f.surge, steam: f.steam,
+    });
+    f.winter = this.events.winter;
+    f.events = this.events.active;
+    if (reshaped) {
+      // A crater: work the land and water out again, and let the water ease in.
+      this.recompute(cards);
+      this.settle = RULES.settleSeconds * 5;
+      this.passesLeft = RULES.settlePasses;
+    }
+    if (this.events.busy) f.version++;
+    else if (this.fellTimer === 0) {
+      // Healing is slow: a few redraws a second are plenty.
+      for (let i = 0; i < this.n; i += 7) if (f.damage[i] > 0 || f.scorch[i] > 0 || f.steam[i] > 0) { f.version++; break; }
+    }
   }
 
   private fellTimer = 0;
@@ -326,9 +364,9 @@ export class WorldSim {
     }
     // Let the renderer know a few times a second, not every frame.
     this.fellTimer += dt;
-    if (any && this.fellTimer > 0.25) {
+    if (this.fellTimer > 0.25) {
       this.fellTimer = 0;
-      this.frame.version++;
+      if (any) this.frame.version++;
     }
   }
 

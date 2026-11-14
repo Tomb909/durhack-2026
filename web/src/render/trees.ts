@@ -81,6 +81,10 @@ void main() {
   float turn = 0.04 + 0.9 * fract(aRand.x * 7.31 + aRand.y * 3.17);
   float cut = fieldD(aSite).r;
   float fall = smoothstep(turn, turn + 0.012, cut);
+  // Events: a tornado or a wave flattens trees; a nuke burns them to bare black trunks.
+  vec4 ev = fieldD(aSite);
+  fall = max(fall, smoothstep(0.15 + 0.6 * aRand.y, 0.25 + 0.6 * aRand.y, ev.b) * (1.0 - step(0.3, ev.a)));
+  float burnt = smoothstep(0.2 + 0.5 * aRand.w, 0.3 + 0.5 * aRand.w, ev.a);
   float gone = smoothstep(turn + 0.05, turn + 0.06, cut);
   vec3 q = position;
   // Topple about the base (ease in, like a real fall), away from the axe.
@@ -91,6 +95,7 @@ void main() {
   // Stump: the trunk cut short, the crown gone.
   vec3 stump = vec3(position.x * 1.15, min(position.y, 0.07), position.z * 1.15) * (1.0 - aLeaf);
   q = mix(q, stump, gone);
+  q *= 1.0 - aLeaf * burnt;
 
   float angle = aRand.z * 6.2832;
   float c = cos(angle), s = sin(angle);
@@ -101,7 +106,7 @@ void main() {
 
   vec2 xz = tableXz(aSite);
   vec3 world = vec3(xz.x, a.r * HSCALE - 0.01, xz.y) + p;
-  vColor = color * (0.82 + 0.36 * aRand.w);
+  vColor = color * (0.82 + 0.36 * aRand.w) * (1.0 - 0.8 * burnt);
   vWorld = world;
   vTemperature = temperature;
   vRain = b.b;

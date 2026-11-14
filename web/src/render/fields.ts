@@ -47,14 +47,18 @@ export class FieldTextures {
     this.version = frame.version;
     const n = frame.w * frame.h;
     const { dataA, dataB, dataC, dataD } = this;
-    const { homes, farms, fishing, cleared, logging } = frame;
+    const { homes, farms, fishing, cleared, logging, damage, scorch, surge, steam } = frame;
     const { height, temperature, wetness, vegetation, waterSurface, river, precipitation, mask } = frame;
     for (let i = 0, o = 0; i < n; i++, o += 4) {
       dataA[o] = height[i];
       dataA[o + 1] = temperature[i];
       dataA[o + 2] = wetness[i];
       dataA[o + 3] = vegetation[i];
-      dataB[o] = waterSurface[i];
+      // A passing tsunami raises the water; a nuke boils it away for a while.
+      const wave = surge[i] > waterSurface[i] ? surge[i] : waterSurface[i];
+      const boiled = steam[i] > 0 ? Math.min(wave, height[i] - 0.004) : wave;
+      dataB[o] = wave + (boiled - wave) * Math.min(1, steam[i] * 1.5);
+      dataC[o + 3] = wave - waterSurface[i];
       dataB[o + 1] = river[i];
       dataB[o + 2] = precipitation[i];
       // Inside mask: 0.5 exactly on the outline, so filtering gives a smooth edge.
@@ -63,6 +67,8 @@ export class FieldTextures {
       dataC[o + 2] = fishing[i];
       dataD[o] = cleared[i];
       dataD[o + 1] = logging[i] * (1 - cleared[i]);
+      dataD[o + 2] = damage[i];
+      dataD[o + 3] = scorch[i];
       dataB[o + 3] = Math.min(1, Math.max(0, 0.5 + mask[i]));
     }
     this.a.needsUpdate = true;

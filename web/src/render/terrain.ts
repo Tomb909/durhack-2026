@@ -90,7 +90,7 @@ void main() {
     vec2 f = fract(q);
     float pick = hash21(cell);
     float crop = hash21(cell + 17.3);
-    float owned = smoothstep(pick - 0.12, pick + 0.12, c.g * 1.3 - 0.05);
+    float owned = smoothstep(pick - 0.12, pick + 0.12, c.g * 1.3 - 0.05) * (1.0 - 0.85 * fieldD(vUv).b);
     vec3 field = crop < 0.35 ? vec3(0.80, 0.68, 0.30)   // ripe wheat
                : crop < 0.62 ? vec3(0.42, 0.58, 0.22)   // young green
                : crop < 0.82 ? vec3(0.48, 0.34, 0.20)   // ploughed
@@ -115,6 +115,13 @@ void main() {
   float rocky = smoothstep(0.24, 0.50, slope + (grain - 0.5) * 0.10);
   col = mix(col, rock, rocky * (1.0 - 0.75 * plants));
   col = mix(col, vec3(0.66, 0.71, 0.80), snow * (1.0 - 0.8 * smoothstep(0.45, 0.75, slope)));
+  // Events: wrecked ground is strewn with mud and debris; burnt ground is charred, glowing where fresh.
+  vec4 dd = fieldD(vUv);
+  col = mix(col, vec3(0.36, 0.30, 0.24) * (0.8 + 0.4 * fine), 0.45 * smoothstep(0.1, 0.8, dd.b));
+  float burnt = smoothstep(0.0, 0.6, dd.a + (grain - 0.5) * 0.3);
+  col = mix(col, vec3(0.10, 0.09, 0.08) + 0.06 * fine, burnt * 0.92);
+  float embers = smoothstep(0.8, 1.0, dd.a) * smoothstep(0.55, 0.9, vnoise(vWorld.xz * 14.0 + uTime * 0.6));
+  col += vec3(1.6, 0.45, 0.1) * embers * (0.6 + 0.4 * sin(uTime * 7.0 + fine * 9.0));
 
   // Beach just above the sea (not where frozen).
   float shore = (1.0 - smoothstep(0.0, 0.010, h - uSea)) * step(uSea, h);

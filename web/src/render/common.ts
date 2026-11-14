@@ -4,7 +4,8 @@
 //   uFieldA = height, temperature, wetness, vegetation
 //   uFieldB = waterSurface, river, precipitation, inside mask (0.5 on the outline)
 //   uFieldC = homes, farms, fishing, (spare)
-//   uFieldD = cleared (felled forest, permanent), logging, (spare), (spare)
+//   uFieldD = cleared (felled forest, permanent), logging, damage (events), scorch (events)
+//   uFieldC.a = height of a passing tsunami above the water that was there (foam)
 // plus the sea level. Rewrite anything in render/ freely: nothing else in the
 // app depends on it.
 import * as THREE from 'three';

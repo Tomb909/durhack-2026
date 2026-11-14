@@ -161,7 +161,8 @@ void main() {
   vec4 b = fieldB(site);
   float threshold = 0.2 + 1.0 * aRand.x;
   float dry = 1.0 - smoothstep(0.0, 0.0008, b.r - a.r);
-  float show = smoothstep(threshold, threshold + 0.05, best) * dry * step(0.5, b.a);
+  // People flee wrecked ground (they come back as it is rebuilt).
+  float show = smoothstep(threshold, threshold + 0.05, best) * dry * step(0.5, b.a) * (1.0 - smoothstep(0.05, 0.3, fieldD(site).b));
   float size = uSize * (0.85 + 0.3 * aRand.y) * show;
 
   vec3 q = position;
@@ -215,17 +216,23 @@ void main() {
   float dry = 1.0 - smoothstep(0.0, 0.0012, b.r - a.r);
   float grow = smoothstep(threshold, threshold + 0.08, density) * dry * step(0.5, b.a);
   float size = uSize * (0.8 + 0.45 * aRand.y) * grow;
+  // Wrecked by an event: roof gone, walls broken down, blackened if burnt.
+  vec4 ev = fieldD(aSite);
+  float ruin = smoothstep(0.15 + 0.6 * aRand.x, 0.22 + 0.6 * aRand.x, ev.b);
+  vec3 q = position;
+  q *= 1.0 - ruin * step(0.5, aPart);
+  q.y *= 1.0 - 0.6 * ruin;
 
   // Houses line up roughly with the field pattern, some turned side-on.
   float angle = -0.35 + (aRand.z < 0.5 ? 0.0 : 1.5708) + (aRand.w - 0.5) * 0.25;
   float co = cos(angle), si = sin(angle);
-  vec3 p = vec3(co * position.x - si * position.z, position.y, si * position.x + co * position.z) * size;
+  vec3 p = vec3(co * q.x - si * q.z, q.y, si * q.x + co * q.z) * size;
 
   vec2 xz = tableXz(aSite);
   vec3 world = vec3(xz.x, a.r * HSCALE - 0.01, xz.y) + p;
   // Roofs: terracotta, slate or thatch.
   vec3 roof = aRand.w < 0.45 ? vec3(0.66, 0.27, 0.17) : aRand.w < 0.75 ? vec3(0.36, 0.38, 0.44) : vec3(0.62, 0.50, 0.28);
-  vColor = mix(color, roof, aPart) * (0.88 + 0.24 * aRand.y);
+  vColor = mix(color, roof, aPart) * (0.88 + 0.24 * aRand.y) * (1.0 - 0.35 * ruin) * (1.0 - 0.75 * ev.a);
   vWorld = world;
   vTemperature = a.g;
   vRain = b.b;
@@ -257,7 +264,7 @@ void main() {
   vec4 c = fieldC(site);
   float threshold = 0.2 + 0.75 * aRand.x;
   float afloat = smoothstep(0.002, 0.005, b.r - a.r);
-  float grow = smoothstep(threshold, threshold + 0.08, c.b) * afloat * step(0.5, b.a);
+  float grow = smoothstep(threshold, threshold + 0.08, c.b) * afloat * step(0.5, b.a) * (1.0 - smoothstep(0.1, 0.4, fieldD(site).b));
   float size = uSize * (0.8 + 0.4 * aRand.y) * grow;
 
   // Bow points along the direction of travel; a gentle rock on the swell.
@@ -314,6 +321,7 @@ attribute vec4 aRand;
 attribute float aPart;
 uniform float uSize;
 varying float vAlpha;
+varying float vDark;
 varying vec3 vWorld;
 void main() {
   // The same house as houseVertex at this site (keep the two in step).
@@ -327,10 +335,14 @@ void main() {
   float size = uSize * (0.8 + 0.45 * aRand.y) * grow;
   float angle = -0.35 + (aRand.z < 0.5 ? 0.0 : 1.5708) + (aRand.w - 0.5) * 0.25;
   float co = cos(angle), si = sin(angle);
-  vec3 chimney = vec3(0.06, 0.24, 0.03);
+  vec3 chimney = mix(vec3(0.06, 0.24, 0.03), vec3(0.0, 0.08, 0.0), ruin);
   chimney = vec3(co * chimney.x - si * chimney.z, chimney.y, si * chimney.x + co * chimney.z) * size;
   // About half the houses have the fire lit. Puffs rise, swell and fade, drifting downwind.
-  float lit = step(fract(aRand.y * 13.7), 0.5) * step(0.01, size);
+  vec4 ev = fieldD(aSite);
+  float ruin = smoothstep(0.15 + 0.6 * aRand.x, 0.22 + 0.6 * aRand.x, ev.b);
+  // Hearth smoke from half the homes; ruins smoulder, dark, where the ground burnt.
+  float lit = max(step(fract(aRand.y * 13.7), 0.5) * (1.0 - ruin), ruin * step(0.2, ev.a)) * step(0.01, size);
+  vDark = ruin * step(0.2, ev.a);
   float life = fract(uTime * 0.09 + aPart / 3.0 + aRand.y * 5.0);
   vec3 rise = vec3(0.10 * life + 0.02 * sin(uTime * 0.8 + aRand.x * 9.0 + life * 4.0), 0.32 * life, 0.04 * life);
   float puff = (0.45 + 1.6 * life) * lit;
@@ -345,11 +357,12 @@ void main() {
 const smokeFragment = /* glsl */ `
 ${GLSL_COMMON}
 varying float vAlpha;
+varying float vDark;
 varying vec3 vWorld;
 void main() {
   vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
   float light = 0.8 + 0.25 * max(dot(n, uSunDir), 0.0);
-  gl_FragColor = vec4(vec3(0.86, 0.87, 0.9) * light, vAlpha);
+  gl_FragColor = vec4(mix(vec3(0.86, 0.87, 0.9), vec3(0.16, 0.15, 0.15), vDark) * light, vAlpha);
 }
 `;
 
@@ -387,7 +400,7 @@ void main() {
   float pasture = c.g * (1.0 - smoothstep(0.2, 0.5, c.r)) * smoothstep(0.3, 0.6, a.b);
   float threshold = 0.4 + 2.4 * aRand.x;
   float dry = 1.0 - smoothstep(0.0, 0.0008, b.r - a.r);
-  float size = uSize * (0.85 + 0.3 * aRand.y) * smoothstep(threshold, threshold + 0.05, pasture) * dry * step(0.5, b.a);
+  float size = uSize * (0.85 + 0.3 * aRand.y) * smoothstep(threshold, threshold + 0.05, pasture) * dry * step(0.5, b.a) * (1.0 - smoothstep(0.05, 0.3, fieldD(site).b));
   vec3 q = position;
   // Head down to graze while standing still.
   float grazing = 1.0 - smoothstep(0.6, 0.65, fract(t)) + smoothstep(0.95, 1.0, fract(t));
