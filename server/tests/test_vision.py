@@ -288,3 +288,103 @@ def test_circle_with_no_sheet_edge_in_view():
     (outline, *_) = find_outlines(image)
     assert not outline.four_sided
     assert abs(outline.aspect - 1.0) < 0.03
+
+
+# --- a hand reaching in must not change the play area ---------------------------------
+
+HAND_SPOTS = [(0.5, 0.5), (0.15, 0.8), (0.5, 0.05), (0.97, 0.6)]
+
+
+def area_state(vision: Vision, now: float):
+    import numpy as np
+
+    area = vision.play_area
+    return np.array(area.corners), vision.snapshot(now=now)["playArea"]["shape"], area.rect_size()
+
+
+@pytest.mark.parametrize("border", ["rect", "circle", "blob"])
+def test_a_hand_reaching_in_does_not_change_the_play_area(border):
+    import numpy as np
+
+    scraps = [Scrap("WATER", 0.3, 0.35), Scrap("LIFE", 0.7, 0.6)]
+    vision = Vision(None)
+    t = run(vision, scraps, frames=5, border=border)
+    corners, shape, size = area_state(vision, t)
+    for hand in HAND_SPOTS:
+        t = run(vision, scraps, frames=16, start=t, border=border, hand=hand)  # 1.6 s resting there
+        now_corners, now_shape, now_size = area_state(vision, t)
+        assert np.abs(now_corners - corners).max() < 3, (border, hand)
+        assert now_shape == shape and now_size == size, (border, hand)
+        assert vision.play_area.found(t), (border, hand)  # still "found": the border is plainly there
+        t = run(vision, scraps, frames=3, start=t, border=border)
+
+
+def test_a_card_under_a_hand_in_a_circle_is_held(reader):
+    scraps = [Scrap("SUN", 0.5, 0.45), Scrap("ICE", 0.3, 0.6)]
+    vision = Vision(reader)
+    t = run(vision, scraps, frames=6, border="circle")
+    before = {c["card"]: (c["id"], c["x"], c["y"]) for c in vision.tracker.cards()}
+    assert set(before) == {"sun", "ice"}
+    t = run(vision, scraps, frames=25, start=t, border="circle", hand=(0.5, 0.45))
+    t = run(vision, scraps, frames=4, start=t, border="circle")
+    after = {c["card"]: (c["id"], c["x"], c["y"]) for c in vision.tracker.cards()}
+    assert set(after) == {"sun", "ice"}
+    for card, (card_id, x, y) in before.items():
+        assert after[card][0] == card_id
+        assert abs(after[card][1] - x) < 0.02 and abs(after[card][2] - y) < 0.02
+
+
+@pytest.mark.parametrize("border", ["rect", "circle", "blob"])
+def test_a_nudged_phone_is_still_followed_for_any_border(border):
+    import numpy as np
+
+    scraps = [Scrap("WATER", 0.3, 0.35)]
+    vision = Vision(None)
+    t = run(vision, scraps, frames=5, border=border)
+    corners, shape, size = area_state(vision, t)
+    t = run(vision, scraps, frames=10, start=t, border=border, shift=(0.012, -0.01))
+    moved, now_shape, now_size = area_state(vision, t)
+    shift = (moved - corners).mean(axis=0)
+    assert abs(shift[0] - 0.012 * 1920) < 4 and abs(shift[1] + 0.01 * 1080) < 4, shift
+    assert now_size == size
+    # ... and a hand reaching in afterwards changes nothing at the new place.
+    t = run(vision, scraps, frames=20, start=t, border=border, shift=(0.012, -0.01), hand=(0.5, 0.6))
+    assert np.abs(vision.play_area.corners - moved).max() < 3
+
+
+def test_a_re_propped_phone_is_picked_up_again():
+    scraps = [Scrap("WATER", 0.3, 0.35)]
+    vision = Vision(None)
+    t = run(vision, scraps, frames=5)
+    corners, _, _ = area_state(vision, t)
+    t = run(vision, scraps, frames=12, start=t, shift=(0.06, 0.03))  # too far to be a nudge
+    moved, _, _ = area_state(vision, t)
+    shift = (moved - corners).mean(axis=0)
+    assert abs(shift[0] - 0.06 * 1920) < 5 and abs(shift[1] - 0.03 * 1080) < 5, shift
+
+
+def test_a_new_border_replaces_the_old_one():
+    vision = Vision(None)
+    t = run(vision, [], frames=5, border="rect")
+    assert vision.play_area.four_sided
+    t = run(vision, [], frames=25, start=t, border="circle")  # a different sheet is put down
+    assert not vision.play_area.four_sided
+    assert abs(vision.play_area.aspect - 1.0) < 0.04
+
+
+@pytest.mark.parametrize("border", ["rect", "circle", "blob"])
+def test_locking_with_a_hand_in_the_way_comes_right_when_it_leaves(border):
+    import numpy as np
+
+    clean = Vision(None)
+    t = run(clean, [], frames=5, border=border)
+    corners, shape, size = area_state(clean, t)
+
+    vision = Vision(None)
+    t = run(vision, [], frames=8, border=border, hand=(0.5, 0.6))
+    t = run(vision, [], frames=30, start=t, border=border)
+    now_corners, now_shape, now_size = area_state(vision, t)
+    assert vision.play_area.locked
+    assert now_size == size
+    assert np.abs(now_corners - corners).max() < 4
+    assert len(now_shape["outline"]) == len(shape["outline"])
