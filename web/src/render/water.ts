@@ -49,7 +49,7 @@ void main() {
   vec3 shallowCol = vec3(0.16, 0.62, 0.66);
   vec3 deepCol = vec3(0.02, 0.17, 0.38);
   vec3 col = mix(shallowCol, deepCol, deep);
-  col = mix(col, vec3(0.20, 0.60, 0.74), river * (1.0 - deep) * 0.6);
+  col = mix(col, vec3(0.10, 0.42, 0.72), river * (1.0 - deep) * 0.85);
 
   vec3 view = normalize(cameraPosition - vWorld);
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 4.0);
@@ -63,10 +63,10 @@ void main() {
   col += vec3(1.0, 0.95, 0.85) * spec * 1.6 * overcast * (1.0 - frozen);
 
   // Foam where the water meets the land, breathing in and out.
-  float lap = 0.0035 + 0.0020 * sin(t * 1.3 + p.x * 3.0 + p.y * 2.0);
-  float foam = (1.0 - smoothstep(0.0, lap + 0.004, depth)) * smoothstep(0.35, 0.65, n2 + 0.25);
-  foam += (1.0 - smoothstep(0.0, 0.0018, depth)) * 0.8;
-  col = mix(col, vec3(0.95, 0.98, 1.0), clamp(foam, 0.0, 1.0) * 0.85 * (1.0 - frozen));
+  float lap = 0.0016 + 0.0009 * sin(t * 1.3 + p.x * 3.0 + p.y * 2.0);
+  float foam = (1.0 - smoothstep(0.0, lap + 0.0016, depth)) * smoothstep(0.35, 0.65, n2 + 0.25);
+  foam += (1.0 - smoothstep(0.0, 0.0009, depth)) * 0.8;
+  col = mix(col, vec3(0.95, 0.98, 1.0), clamp(foam, 0.0, 1.0) * 0.85 * (1.0 - frozen) * (1.0 - smoothstep(0.05, 0.4, river)));
   // Rain rings.
   float ring = smoothstep(0.80, 0.98, vnoise(p * 26.0 + floor(t * 6.0) * 7.3)) * rain;
   col += ring * 0.10 * (1.0 - frozen);
@@ -77,7 +77,7 @@ void main() {
   ice = mix(ice * 0.86, ice, crack);
   col = mix(col, ice, frozen);
 
-  float alpha = mix(0.62, 0.95, deep);
+  float alpha = mix(0.62, 0.95, max(deep, river * 0.8));
   alpha = mix(alpha, 0.97, frozen);
   alpha *= smoothstep(0.0002, 0.0016, depth);
   gl_FragColor = vec4(col, alpha);

@@ -185,7 +185,7 @@ export class Hydrology {
         const r = x < w - 1 ? raw[i + 1] : raw[i];
         const u = y > 0 ? raw[i - w] : raw[i];
         const d = y < h - 1 ? raw[i + w] : raw[i];
-        river[i] = Math.max(raw[i], 0.45 * Math.max(l, r, u, d));
+        river[i] = Math.max(raw[i], 0.7 * Math.max(l, r, u, d));
       }
     }
     for (let i = 0; i < n; i++) {

@@ -85,13 +85,13 @@ void main() {
   float band = fract(layer);
   float which = floor(layer);
   float pick = hash21(vec2(which, 7.0));
-  vec3 strata = mix(vec3(0.42, 0.30, 0.21), vec3(0.56, 0.44, 0.31), pick);
-  strata = mix(strata, vec3(0.36, 0.33, 0.31), step(0.7, pick));
+  vec3 strata = mix(vec3(0.26, 0.16, 0.10), vec3(0.40, 0.26, 0.16), pick);
+  strata = mix(strata, vec3(0.22, 0.20, 0.20), step(0.7, pick));
   strata *= 0.86 + 0.14 * smoothstep(0.0, 0.12, band) * smoothstep(1.0, 0.85, band);
   strata *= 0.9 + 0.2 * vnoise(vec2(vAlong * 30.0, vY * 30.0));
 
   float below = vTopY - vY;
-  vec3 soil = vec3(0.24, 0.16, 0.10);
+  vec3 soil = vec3(0.13, 0.085, 0.05);
   vec3 col = mix(soil, strata, smoothstep(0.05, 0.16, below + wobble * 0.05));
 
   float ndl = max(dot(normalize(vNormal), uSunDir), 0.0);

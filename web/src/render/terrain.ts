@@ -73,6 +73,11 @@ void main() {
   vec3 green = texture2D(uPaletteGreen, climate).rgb;
   vec3 col = mix(bare, green, smoothstep(0.04, 0.55, plants));
   col *= 0.90 + 0.20 * fine;
+  // Mottling so bare ground is not a flat wash; wind ripples where it is hot and dry.
+  col *= 0.86 + 0.28 * fbm2(vWorld.xz * 2.3 + 40.0);
+  float desert = smoothstep(0.25, 0.55, temperature) * (1.0 - smoothstep(0.12, 0.3, wet)) * (1.0 - plants);
+  float ripple = sin((vWorld.x * 0.8 + vWorld.z + 0.35 * fbm2(vWorld.xz * 1.5)) * 38.0);
+  col *= 1.0 + 0.07 * desert * ripple;
 
   // Snow where it is cold and wet enough: crisp, patchy edge.
   float snow = smoothstep(uFreezing + 0.10, uFreezing - 0.10, temperature + (grain - 0.5) * 0.16)
@@ -81,7 +86,7 @@ void main() {
   vec3 rock = mix(vec3(0.33, 0.31, 0.30), vec3(0.50, 0.47, 0.43), fine);
   float rocky = smoothstep(0.24, 0.50, slope + (grain - 0.5) * 0.10);
   col = mix(col, rock, rocky * (1.0 - 0.75 * plants));
-  col = mix(col, vec3(0.93, 0.96, 1.0), snow * (1.0 - 0.8 * smoothstep(0.45, 0.75, slope)));
+  col = mix(col, vec3(0.66, 0.71, 0.80), snow * (1.0 - 0.8 * smoothstep(0.45, 0.75, slope)));
 
   // Beach just above the sea (not where frozen).
   float shore = (1.0 - smoothstep(0.0, 0.010, h - uSea)) * step(uSea, h);
@@ -96,12 +101,12 @@ void main() {
   float ndl = max(dot(n, uSunDir), 0.0);
   float wrap = max(dot(n, uSunDir) * 0.5 + 0.5, 0.0);
   float overcast = 1.0 - 0.38 * rain;
-  vec3 sun = vec3(1.0, 0.93, 0.80) * 1.75 * ndl * shadow * overcast;
-  vec3 sky = vec3(0.50, 0.62, 0.85) * (0.34 + 0.28 * n.y) * mix(1.0, 0.82, rain);
+  vec3 sun = vec3(1.0, 0.94, 0.84) * 1.55 * ndl * shadow * overcast;
+  vec3 sky = vec3(0.50, 0.62, 0.88) * (0.30 + 0.26 * n.y) * mix(1.0, 0.82, rain);
   vec3 bounce = vec3(0.55, 0.45, 0.35) * 0.10 * wrap;
   vec3 lit = col * (sun + sky + bounce);
   // Snow glints.
-  lit += snow * shadow * pow(max(dot(reflect(-uSunDir, n), normalize(cameraPosition - vWorld)), 0.0), 24.0) * 0.35;
+  lit += snow * shadow * pow(max(dot(reflect(-uSunDir, n), normalize(cameraPosition - vWorld)), 0.0), 30.0) * 0.25;
   gl_FragColor = vec4(lit, 1.0);
 }
 `;

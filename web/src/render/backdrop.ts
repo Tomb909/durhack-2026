@@ -18,7 +18,7 @@ export function makeBackdrop(time: THREE.IUniform<number>): THREE.Group {
         void main() {
           float h = vDir.y;
           vec3 deep = vec3(0.006, 0.008, 0.016);
-          vec3 haze = vec3(0.040, 0.055, 0.110);
+          vec3 haze = vec3(0.022, 0.032, 0.070);
           vec3 col = mix(haze, deep, smoothstep(-0.25, 0.75, h));
           col = mix(col, vec3(0.012, 0.010, 0.022), smoothstep(-0.2, -0.9, h));
           gl_FragColor = vec4(col, 1.0);

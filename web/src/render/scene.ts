@@ -27,7 +27,7 @@ const ELEVATION = THREE.MathUtils.degToRad(37);
 const SWAY = THREE.MathUtils.degToRad(22); // never a full spin: left stays left
 const SWAY_PERIOD = 52;
 const TARGET = new THREE.Vector3(0, 0.55, 0.25);
-const TILT_SHIFT = 2.6; // blur strength away from the focus line
+const TILT_SHIFT = 1.7; // blur strength away from the focus line
 
 export class WorldRenderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -74,15 +74,15 @@ export class WorldRenderer {
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(this.renderer, target);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.20, 0.7, 0.95);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.22, 0.55, 1.6);
     this.composer.addPass(this.bloom);
     this.tiltH = new ShaderPass(HorizontalTiltShiftShader);
     this.tiltV = new ShaderPass(VerticalTiltShiftShader);
     this.composer.addPass(this.tiltH);
     this.composer.addPass(this.tiltV);
     const vignette = new ShaderPass(VignetteShader);
-    vignette.uniforms.offset.value = 0.95;
-    vignette.uniforms.darkness.value = 1.15;
+    vignette.uniforms.offset.value = 1.05;
+    vignette.uniforms.darkness.value = 1.0;
     this.composer.addPass(vignette);
     this.composer.addPass(new OutputPass());
 
@@ -115,7 +115,7 @@ export class WorldRenderer {
     const half = THREE.MathUtils.degToRad(FOV / 2);
     const halfH = Math.atan(Math.tan(half) * this.camera.aspect);
     // Far enough back that the whole chunk fits, whatever the window shape.
-    const distance = Math.max((WORLD_W / 2 + 1.5) / Math.tan(halfH), (WORLD_D / 2 + 2.6) / Math.tan(half)) * 1.02;
+    const distance = Math.max((WORLD_W / 2 + 0.9) / Math.tan(halfH), (WORLD_D / 2 + 1.9) / Math.tan(half));
     const azimuth = this.sway ? SWAY * Math.sin((this.time * Math.PI * 2) / SWAY_PERIOD) : 0;
     const flat = Math.cos(ELEVATION) * distance;
     this.camera.position.set(TARGET.x + Math.sin(azimuth) * flat, TARGET.y + Math.sin(ELEVATION) * distance, TARGET.z + Math.cos(azimuth) * flat);

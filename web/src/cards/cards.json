@@ -5,7 +5,7 @@
     "aliases": ["MOUNTAINS"],
     "icon": "⛰️",
     "color": "#b08a5a",
-    "effects": [{ "field": "height", "amount": 0.42, "radius": 0.17 }]
+    "effects": [{ "field": "height", "amount": 0.5, "radius": 0.15 }]
   },
   {
     "id": "water",

@@ -123,7 +123,7 @@ varying float vShade;
 void main() {
   vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
   float ndl = dot(n, uSunDir) * 0.5 + 0.5;
-  vec3 bright = vec3(1.0, 0.99, 0.97);
+  vec3 bright = vec3(0.86, 0.87, 0.90);
   vec3 storm = vec3(0.52, 0.56, 0.64);
   vec3 col = mix(bright, storm, smoothstep(0.45, 1.0, vRain));
   col *= 0.62 + 0.55 * ndl;

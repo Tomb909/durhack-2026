@@ -8,8 +8,8 @@ const TEMPERATURE_STOPS = [-1, -0.45, -0.15, 0.3, 1]; // frozen, cold, mild, war
 /** Bare ground (no plants). */
 const BARE: string[][] = [
   // frozen     cold       mild       warm       scorching
-  ['#8d8a84', '#8f8877', '#b29f79', '#d2b077', '#e9c57c'], // dry: tundra rock ... desert sand
-  ['#b9bcbc', '#8c8468', '#9c8a62', '#b99963', '#d9ad68'], // dryish
+  ['#8d8a84', '#827f78', '#857f74', '#dba551', '#f4b84a'], // dry: tundra rock ... desert sand
+  ['#b9bcbc', '#7f7c6e', '#7f7a69', '#b98f52', '#e0a24d'], // dryish
   ['#e9eef2', '#7d7a5c', '#7b7048', '#84683f', '#8e6a40'], // wet: snow ... damp earth
   ['#f6f9fc', '#eef3f7', '#665f3f', '#6b5434', '#6f5233'], // soaked: deep snow ... dark mud
 ];

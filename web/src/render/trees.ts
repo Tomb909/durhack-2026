@@ -106,10 +106,10 @@ void main() {
   vec3 col = vColor;
   // Snow settles on upward faces when it is cold.
   float snow = smoothstep(uFreezing + 0.12, uFreezing - 0.05, vTemperature) * smoothstep(0.25, 0.7, n.y) * vLeaf;
-  col = mix(col, vec3(0.93, 0.96, 1.0), snow * 0.85);
+  col = mix(col, vec3(0.68, 0.73, 0.82), snow * 0.85);
   float overcast = 1.0 - 0.38 * vRain;
   float ndl = max(dot(n, uSunDir), 0.0);
-  vec3 lit = col * (vec3(1.0, 0.93, 0.80) * 1.6 * ndl * overcast + vec3(0.50, 0.62, 0.85) * (0.42 + 0.2 * n.y));
+  vec3 lit = col * (vec3(1.0, 0.94, 0.84) * 1.45 * ndl * overcast + vec3(0.50, 0.62, 0.85) * (0.42 + 0.2 * n.y));
   gl_FragColor = vec4(lit, 1.0);
 }
 `;

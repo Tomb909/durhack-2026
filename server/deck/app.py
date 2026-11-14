@@ -254,6 +254,14 @@ class Server:
             return web.FileResponse(page, headers={"Cache-Control": "no-cache"})
         raise web.HTTPFound("/debug")
 
+    async def asset(self, request: web.Request) -> web.StreamResponse:
+        """Built files of the world page (looked up on each request, so a rebuild needs no restart)."""
+        name = request.match_info["name"]
+        path = WEB_DIST / "assets" / name
+        if "/" in name or "\\" in name or ".." in name or not path.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(path)
+
     async def phone_page(self, request: web.Request) -> web.StreamResponse:
         print("[link] phone page loaded", flush=True)
         return web.FileResponse(STATIC / "phone" / "index.html", headers={"Cache-Control": "no-cache"})
@@ -380,8 +388,7 @@ class Server:
         app.router.add_post("/api/shot", self.api_shot)
         app.router.add_post("/api/{name:flip|relock}", self.api_command)
         app.router.add_get("/ca.crt", self.ca_cert)
-        if (WEB_DIST / "assets").exists():
-            app.router.add_static("/assets/", WEB_DIST / "assets")
+        app.router.add_get("/assets/{name}", self.asset)
         return app
 
     async def run(self) -> None:

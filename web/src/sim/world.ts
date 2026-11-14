@@ -38,12 +38,12 @@ export const RULES = {
   plantColdGood: -0.2,
   settleSeconds: 0.35, // how fast rivers and lakes ease to their new shape
   hydrology: {
-    riverStart: 110,
-    riverFull: 520,
+    riverStart: 90,
+    riverFull: 420,
     lakeStart: 130,
     lakeFull: 420,
     lakeMinDepth: 0.0012,
-    riverDepth: 0.0028,
+    riverDepth: 0.004,
     dryOffset: 0.004,
   } satisfies HydrologyRules,
 };
@@ -120,7 +120,7 @@ export class WorldSim {
         const corner = Math.hypot((1 - u) * ASPECT, 1 - v);
         const bay = RULES.bayDepth * smoothstep(0.46, 0.0, corner);
         this.base[k] = RULES.plainHeight + tilt + rough - bay;
-        this.ridge[k] = ridged(X * 3.1, Y * 3.1, 4, 5);
+        this.ridge[k] = ridged(X * 3.4, Y * 3.4, 5, 5);
         this.rough[k] = fbm(X * 9, Y * 9, 2, 23) - 0.5;
       }
     }
@@ -209,7 +209,9 @@ export class WorldSim {
     const { height, temperature, wetness, vegetation, precipitation } = frame;
     for (let i = 0; i < n; i++) {
       const lift = push.height[i];
-      const h = this.base[i] + lift * (0.36 + 0.64 * this.ridge[i]) + lift * 0.12 * this.rough[i];
+      // Ridged noise carves the lift into peaks and valleys; the middle of a range rises steepest.
+      const peak = 0.72 + 0.5 * smoothstep(0.0, 0.5, lift);
+      const h = this.base[i] + lift * peak * (0.38 + 0.62 * this.ridge[i]) + lift * 0.14 * this.rough[i];
       height[i] = h;
 
       const altitude = Math.max(0, h - RULES.lapseStartsAt);
