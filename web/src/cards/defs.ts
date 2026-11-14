@@ -3,7 +3,7 @@
 import raw from './cards.json';
 
 /** The underlying world properties a card may push on. */
-export type FieldName = 'height' | 'temperature' | 'wetness' | 'life' | 'people' | 'seaLevel';
+export type FieldName = 'height' | 'temperature' | 'wetness' | 'life' | 'settlement' | 'seaLevel';
 
 export interface CardEffect {
   field: FieldName;

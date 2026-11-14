@@ -17,7 +17,7 @@ describe('combination codes', () => {
     expect(parseCode('wind~90@0.5,0.5')).toEqual([{ id: 'wind', x: 0.5, y: 0.5, angle: Math.PI / 2 }]);
   });
   it('accepts any unambiguous start of a card id', () => {
-    expect(parseCode('m+wate+s+i+l').map((c) => c.id)).toEqual(['mountain', 'water', 'sun', 'ice', 'life']);
+    expect(parseCode('m+wate+su+i+l').map((c) => c.id)).toEqual(['mountain', 'water', 'sun', 'ice', 'life']);
     expect(() => parseCode('w')).toThrow(/could be water or wind/);
     expect(() => parseCode('lava')).toThrow(/no card called/);
   });

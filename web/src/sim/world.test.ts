@@ -262,38 +262,38 @@ describe('people', () => {
   const total = (a: Float32Array, t = 0.3) => a.filter((v) => v > t).length / a.length;
 
   it('build houses where they are placed, on dry liveable land', () => {
-    const f = settle([card('people', 0.4, 0.5)]);
+    const f = settle([card('settlement', 0.4, 0.5)]);
     expect(at(f, f.homes, 0.4, 0.5)).toBeGreaterThan(0.5);
     expect(at(f, f.homes, 0.9, 0.2)).toBe(0);
     expect(total(f.homes)).toBeLessThan(0.12);
   });
 
   it('farm flat land only when it is wet enough', () => {
-    expect(total(settle([card('people', 0.4, 0.5)]).farms)).toBe(0);
-    const f = settle([card('people', 0.4, 0.5), card('water', 0.45, 0.5)]);
+    expect(total(settle([card('settlement', 0.4, 0.5)]).farms)).toBe(0);
+    const f = settle([card('settlement', 0.4, 0.5), card('water', 0.45, 0.5)]);
     expect(total(f.farms)).toBeGreaterThan(0.05);
   });
 
   it('fish where there is open water nearby', () => {
     const lake = [card('water', 0.3, 0.5), card('water', 0.5, 0.5), card('water', 0.6, 0.6)];
     expect(total(settle(lake).fishing, 0.2)).toBe(0);
-    expect(total(settle([...lake, card('people', 0.4, 0.5)]).fishing, 0.2)).toBeGreaterThan(0.01);
+    expect(total(settle([...lake, card('settlement', 0.4, 0.5)]).fishing, 0.2)).toBeGreaterThan(0.01);
   });
 
   it('do not live on mountain peaks or in frozen land', () => {
-    expect(Math.max(...settle([card('people', 0.4, 0.5), card('mountain', 0.4, 0.5)]).homes)).toBeLessThan(0.3);
-    expect(Math.max(...settle([card('people', 0.4, 0.5), card('ice', 0.4, 0.5), card('ice', 0.42, 0.5)]).homes)).toBeLessThan(0.3);
+    expect(Math.max(...settle([card('settlement', 0.4, 0.5), card('mountain', 0.4, 0.5)]).homes)).toBeLessThan(0.3);
+    expect(Math.max(...settle([card('settlement', 0.4, 0.5), card('ice', 0.4, 0.5), card('ice', 0.42, 0.5)]).homes)).toBeLessThan(0.3);
   });
 
   it('clear the forest for their fields', () => {
     const wild = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5)]);
-    const farmed = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('people', 0.4, 0.5)]);
+    const farmed = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('settlement', 0.4, 0.5)]);
     expect(total(farmed.vegetation)).toBeLessThan(total(wild.vegetation) * 0.6);
   });
 });
 
 describe('woodcutters', () => {
-  const forest = () => [card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('people', 0.55, 0.5)];
+  const forest = () => [card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('settlement', 0.55, 0.5)];
   const felled = (f: WorldFrame) => f.cleared.reduce((s, v) => s + v, 0);
 
   it('fell the forest near people over time, never in an instant settle', () => {

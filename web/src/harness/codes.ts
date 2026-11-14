@@ -167,7 +167,7 @@ const SHOWCASE: [code: string, name?: string][] = [
   ['empty'], ['mountain'], ['mountain*3'], ['water'], ['water*3'], ['sun'], ['ice'], ['mountain+ice'], ['water+ice'],
   ['water+sun'], ['life'], ['life+water'], ['life+water+sun'], ['life+water+ice'], ['life+sun'], ['mountain+water'],
   ['water*3@0.3,0.3+life@0.8,0.6', 'life_by_flooded_sea'],
-  ['people'], ['people+water+life'], ['big+mountain'],
+  ['settlement'], ['settlement+water+life'], ['big+mountain'],
 ];
 
 export const SETS: Record<string, () => [code: string, name?: string][]> = {

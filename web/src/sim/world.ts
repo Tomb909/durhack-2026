@@ -245,7 +245,7 @@ export class WorldSim {
     const n = (this.n = w * h);
     const f = () => new Float32Array(n);
     this.base = f(); this.ridge = f(); this.rough = f();
-    this.push = { height: f(), temperature: f(), wetness: f(), life: f(), people: f() };
+    this.push = { height: f(), temperature: f(), wetness: f(), life: f(), settlement: f() };
     this.copies = f(); this.surfaceTarget = f(); this.riverTarget = f(); this.nearWater = f(); this.scratch = f();
     this.lastSurface = f(); this.lastRiver = f();
     this.hydrology = new Hydrology(w, h);
@@ -620,7 +620,7 @@ export class WorldSim {
     const { height, temperature, wetness, vegetation, homes, farms, fishing } = frame;
     const P = RULES.people;
     for (let i = 0; i < n; i++) {
-      const reach = Math.min(1.2, push.people[i]);
+      const reach = Math.min(1.2, push.settlement[i]);
       if (reach <= 0.01 || !this.inside[i]) {
         homes[i] = farms[i] = fishing[i] = frame.logging[i] = 0;
         continue;

@@ -46,7 +46,7 @@ export class TablePanel {
       const el = document.createElement('div');
       el.className = 'tray-card';
       el.title = `Drag ${def.word} onto the table`;
-      el.innerHTML = `<span class="icon">${def.icon}</span>${def.word}`;
+      el.innerHTML = `<span class="icon">${def.icon}</span><span class="word">${def.word}</span>`;
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         const ghost = document.createElement('div');

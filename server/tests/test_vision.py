@@ -43,8 +43,8 @@ def test_match_is_forgiving_but_not_ambiguous():
     assert match("LICE", VOCAB)[0] is None  # ICE or LIFE? refuse to guess
     assert match("VOLCANO", VOCAB)[0] is None
     assert normalise("w4ter!") == "WATERI"
-    assert match("PE0PLE", VOCAB) == ("people", 0)
-    assert match("PEPLE", VOCAB) == ("people", 1)
+    assert match("SETTLEMENT", VOCAB) == ("settlement", 0)
+    assert match("SETTLEMNT", VOCAB) == ("settlement", 1)
 
 
 def test_reader_refreshes_vocabulary_when_card_data_changes(tmp_path):
@@ -106,13 +106,13 @@ def test_reads_every_card_at_any_rotation(reader):
         Scrap("SUN", 0.2, 0.7, angle=95),
         Scrap("ICE", 0.5, 0.6, angle=-40),
         Scrap("LIFE", 0.8, 0.75, angle=200),
-        Scrap("PEOPLE", 0.5, 0.2, angle=20),
+        Scrap("SETTLEMENT", 0.5, 0.88, angle=5),
     ]
     vision = Vision(reader)
     run(vision, scraps, frames=6)
     assert vision.play_area.locked
     cards = by_card(vision)
-    assert set(cards) == {"big", "mountain", "water", "sun", "ice", "life", "people"}
+    assert set(cards) == {"big", "mountain", "water", "sun", "ice", "life", "settlement"}
     for scrap in scraps:
         (card,) = cards[scrap.word.lower()]
         assert abs(card["x"] - scrap.x) < 0.03, (scrap.word, card)
