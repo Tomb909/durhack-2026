@@ -1,6 +1,6 @@
 # Deck of Worlds
 
-Handwritten word cards on a table, watched by a phone, reshape a 3D world on a laptop. DurHack 2026.
+Handwritten word cards on a table, watched by a phone, reshape a 3D world on a laptop. Turn WIND to steer rain, spread LIFE+WATER into a tree line, blow snow off mountains, raise blizzards with ICE, and move boats, merchants, smoke and dust. DurHack 2026.
 
 Put **MOUNTAIN** in a corner and mountains rise there. Add **WATER** and it rains; add more and the sea floods the lowlands. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **LIFE** grows forest only where it is warm and wet enough. **RAVINE** cracks the ground open, **LAVA** wells up and runs downhill into it, and a **VOLCANO** raises a smoking cone with lava spilling from its crater. The world comes from how the cards combine.
 
@@ -82,9 +82,10 @@ Place **BIG** near the card it modifies, on any side, with their centers no more
 ## Making cards and the sheet
 
 - **Sheet:** A3 (or two A4s taped flat). Draw one closed rectangle with a thick black marker, a finger-width in from the edge.
-- **Cards:** one word per scrap of plain white paper, BLOCK CAPITALS, thick black marker, letters 1.5–2.5 cm tall and close together, blank margin all round. Nothing else on the scrap.
-- **Words:** BIG, MOUNTAIN, WATER, SUN, ICE, LIFE, PEOPLE, RAVINE, LAVA, VOLCANO. Make several of each. (CANYON, CHASM or FISSURE also read as RAVINE; MAGMA as LAVA.)
-- **Copies** go side by side, never stacked. Turning a card does nothing.
+- **Cards:** one word per scrap of plain white paper, BLOCK CAPITALS, thick black marker, letters 1.5–2.5 cm tall and close together, blank margin all round. WIND also has a clear arrow beneath it.
+- **Words:** BIG, MOUNTAIN, WATER, SUN, ICE, LIFE, SETTLEMENT, WIND, RAVINE, LAVA, VOLCANO. Make several of each. (PEOPLE also reads as SETTLEMENT; CANYON, CHASM or FISSURE as RAVINE; MAGMA as LAVA.)
+- **WIND:** draw a clear arrow under the word, with its point facing right when WIND reads upright. Rotate the card to point the wind across the table. Wind drives rain and clouds, carries LIFE+WATER seeds and moisture into a narrow tree line, scours snow from mountains, and turns nearby ICE into a blizzard. It also bends trees and villagers, pushes boats and merchants, blows chimney smoke, and lifts dust over hot, dry ground.
+- **Copies** go side by side, never stacked. Turning cards does nothing except for WIND, whose arrow sets its direction.
 
 ## If something goes wrong
 
@@ -105,7 +106,7 @@ phone (camera page) ── JPEG frames over HTTPS ──► server/deck  (Python
 web/src/cards (smoothing) ─► web/src/sim (world rules, no graphics) ─► web/src/render (Three.js picture)
 ```
 
-- `web/src/cards/cards.json` defines the cards as data: a word, an icon, and what it pushes on (height, temperature, wetness, life, people, lava, sea level). A new card is a new entry. A height effect can be negative (a cut), keep to a fault line (`crack`: RAVINE) or be a volcano's cone (`cone`: crater, notches, gullies and lava vents, all set on the card).
+- `web/src/cards/cards.json` defines the cards as data: a word, an icon, and what it pushes on (height, temperature, wetness, life, settlement, lava, sea level). A new card is a new entry. A height effect can be negative (a cut), keep to a fault line (`crack`: RAVINE) or be a volcano's cone (`cone`: crater, notches, gullies and lava vents, all set on the card). WIND's direction comes from its tracked orientation and is handled as a directional field in the world; `web/src/render/wind.ts` draws the moving gust, dust and snow particles.
 - `web/src/sim/world.ts` holds every rule and every tunable number (`RULES`). Nothing in it knows about graphics.
 - `web/src/render/` only draws. It receives the world as a few textures and can be restyled freely; `palette.ts` holds the climate colours, `lava.ts` the look of lava, and `plume.ts` the smoke and embers over molten pools.
 - The sky follows the world. `web/src/render/mood.ts` reads four numbers off the world (how hot, cold, wet and alive it is) and `backdrop.ts` paints from them: amber dusk over a hot world, teal and aurora over a frozen one, grey overcast in the rain, green and fireflies where things grow.
@@ -261,11 +262,11 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | `--az`, `--el` / `az=`, `el=` | Look from this many degrees round the world, and this many above the table (default 0 and 37). `--zoom 0.45 --el 14 --az 35` shows the whole depth of the world from the side. |
 | `--no-beacons`, `--png`, `--tiles` / `beacons=0`, `fmt=png`, `tiles=1` | Hide the card pillars, lossless files, one file per world as well |
 
-Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for a position, and any unambiguous start of a built-in card's id (`m+w*2`). Ids come from `cards.json`, so a new card works in codes and in every set straight away. Cards made from words work by their full id (`haunted-house+water*3`): the shorthand matches built-in cards only, so making MUD never makes `m` ambiguous. The command line and the sheet read the stored cards from `.deck/words.json` themselves (the dev server serves them read-only at `/__harness/words`), so they need no Python server. Chrome is found automatically; set `CHROME_PATH` if it is somewhere unusual, or use `--serve` to open the sheet in a browser yourself.
+Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for a position, `~degrees` for clockwise rotation, and any unambiguous start of a built-in card's id (`m+wate*2`). For example, `wind~90@0.5,0.5` points WIND down the table. Ids come from `cards.json`, so a new card works in codes and in every set straight away. Cards made from words work by their full id (`haunted-house+water*3`): the shorthand matches built-in cards only, so making MUD never makes `m` ambiguous. The command line and the sheet read the stored cards from `.deck/words.json` themselves (the dev server serves them read-only at `/__harness/words`), so they need no Python server. Chrome is found automatically; set `CHROME_PATH` if it is somewhere unusual, or use `--serve` to open the sheet in a browser yourself.
 
 #### Keeping the harness current
 
-- **A new card** in `cards.json` needs nothing: it gets its own switch in the Combinations view, joins every set, and works in codes.
+- **A simple new card** in `cards.json` gets its own switch in the Combinations view, joins every set, and works in codes. Cards with directional or other special behavior also need logic in the simulation or renderer.
 - **A new thing the world can have** (a new array on the world's frame in `sim/world.ts`): add it to `measure()` in `web/src/harness/metrics.ts` so the fingerprint covers it, give it a number there if it is worth comparing (`METRIC_KEYS` and `METRIC_LABELS`), and a colour in `web/src/harness/map.ts`.
 - **Cards made from words** need nothing either: they get a switch in the Combinations view, work in codes by full id, and are in the `words` set. Their objects are counted (`objects`) and marked on the flat map as small squares in the card's colour (white outline: afloat); worlds without objects keep the fingerprint they always had. To draw one without the model, use `--guess`.
 - **A new field on a card** (in `CardDef`, `web/src/cards/defs.ts`): give it a check in `cleanCard` (`web/src/cards/words.ts`), the schema and prompt in `server/deck/words.py`, and a line in the large view's word panel (`doings()` in `web/src/ui/combos.ts`).

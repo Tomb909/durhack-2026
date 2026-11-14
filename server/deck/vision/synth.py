@@ -39,6 +39,19 @@ def _scrap_image(scrap: Scrap) -> tuple[np.ndarray, np.ndarray]:
     w, h = tw + 2 * pad, th + 2 * pad
     img = np.full((h, w, 3), 250, np.uint8)
     cv2.putText(img, scrap.word, (pad, pad + th), font, scale, (25, 25, 25), thickness, cv2.LINE_AA)
+    if scrap.word == "WIND":
+        arrow_length = min(int(tw * 0.75), int(30 * s))
+        centre = w // 2
+        arrow_y = pad + th + int(4 * s)
+        cv2.arrowedLine(
+            img,
+            (centre - arrow_length // 2, arrow_y),
+            (centre + arrow_length // 2, arrow_y),
+            (25, 25, 25),
+            max(2, int(round(1.2 * s))),
+            cv2.LINE_AA,
+            tipLength=0.25,
+        )
     cv2.rectangle(img, (0, 0), (w - 1, h - 1), (205, 205, 205), 2)  # faint paper edge
     diag = int(np.ceil(np.hypot(w, h))) + 4
     canvas = np.zeros((diag, diag, 3), np.uint8)

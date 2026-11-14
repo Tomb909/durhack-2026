@@ -49,7 +49,7 @@ export const METRIC_LABELS: Record<(typeof METRIC_KEYS)[number], { label: string
 };
 
 export function liveCards(cards: Placement[], prefix = 'h'): LiveCard[] {
-  return cards.map((p, k) => settledCard(`${prefix}:${k}`, cardDef(p.id)!, p.x, p.y));
+  return cards.map((p, k) => settledCard(`${prefix}:${k}`, cardDef(p.id)!, p.x, p.y, p.angle ?? 0));
 }
 
 /**
@@ -81,6 +81,7 @@ export function measure(frame: WorldFrame, cards: LiveCard[] = [], objects: Plac
     if (farms[i] > 0.25) farmland++;
     if (lava[i] > 0.25) molten++;
     mix(h); mix(temperature[i]); mix(wetness[i]); mix(vegetation[i]); mix(waterSurface[i]); mix(river[i]); mix(precipitation[i]);
+    mix(frame.windX[i]); mix(frame.windY[i]); mix(frame.snowBlow[i]);
     mix(homes[i]); mix(farms[i]); mix(fishing[i]); mix(logging[i]); mix(cleared[i]);
     mix(lava[i]); mix(lavaHeat[i]); mix(lavaSurface[i]);
   }

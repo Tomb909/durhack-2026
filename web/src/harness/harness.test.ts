@@ -25,7 +25,7 @@ const HAUNTED = cleanCard({
 registerCard(MUD);
 registerCard(HAUNTED);
 /** Worlds with made cards in, for the "depends on the cards alone" checks below. */
-const MADE_CODES = ['mud', 'mud*3', 'mud+water*3', 'mud+life+water', 'mud+mountain+sun', 'haunted-house+water', 'mud+haunted-house+people+life+water'];
+const MADE_CODES = ['mud', 'mud*3', 'mud+water*3', 'mud+life+water', 'mud+mountain+sun', 'haunted-house+water', 'mud+haunted-house+settlement+life+water'];
 
 describe('combination codes', () => {
   it('reads cards, copies and positions', () => {
@@ -35,15 +35,17 @@ describe('combination codes', () => {
     expect(parseCode('water_x3').length).toBe(3);
     expect(parseCode('life water sun').map((c) => c.id)).toEqual(['life', 'water', 'sun']);
     expect(parseCode('life@0.8,0.6')).toEqual([{ id: 'life', x: 0.8, y: 0.6 }]);
+    expect(parseCode('wind~90@0.5,0.5')).toEqual([{ id: 'wind', x: 0.5, y: 0.5, angle: Math.PI / 2 }]);
   });
   it('accepts any unambiguous start of a card id', () => {
-    expect(parseCode('m+w+s+i+li').map((c) => c.id)).toEqual(['mountain', 'water', 'sun', 'ice', 'life']);
+    expect(parseCode('m+wate+su+i+li').map((c) => c.id)).toEqual(['mountain', 'water', 'sun', 'ice', 'life']);
+    expect(() => parseCode('w')).toThrow(/could be water or wind/);
     expect(() => parseCode('l')).toThrow(/could be life or lava/);
     expect(() => parseCode('fog')).toThrow(/no card called/);
   });
   it('reads cards made from words by their full id, and the shorthand still means only built-in cards', () => {
     // MUD exists, yet `m` is still MOUNTAIN, and `h` is not HAUNTED HOUSE.
-    expect(parseCode('m+w').map((c) => c.id)).toEqual(['mountain', 'water']);
+    expect(parseCode('m+wa').map((c) => c.id)).toEqual(['mountain', 'water']);
     expect(parseCode('mud+haunted-house*2').map((c) => c.id)).toEqual(['mud', 'haunted-house', 'haunted-house']);
     expect(() => parseCode('haunted')).toThrow(/no card called/);
     expect(tidyCode('Mud_water x3')).toBe('mud+water*3');
@@ -60,6 +62,8 @@ describe('combination codes', () => {
   it('writes a code one standard way and names it for files', () => {
     expect(tidyCode('Life_Water x3')).toBe('life+water*3');
     expect(nameOf('water*3+life@0.8,0.6')).toBe('water_x3_life');
+    expect(tidyCode('wind~90@0.5,0.5')).toBe('wind~90@0.5,0.5');
+    expect(nameOf('wind~90@0.5,0.5')).toBe('wind_90deg');
   });
   it('lists every combination of cards exactly once', () => {
     const subsets = resolveScenarios({ set: 'subsets' });

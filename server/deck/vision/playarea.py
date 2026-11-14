@@ -15,9 +15,10 @@ the outline's shape.
 - With no sheet edge either, the phone is assumed to look roughly straight
   down and the frame is the shape's smallest enclosing rectangle.
 
-After locking, small movements (a nudged phone) are followed smoothly; frames
-where a hand breaks the border are ignored; a clearly different area must
-persist before we switch to it.
+Once locked, the shape is fixed: the drawn border does not change while the
+game is played. Small movements (a nudged phone) are followed smoothly. A hand
+reaching in is recognised (the locked area with a piece missing) and ignored.
+Only a different border that stays put for a while replaces the locked one.
 """
 
 from __future__ import annotations
@@ -37,7 +38,16 @@ A3_ASPECT = PLAY_W_MM / PLAY_H_MM
 ASPECT_SNAP = 0.08  # a four-sided border this close to A3 proportions is treated as exactly A3
 ASPECT_KEEP = 0.04  # while following, proportions within this much are not changed (no jitter)
 FOLLOW_DISTANCE = 0.04  # of the frame diagonal: closer than this is "the same area, nudged"
-SWITCH_SECONDS = 0.7  # a different area must persist this long before we jump to it
+SWITCH_SECONDS = 0.7  # the same border somewhere else (phone re-propped) must persist this long
+NEW_BORDER_SECONDS = 1.5  # a differently shaped border must persist this long
+UNMEASURED_SECONDS = 3.0  # ... and this long if it lacks the sheet edge the locked one was measured against
+COMPARE_LONG_SIDE = 320  # outlines are compared with the locked area at this size
+CHUNK = 0.004  # a solid piece this share of the locked area counts as missing or added
+SHARED_EDGE = 0.2  # a hand's bite: at least this share of the candidate's edge runs along the locked edge...
+KEPT_EDGE = 0.35  # ... and at least this share of the locked edge is still there in the candidate
+COINCIDE = 0.9  # overlap with the locked area above which an outline is in the same place
+SAME_SHAPE = 0.96  # overlap of two shapes, camera view removed, above which they are the same shape
+SHAPE_GRID = 128
 LOCK_FRAMES = 3
 UNIT_RECT = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
 
@@ -51,6 +61,7 @@ class Outline:
     aspect: float  # long side / short side of the frame, >= 1
     area: float  # image px^2, for innermost-first ordering
     four_sided: bool
+    measured: bool = False  # frame and proportions come from the sheet's edge, not a guess
 
 
 def _order_corners(pts: np.ndarray) -> np.ndarray:
@@ -212,14 +223,14 @@ def find_outlines(gray: np.ndarray) -> list[Outline]:
         sheet = min(sheets, key=lambda s: s[0])[1] if sheets else None
         if quad is not None:
             frame = _long_side_first(quad)
-            found.append(Outline(frame / scale, frame / scale, _quad_aspect(frame, sheet), area / scale**2, True))
+            found.append(Outline(frame / scale, frame / scale, _quad_aspect(frame, sheet), area / scale**2, True, sheet is not None))
             continue
         points = cv2.approxPolyDP(contour, 0.002 * cv2.arcLength(contour, True), True).reshape(-1, 2).astype(np.float32)
         if sheet is not None:
             frame, aspect = _frame_on_sheet(points, sheet)
         else:
             frame, aspect = _frame_overhead(points)
-        found.append(Outline(frame / scale, points / scale, aspect, area / scale**2, False))
+        found.append(Outline(frame / scale, points / scale, aspect, area / scale**2, False, sheet is not None))
     found.sort(key=lambda o: o.area)
     return found
 
@@ -235,14 +246,72 @@ def find_quad(gray: np.ndarray) -> np.ndarray | None:
     return quads[0] if quads else None
 
 
+def _unit_shape(outline: Outline) -> np.ndarray:
+    """The outline as fractions (0..1) of its own frame: the shape with the camera's view taken out."""
+    unit = np.array(UNIT_RECT, dtype=np.float32)
+    if outline.four_sided:
+        return unit
+    to_unit = cv2.getPerspectiveTransform(outline.frame.astype(np.float32), unit)
+    return cv2.perspectiveTransform(outline.contour.reshape(-1, 1, 2).astype(np.float32), to_unit).reshape(-1, 2)
+
+
+def _shape_overlap(a: np.ndarray, b: np.ndarray) -> float:
+    """How alike two unit shapes are: shared area / combined area."""
+    masks = []
+    for shape in (a, b):
+        mask = np.zeros((SHAPE_GRID, SHAPE_GRID), np.uint8)
+        cv2.fillPoly(mask, [np.round(shape * (SHAPE_GRID - 1)).astype(np.int32)], 255)
+        masks.append(mask > 0)
+    union = np.count_nonzero(masks[0] | masks[1])
+    return np.count_nonzero(masks[0] & masks[1]) / union if union else 0.0
+
+
+@dataclass
+class _Versus:
+    """How a candidate outline sits against the locked play area, in the camera image."""
+
+    overlap: float  # shared area / combined area
+    lost: float  # share of the locked area the candidate lacks, counting solid chunks only (not a thin rim)
+    gained: float  # share of the locked area the candidate adds, counting solid chunks only
+    shared: float  # share of the candidate's edge that runs along the locked edge
+    kept: float  # share of the locked edge that runs along the candidate's edge
+
+    @property
+    def bitten(self) -> bool:
+        """The locked area with a piece taken out: a hand or arm reaching in over the border.
+
+        Most of the locked edge is still there. (A new border drawn inside the
+        old one, such as a circle that touches it, keeps very little of it.)
+        """
+        return self.lost >= CHUNK and self.gained < CHUNK and self.shared >= SHARED_EDGE and self.kept >= KEPT_EDGE
+
+    @property
+    def fuller(self) -> bool:
+        """The locked area plus a piece: we locked while something was covering part of it."""
+        return self.gained >= CHUNK and self.lost < CHUNK and self.kept >= SHARED_EDGE and self.shared >= KEPT_EDGE
+
+    @property
+    def ring(self) -> bool:
+        """Wholly inside or wholly around the locked area and not one of the above: another line (pen border vs sheet edge)."""
+        return (self.lost >= CHUNK) != (self.gained >= CHUNK) and not self.bitten and not self.fuller
+
+
 class PlayArea:
-    """Tracks the play area over time and provides the top-down transform."""
+    """Tracks the play area over time and provides the top-down transform.
+
+    The drawn border does not change while the game is played, so once locked
+    its shape is fixed. Later frames may only move it (a nudged phone). A hand
+    reaching in hides part of the area; the outline the camera then sees is the
+    locked one with a piece missing, and it is ignored.
+    """
 
     def __init__(self) -> None:
         self.corners: np.ndarray | None = None  # frame, image px, ordered, long side first
-        self.contour: np.ndarray | None = None  # outline, image px
+        self.contour: np.ndarray | None = None  # outline, image px (the fixed shape at the current corners)
+        self.shape: np.ndarray | None = None  # outline as fractions of the frame; fixed while locked
         self.aspect = A3_ASPECT
         self.four_sided = True
+        self.measured = False  # proportions were measured against the sheet's edge
         self.locked = False
         self.flip = False  # user toggle: rotate the table 180 degrees
         self.last_seen = 0.0
@@ -250,26 +319,93 @@ class PlayArea:
         self._pending: Outline | None = None
         self._pending_since = 0.0
         self._diag = 1.0
+        self._size = (1, 1)  # camera image, (w, h)
 
     def relock(self) -> None:
         self.corners = None
         self.contour = None
+        self.shape = None
         self.locked = False
         self._streak = 0
         self._pending = None
 
     def found(self, now: float) -> bool:
-        """True if the border was actually seen in the last second."""
+        """True if the border was actually seen in the last second (a hand over part of it still counts)."""
         return self.locked and (now - self.last_seen) < 1.0
 
     def _take(self, outline: Outline) -> None:
-        self.corners = outline.frame
-        self.contour = outline.contour
+        self.corners = outline.frame.astype(np.float32).copy()
+        self.shape = _unit_shape(outline)
         self.aspect = outline.aspect
         self.four_sided = outline.four_sided
+        self.measured = outline.measured
+        self._place()
+
+    def _place(self) -> None:
+        """Put the fixed shape where the corners now are."""
+        if self.four_sided:
+            self.contour = self.corners.copy()
+            return
+        from_unit = cv2.getPerspectiveTransform(np.array(UNIT_RECT, dtype=np.float32), self.corners.astype(np.float32))
+        self.contour = cv2.perspectiveTransform(self.shape.reshape(-1, 1, 2).astype(np.float32), from_unit).reshape(-1, 2)
+
+    def _aligned(self, outline: Outline) -> Outline:
+        """Keep the same corner numbering as before.
+
+        The ordering can flip by 180 degrees when the phone is close to
+        square-on, and by 90 when the area is close to square (a circle).
+        """
+        turns = (0, 1, 2, 3) if max(outline.aspect, self.aspect) < 1.2 else (0, 2)
+        best = min(turns, key=lambda t: self._distance(np.roll(outline.frame, t, axis=0), self.corners))
+        if best:
+            outline.frame = np.roll(outline.frame, best, axis=0)
+        return outline
+
+    def _versus(self, outline: Outline) -> _Versus:
+        """Compare a candidate with the locked area where they lie in the camera image."""
+        scale = COMPARE_LONG_SIDE / max(self._size)
+        w, h = int(round(self._size[0] * scale)), int(round(self._size[1] * scale))
+
+        def draw(points: np.ndarray, fill: bool) -> np.ndarray:
+            mask = np.zeros((h, w), np.uint8)
+            pts = [np.round(points * scale).astype(np.int32)]
+            if fill:
+                cv2.fillPoly(mask, pts, 255)
+            else:
+                cv2.polylines(mask, pts, True, 255, 1)
+            return mask
+
+        locked, candidate = draw(self.contour, True), draw(outline.contour, True)
+        area = max(1, np.count_nonzero(locked))
+        union = max(1, np.count_nonzero(locked | candidate))
+        # Opening drops the thin rim a small shift leaves, keeping only solid pieces.
+        solid = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        lost = cv2.morphologyEx(locked & ~candidate, cv2.MORPH_OPEN, solid)
+        gained = cv2.morphologyEx(candidate & ~locked, cv2.MORPH_OPEN, solid)
+        reach = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        locked_edge, edge = draw(self.contour, False), draw(outline.contour, False)
+        near_locked, near_candidate = cv2.dilate(locked_edge, reach), cv2.dilate(edge, reach)
+        return _Versus(
+            overlap=np.count_nonzero(locked & candidate) / union,
+            lost=np.count_nonzero(lost) / area,
+            gained=np.count_nonzero(gained) / area,
+            shared=np.count_nonzero(edge & near_locked) / max(1, np.count_nonzero(edge)),
+            kept=np.count_nonzero(locked_edge & near_candidate) / max(1, np.count_nonzero(locked_edge)),
+        )
+
+    def _same_border(self, outline: Outline) -> bool:
+        """Could this be the locked border itself, perhaps seen from a slightly different place?"""
+        if outline.four_sided != self.four_sided:
+            return False
+        if self.four_sided:
+            return True  # a rectangle's shape is all in its corners
+        if self.measured and not outline.measured:
+            return False  # its frame was guessed without the sheet's edge: not comparable
+        return abs(outline.aspect / self.aspect - 1) < ASPECT_SNAP and _shape_overlap(_unit_shape(outline), self.shape) >= SAME_SHAPE
 
     def update(self, gray: np.ndarray, now: float) -> None:
         self._diag = float(np.hypot(*gray.shape))
+        self._size = (gray.shape[1], gray.shape[0])
         outlines = find_outlines(gray)
         if not outlines:
             self._streak = 0
@@ -278,42 +414,69 @@ class PlayArea:
             self._take(outlines[0])
             self._streak = 1
             return
-
-        def aligned(o: Outline) -> Outline:
-            # Keep the same corner numbering as before (the ordering can flip
-            # by 180 degrees when the phone is close to square-on).
-            turned = np.roll(o.frame, 2, axis=0)
-            if np.max(np.linalg.norm(turned - self.corners, axis=1)) < np.max(np.linalg.norm(o.frame - self.corners, axis=1)):
-                o.frame = turned
-            return o
-
-        # Several outlines can qualify (pen border, sheet edge). Stay with the
-        # one we are already following rather than hopping between them.
-        outlines = [aligned(o) for o in outlines]
-        outline = min(outlines, key=lambda o: self._distance(o.frame, self.corners))
-        distance = self._distance(outline.frame, self.corners)
-        if not self.locked:
-            if distance < FOLLOW_DISTANCE:
-                self._streak += 1
-                if self._streak >= LOCK_FRAMES:
-                    self.locked = True
-                    self.last_seen = now
-            else:
-                self._streak = 1
-            self._take(outline)
+        outlines = [self._aligned(o) for o in outlines]
+        if self.locked:
+            self._hold(outlines, now)
             return
-        if distance < FOLLOW_DISTANCE:
-            self.corners = self.corners + 0.35 * (outline.frame - self.corners)
-            self.contour = outline.contour
-            self.four_sided = outline.four_sided
-            if abs(outline.aspect / self.aspect - 1) > ASPECT_KEEP:
-                self.aspect = outline.aspect
+        # Not locked yet: wait until the same outline has been seen a few frames running.
+        outline = min(outlines, key=lambda o: self._distance(o.frame, self.corners))
+        if self._distance(outline.frame, self.corners) < FOLLOW_DISTANCE:
+            self._streak += 1
+            if self._streak >= LOCK_FRAMES:
+                self.locked = True
+                self.last_seen = now
+        else:
+            self._streak = 1
+        self._take(outline)
+
+    def _hold(self, outlines: list[Outline], now: float) -> None:
+        """Locked: follow the border if it moved, ignore hands, switch only to a lasting different border."""
+        judged = [(o, self._versus(o)) for o in outlines]
+        # The locked border is plainly still where it was: seen whole, or with a hand over part of it.
+        still_there = any(v.bitten or (v.overlap >= COINCIDE and not v.fuller) for _, v in judged)
+
+        follow = [
+            (o, v) for o, v in judged
+            # Several outlines can qualify (pen border, sheet edge). One lying wholly inside or
+            # around ours is a different line, not ours nudged: do not drift over to it.
+            if not v.bitten and not v.ring
+            and self._same_border(o) and self._distance(o.frame, self.corners) < FOLLOW_DISTANCE
+        ]
+        if follow:
+            outline, versus = min(follow, key=lambda item: self._distance(item[0].frame, self.corners))
+            if versus.fuller and not self.four_sided:
+                self._take(outline)  # we had locked with part of the area covered: this is the whole of it
+            else:
+                self.corners = self.corners + 0.35 * (outline.frame - self.corners)
+                # Proportions only ever come from a measurement against the sheet's edge.
+                if self.four_sided and outline.measured and (
+                    not self.measured or abs(outline.aspect / self.aspect - 1) > ASPECT_KEEP
+                ):
+                    self.aspect = outline.aspect
+                    self.measured = True
+                self._place()
             self.last_seen = now
             self._pending = None
             return
-        # Something different: the phone was re-propped, or this is a bad frame.
+        if still_there:
+            # A hand is in the way, or only the sheet's edge is hidden. Nothing has moved: keep everything.
+            self.last_seen = now
+            self._pending = None
+            return
+
+        # Something different: the phone was re-propped, a new border was drawn, or this is a bad frame.
+        others = [o for o, v in judged if not v.bitten]
+        if not others:
+            return
+        outline = others[0]  # innermost first, as when first locking: the drawn border, not the sheet around it
+        if self._same_border(outline):
+            wait = SWITCH_SECONDS
+        elif self.measured and not outline.measured:
+            wait = UNMEASURED_SECONDS
+        else:
+            wait = NEW_BORDER_SECONDS
         if self._pending is not None and self._distance(outline.frame, self._pending.frame) < FOLLOW_DISTANCE:
-            if now - self._pending_since >= SWITCH_SECONDS:
+            if now - self._pending_since >= wait:
                 self._take(outline)
                 self.last_seen = now
                 self._pending = None

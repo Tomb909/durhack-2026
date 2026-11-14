@@ -7,6 +7,8 @@
 //   uFieldD = cleared (felled forest, permanent), logging, lavaSurface, lava (how much covers the ground)
 //   uFieldE = ash (lava spread wide: burnt ground), lava glow (molten lava spread a little),
 //             molten lava spread a medium way (scoria, crater rim), any lava spread a medium way (basalt)
+//   uFieldF = wind-x, wind-z, wind-blown snow, (spare)
+//             (Lava and wind were each written to take C.a, D.b and D.a; wind moved here.)
 // plus the sea level. Rewrite anything in render/ freely: nothing else in the
 // app depends on it.
 import * as THREE from 'three';
@@ -36,6 +38,7 @@ export interface SharedUniforms {
   uFieldC: THREE.IUniform<THREE.Texture | null>;
   uFieldD: THREE.IUniform<THREE.Texture | null>;
   uFieldE: THREE.IUniform<THREE.Texture | null>;
+  uFieldF: THREE.IUniform<THREE.Texture | null>;
   uTexel: THREE.IUniform<THREE.Vector2>;
   uGrid: THREE.IUniform<THREE.Vector2>;
   /** World width and depth in scene units. */
@@ -66,6 +69,7 @@ export function makeSharedUniforms(): SharedUniforms {
     uFieldC: { value: null },
     uFieldD: { value: null },
     uFieldE: { value: null },
+    uFieldF: { value: null },
     uTexel: { value: new THREE.Vector2(1 / GW, 1 / gridHeight(world.aspect)) },
     uGrid: { value: new THREE.Vector2(GW, gridHeight(world.aspect)) },
     uWorld: { value: new THREE.Vector2(world.w, world.d) },
@@ -90,6 +94,7 @@ uniform sampler2D uFieldB;
 uniform sampler2D uFieldC;
 uniform sampler2D uFieldD;
 uniform sampler2D uFieldE;
+uniform sampler2D uFieldF;
 uniform vec2 uTexel;
 uniform vec2 uGrid;
 uniform float uSea;
@@ -115,6 +120,8 @@ vec4 fieldB(vec2 uv) { return texture2D(uFieldB, fieldUv(uv)); }
 vec4 fieldC(vec2 uv) { return texture2D(uFieldC, fieldUv(uv)); }
 vec4 fieldD(vec2 uv) { return texture2D(uFieldD, fieldUv(uv)); }
 vec4 fieldE(vec2 uv) { return texture2D(uFieldE, fieldUv(uv)); }
+// Wind (rg: x and z, each -1..1) and wind-blown snow (b).
+vec4 fieldF(vec2 uv) { return texture2D(uFieldF, fieldUv(uv)); }
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));

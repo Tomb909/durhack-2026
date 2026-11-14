@@ -46,6 +46,11 @@ export function groupCopies(cards: LiveCard[], skip: ReadonlySet<LiveCard>, aspe
   return groups.filter((group) => group.length > 0);
 }
 
+function tabletopDirection(angle: number): string {
+  const directions = ['right', 'near-right', 'near', 'near-left', 'left', 'far-left', 'far', 'far-right'];
+  return directions[Math.round((((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % directions.length];
+}
+
 interface Mark {
   beam: THREE.Mesh;
   ring: THREE.Mesh;
@@ -68,6 +73,7 @@ export class Beacons {
   private beamGeometry = new THREE.CylinderGeometry(0.035, 0.035, 1, 8, 1, true).translate(0, 0.5, 0);
   private ringGeometry = new THREE.RingGeometry(0.16, 0.22, 40).rotateX(-Math.PI / 2);
   private point = new THREE.Vector3();
+  private directionPoint = new THREE.Vector3();
 
   constructor(private layer: HTMLElement) {}
 
@@ -144,11 +150,15 @@ export class Beacons {
       let top = LABEL_HEIGHT;
       let strength = 0;
       let anyVisible = false;
+      let windX = 0;
+      let windY = 0;
       for (const card of group) {
         const w = Math.max(card.strength, 0.001);
         weight += w;
         x += card.x * w;
         y += card.y * w;
+        windX += Math.cos(card.angle) * w;
+        windY += Math.sin(card.angle) * w;
         top = Math.max(top, (ground.get(card) ?? 0) + 1.3);
         strength = Math.max(strength, card.strength);
         anyVisible ||= card.visible;
@@ -174,6 +184,13 @@ export class Beacons {
         const word = document.createElement('span');
         word.className = 'w';
         el.append(icon, word);
+        if (def.id === 'wind') {
+          const arrow = document.createElement('span');
+          arrow.className = 'world-wind-arrow';
+          arrow.setAttribute('aria-hidden', 'true');
+          arrow.textContent = '➤';
+          el.append(arrow);
+        }
         this.layer.appendChild(el);
         label = { el, text: '', width: 0, height: 0, lift: 0, x: 0, y: 0 };
         this.labels.set(key, label);
@@ -188,6 +205,17 @@ export class Beacons {
       this.point.set((x - 0.5) * world.w, top, (y - 0.5) * world.d).project(camera);
       label.x = (this.point.x * 0.5 + 0.5) * width;
       label.y = (-this.point.y * 0.5 + 0.5) * height;
+      if (def.id === 'wind') {
+        const angle = Math.atan2(windY, windX);
+        this.directionPoint
+          .set((x - 0.5) * world.w + Math.cos(angle) * 0.5, top, (y - 0.5) * world.d + Math.sin(angle) * 0.5)
+          .project(camera);
+        const screenX = (this.directionPoint.x - this.point.x) * width * 0.5;
+        const screenY = -(this.directionPoint.y - this.point.y) * height * 0.5;
+        const arrow = label.el.querySelector('.world-wind-arrow') as HTMLElement;
+        arrow.style.transform = `rotate(${Math.atan2(screenY, screenX)}rad)`;
+        label.el.title = `Wind blowing ${tabletopDirection(angle)}`;
+      }
 
       // Stack above any label already placed that this one would cover.
       let lift = 0;

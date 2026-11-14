@@ -45,7 +45,7 @@ describe('cleanCard, the one gate', () => {
       effects: [
         { field: 'height', amount: 99, radius: 99 }, { field: 'seaLevel', amount: -5, radius: 3 }, { field: 'magic', amount: 1 },
         { field: 'life', amount: Number.NaN }, { field: 'temperature', amount: -Infinity }, { field: 'wetness', amount: '1' },
-        { field: 'life', amount: -0.5 }, { field: 'people', amount: 0.5 }, { field: 'people', amount: 0.5 },
+        { field: 'life', amount: -0.5 }, { field: 'settlement', amount: 0.5 }, { field: 'people', amount: 0.5 },
       ],
       atmosphere: { tint: 'javascript:1', strength: 7, light: -9, particles: { motion: 'explode', density: 1 } },
       prop: {

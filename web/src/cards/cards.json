@@ -52,12 +52,20 @@
     "effects": [{ "field": "life", "amount": 1.0, "radius": 0.24 }]
   },
   {
-    "id": "people",
-    "word": "PEOPLE",
-    "aliases": ["PERSON", "HUMANS"],
+    "id": "wind",
+    "word": "WIND",
+    "aliases": [],
+    "icon": "🌬️",
+    "color": "#a7d8e8",
+    "effects": []
+  },
+  {
+    "id": "settlement",
+    "word": "SETTLEMENT",
+    "aliases": ["SETTLE", "VILLAGE", "TOWN", "PEOPLE"],
     "icon": "🏠",
     "color": "#e8743b",
-    "effects": [{ "field": "people", "amount": 1.0, "radius": 0.13 }]
+    "effects": [{ "field": "settlement", "amount": 1.0, "radius": 0.13 }]
   },
   {
     "id": "ravine",

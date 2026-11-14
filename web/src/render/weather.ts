@@ -42,7 +42,10 @@ void main() {
   vec2 site = aSeed.xy;
   float speed = mix(1.5 + aSeed.w * 0.6, 0.22 + aSeed.w * 0.12, uSnow);
   float life = fract(uTime * speed + aSeed.z * 7.0);
-  // Snow drifts sideways as it falls.
+  vec2 wind = fieldF(site).rg;
+  vec2 windUv = vec2(wind.x, wind.y * WORLD_W / WORLD_D);
+  // Both rain and snow travel downwind; snow has a stronger sideways drift.
+  site += windUv * mix(0.20, 0.30, uSnow) * life;
   site += uSnow * 0.012 * vec2(sin(uTime * 1.3 + aSeed.z * 40.0), cos(uTime * 1.1 + aSeed.w * 40.0));
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
@@ -57,7 +60,8 @@ void main() {
   vec3 right = normalize(vec3(viewMatrix[0][0], 0.0, viewMatrix[2][0]));
   vec2 size = mix(vec2(0.014, 0.20), vec2(0.045, 0.045), uSnow);
   vec3 up = mix(vec3(0.0, 1.0, 0.0), vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]), uSnow);
-  vec3 p = centre + right * position.x * size.x + up * position.y * size.y;
+  vec3 windWorld = vec3(wind.x, 0.0, wind.y) * mix(0.16, 0.12, uSnow);
+  vec3 p = centre + right * position.x * size.x + up * position.y * size.y + windWorld * position.y * 0.045;
   vAlpha = on * smoothstep(0.0, 0.08, life) * smoothstep(1.0, 0.9, life);
   vQuad = vec2(position.x + 0.5, position.y);
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
@@ -104,7 +108,11 @@ varying vec3 vWorld;
 varying float vRain;
 varying float vShade;
 void main() {
-  vec2 site = aSeed.xy + 0.012 * vec2(sin(uTime * 0.11 + aSeed.z * 30.0), cos(uTime * 0.09 + aSeed.w * 30.0));
+  vec2 site = aSeed.xy;
+  vec2 wind = fieldF(site).rg;
+  vec2 windUv = vec2(wind.x, wind.y * WORLD_W / WORLD_D);
+  site += windUv * sin(uTime * 0.08 + aSeed.w * 6.2832) * 0.035;
+  site += 0.012 * vec2(sin(uTime * 0.11 + aSeed.z * 30.0), cos(uTime * 0.09 + aSeed.w * 30.0));
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
   float rain = b.b;

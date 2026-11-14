@@ -18,7 +18,7 @@ describe('the coarse look at the world used to leave out empty sites', () => {
 
   it('never reports less than the GPU could read at a site or within its wander (nor more, for the smallest)', () => {
     for (const shape of [SHAPE_PRESETS.rect, SHAPE_PRESETS.circle]) {
-      const frame = new WorldSim(shape).settleNow(liveCards(parseCode('mountain+water*2+sun+ice+life+people*2')));
+      const frame = new WorldSim(shape).settleNow(liveCards(parseCode('mountain+water*2+sun+ice+life+settlement*2')));
       const reach = new WorldReach();
       reach.reset(frame);
       const next = numbers(7);

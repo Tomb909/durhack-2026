@@ -85,7 +85,7 @@ const FIELD_LIMITS: Record<MadeField, [number, number]> = {
   temperature: [-0.7, 0.7],
   wetness: [-0.6, 0.6],
   life: [-1, 1],
-  people: [0, 1],
+  settlement: [0, 1],
   seaLevel: [-0.015, 0.02],
 };
 
@@ -95,8 +95,11 @@ function cleanEffects(v: unknown): CardEffect[] {
   for (const e of v.slice(0, 16)) {
     if (!e || typeof e !== 'object' || out.length >= MAX_EFFECTS) continue;
     const r = e as Record<string, unknown>;
-    if (!(typeof r.field === 'string' && r.field in FIELD_LIMITS)) continue;
-    const field = r.field as MadeField;
+    // Cards made before the field was renamed still say `people`.
+    const named = r.field === 'people' ? 'settlement' : r.field;
+    // Own names only: `constructor` or `toString` is not a field, though `in` would say it is.
+    if (!(typeof named === 'string' && Object.hasOwn(FIELD_LIMITS, named))) continue;
+    const field = named as MadeField;
     const [lo, hi] = FIELD_LIMITS[field];
     const amount = num(r.amount, lo, hi, 0);
     if (amount === 0) continue;

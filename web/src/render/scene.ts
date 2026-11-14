@@ -19,7 +19,7 @@ import { CALM, worldMood, type Mood } from './mood';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
 import { makeTerrain } from './terrain';
-import { makePeople } from './people';
+import { makePeople, Merchants } from './people';
 import { PropLayer } from './props';
 import { QualityGovernor } from './quality';
 import { WorldReach, type Culled } from './sites';
@@ -27,6 +27,7 @@ import { makeTrees } from './trees';
 import { makeWater } from './water';
 import { makePlume } from './plume';
 import { makeWeather } from './weather';
+import { makeWindEffects } from './wind';
 
 const FOV = 30;
 const SWAY = THREE.MathUtils.degToRad(22); // never a full spin: left stays left
@@ -116,6 +117,7 @@ export class WorldRenderer {
   private lastDrawn = 0;
   private outline: number[][] = DEFAULT_SHAPE.outline;
   private beacons: Beacons;
+  private merchants: Merchants;
   private time = 0;
   private quality = 1.5;
   private raycaster = new THREE.Raycaster();
@@ -153,6 +155,7 @@ export class WorldRenderer {
     this.gpuName = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unknown GPU';
 
     this.shared = makeSharedUniforms();
+    this.merchants = new Merchants(this.shared);
     this.scene.add(makeBackdrop(this.shared));
     this.setShape(DEFAULT_SHAPE);
     this.culled = [makeTrees(this.shared), makePeople(this.shared), makeWeather(this.shared)];
@@ -163,6 +166,8 @@ export class WorldRenderer {
     this.scene.add(this.props.group);
     this.air = new AirLayer(this.shared, this.props.night);
     this.scene.add(this.air.points);
+    this.scene.add(this.merchants.group);
+    this.scene.add(makeWindEffects(this.shared));
     this.scene.add(this.beacons.group);
 
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
@@ -200,6 +205,7 @@ export class WorldRenderer {
     this.shared.uFieldC.value = this.fields.c;
     this.shared.uFieldD.value = this.fields.d;
     this.shared.uFieldE.value = this.fields.e;
+    this.shared.uFieldF.value = this.fields.f;
     this.shared.uVent.value = this.fields.vents;
     setSharedWorld(this.shared, gw, gh);
     this.lava = makeLava(this.shared, gw, gh);
@@ -350,6 +356,7 @@ export class WorldRenderer {
     if (this.lava) this.lava.visible = this.fields.lavaShows;
     this.cullSites(frame);
     this.followMood(frame, dt);
+    this.merchants.update(cards, frame, this.time);
     const count = Math.min(MAX_PULSES, cards.length);
     for (let i = 0; i < count; i++) {
       const card = cards[i];

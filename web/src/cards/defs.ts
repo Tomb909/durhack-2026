@@ -8,7 +8,7 @@
 import raw from './cards.json';
 
 /** The underlying world properties a card may push on. */
-export type FieldName = 'height' | 'temperature' | 'wetness' | 'life' | 'people' | 'lava' | 'seaLevel';
+export type FieldName = 'height' | 'temperature' | 'wetness' | 'life' | 'settlement' | 'lava' | 'seaLevel';
 
 export interface CardEffect {
   field: FieldName;

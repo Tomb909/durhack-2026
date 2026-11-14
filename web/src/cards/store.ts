@@ -8,6 +8,8 @@ export interface TrackedCard {
   card: string;
   x: number;
   y: number;
+  /** Radians clockwise from the card's printed left-to-right direction. */
+  angle?: number;
   visible: boolean;
 }
 
@@ -18,6 +20,9 @@ export interface LiveCard {
   /** Smoothed position, 0..1 across the play area (x left to right, y far to near). */
   x: number;
   y: number;
+  /** Directional card orientation in radians. */
+  angle: number;
+  targetAngle: number;
   /** Where it is heading. */
   tx: number;
   ty: number;
@@ -40,8 +45,8 @@ const SPRING = 11; // higher = snappier following
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
 /** A card that has already arrived: full strength, at rest, no arrival pulse. */
-export function settledCard(key: string, def: CardDef, x: number, y: number): LiveCard {
-  return { key, def, source: 'sim', x, y, tx: x, ty: y, vx: 0, vy: 0, strength: 1, fade: 1, present: true, visible: true, age: 99 };
+export function settledCard(key: string, def: CardDef, x: number, y: number, angle = 0): LiveCard {
+  return { key, def, source: 'sim', x, y, angle, targetAngle: angle, tx: x, ty: y, vx: 0, vy: 0, strength: 1, fade: 1, present: true, visible: true, age: 99 };
 }
 
 export class CardStore {
@@ -58,9 +63,9 @@ export class CardStore {
     return this.cards.find((c) => c.key === key);
   }
 
-  private add(key: string, def: CardDef, source: 'camera' | 'sim', x: number, y: number): LiveCard {
+  private add(key: string, def: CardDef, source: 'camera' | 'sim', x: number, y: number, angle = 0): LiveCard {
     const card: LiveCard = {
-      key, def, source, x, y, tx: x, ty: y, vx: 0, vy: 0, strength: 0, fade: 0, present: true, visible: true, age: 0,
+      key, def, source, x, y, angle, targetAngle: angle, tx: x, ty: y, vx: 0, vy: 0, strength: 0, fade: 0, present: true, visible: true, age: 0,
     };
     this.cards.push(card);
     return card;
@@ -94,11 +99,11 @@ export class CardStore {
   }
 
   /** Replace every simulated card at once, already arrived (no fade in or out). */
-  setSim(placements: { id: string; x: number; y: number }[]): void {
+  setSim(placements: { id: string; x: number; y: number; angle?: number }[]): void {
     this.cards = this.cards.filter((c) => c.source !== 'sim');
     for (const p of placements) {
       const def = cardDef(p.id);
-      if (def) this.cards.push(settledCard(`sim:${this.nextSim++}`, def, p.x, p.y));
+      if (def) this.cards.push(settledCard(`sim:${this.nextSim++}`, def, p.x, p.y, p.angle ?? 0));
     }
     this.moving = true;
   }
@@ -121,6 +126,7 @@ export class CardStore {
       }
       card.present = true;
       card.visible = t.visible;
+      card.targetAngle = t.angle ?? 0;
       card.tx = t.x;
       card.ty = t.y;
     }
@@ -171,9 +177,10 @@ export class CardStore {
       card.age += dt;
       if (this.instant) {
         const target = card.present ? 1 : 0;
-        if (card.x !== card.tx || card.y !== card.ty || card.fade !== target) moving = true;
+        if (card.x !== card.tx || card.y !== card.ty || card.angle !== card.targetAngle || card.fade !== target) moving = true;
         card.x = card.tx;
         card.y = card.ty;
+        card.angle = card.targetAngle;
         card.vx = card.vy = 0;
         card.fade = card.strength = target;
         if (card.present) card.age = Math.max(card.age, 99); // no arrival pulse
@@ -190,6 +197,9 @@ export class CardStore {
       card.y = card.ty + (ey + jy * dt) * decay;
       card.vx = (card.vx - SPRING * jx * dt) * decay;
       card.vy = (card.vy - SPRING * jy * dt) * decay;
+      const angleDelta = Math.atan2(Math.sin(card.targetAngle - card.angle), Math.cos(card.targetAngle - card.angle));
+      card.angle += angleDelta * (1 - Math.exp(-SPRING * dt));
+      if (Math.abs(angleDelta) > 1e-4) moving = true;
       const target = card.present ? 1 : 0;
       const before = card.fade;
       if (card.fade < target) card.fade = Math.min(target, card.fade + dt / FADE_SECONDS);

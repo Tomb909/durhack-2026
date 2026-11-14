@@ -4,7 +4,8 @@
 //   water*3                  three copies side by side (also: water_x3)
 //   life+water+sun           several cards (also: life_water_sun, "life water sun")
 //   water*3+life@0.8,0.6     a card at a table position: x left to right, y far to near, 0..1
-//   m+w*2                    any unambiguous start of a built-in card's id
+//   wind~90@0.5,0.5          a card rotated 90 degrees clockwise
+//   m+wate*2                 any unambiguous start of a built-in card's id
 //   haunted-house+water      a card made from a typed word, by its full id
 //   empty                    no cards
 //
@@ -18,6 +19,8 @@ export interface Placement {
   id: string;
   x: number;
   y: number;
+  /** Radians clockwise from the card's printed left-to-right direction. */
+  angle?: number;
 }
 
 export interface Scenario {
@@ -43,6 +46,7 @@ const PER_ROW = 5;
 interface Group {
   id: string;
   copies: number;
+  angle: number | null;
   at: { x: number; y: number } | null;
 }
 
@@ -65,12 +69,13 @@ function parseGroups(code: string): Group[] {
       groups[groups.length - 1].copies *= Number(times[1]);
       continue;
     }
-    const m = /^([a-z][a-z0-9-]*)(?:\*(\d+))?(?:@(\d*\.?\d+),(\d*\.?\d+))?$/.exec(token);
-    if (!m) throw new Error(`cannot read "${token}" (try: water, water*3, life@0.8,0.6)`);
+    const m = /^([a-z][a-z0-9-]*)(?:\*(\d+))?(?:~(-?(?:\d+(?:\.\d*)?|\.\d+)))?(?:@(\d*\.?\d+),(\d*\.?\d+))?$/.exec(token);
+    if (!m) throw new Error(`cannot read "${token}" (try: water, water*3, wind~90@0.5,0.5)`);
     groups.push({
       id: resolveId(m[1]),
       copies: m[2] ? Number(m[2]) : 1,
-      at: m[3] ? { x: Number(m[3]), y: Number(m[4]) } : null,
+      angle: m[3] === undefined ? null : Number(m[3]),
+      at: m[4] ? { x: Number(m[4]), y: Number(m[5]) } : null,
     });
   }
   for (const g of groups) if (g.copies < 1 || g.copies > 24) throw new Error(`${g.id}: copies must be 1 to 24`);
@@ -110,7 +115,11 @@ export function parseCode(code: string, layout: Layout = 'cluster'): Placement[]
       : layout === 'cluster'
         ? shared.splice(0, g.copies)
         : rowAround(SPREAD_ANCHORS[anchor++ % SPREAD_ANCHORS.length], g.copies);
-    for (const p of places) cards.push({ id: g.id, x: p.x, y: p.y });
+    for (const p of places) {
+      const card: Placement = { id: g.id, x: p.x, y: p.y };
+      if (g.angle !== null) card.angle = (g.angle * Math.PI) / 180;
+      cards.push(card);
+    }
   }
   return cards;
 }
@@ -119,14 +128,16 @@ export function parseCode(code: string, layout: Layout = 'cluster'): Placement[]
 export function tidyCode(code: string): string {
   const groups = parseGroups(code);
   if (!groups.length) return 'empty';
-  return groups.map((g) => g.id + (g.copies > 1 ? `*${g.copies}` : '') + (g.at ? `@${g.at.x},${g.at.y}` : '')).join('+');
+  return groups.map((g) =>
+    g.id + (g.copies > 1 ? `*${g.copies}` : '') + (g.angle !== null ? `~${g.angle}` : '') + (g.at ? `@${g.at.x},${g.at.y}` : ''),
+  ).join('+');
 }
 
 /** A file-friendly name: `water_x3_life`. */
 export function nameOf(code: string): string {
   const groups = parseGroups(code);
   if (!groups.length) return 'empty';
-  return groups.map((g) => g.id + (g.copies > 1 ? `_x${g.copies}` : '')).join('_');
+  return groups.map((g) => g.id + (g.copies > 1 ? `_x${g.copies}` : '') + (g.angle !== null ? `_${g.angle}deg` : '')).join('_');
 }
 
 function scenario(code: string, layout: Layout, name?: string): Scenario {
@@ -167,7 +178,7 @@ const SHOWCASE: [code: string, name?: string][] = [
   ['empty'], ['mountain'], ['mountain*3'], ['water'], ['water*3'], ['sun'], ['ice'], ['mountain+ice'], ['water+ice'],
   ['water+sun'], ['life'], ['life+water'], ['life+water+sun'], ['life+water+ice'], ['life+sun'], ['mountain+water'],
   ['water*3@0.3,0.3+life@0.8,0.6', 'life_by_flooded_sea'],
-  ['people'], ['people+water+life'], ['big+mountain'],
+  ['settlement'], ['settlement+water+life'], ['big+mountain'],
   ['ravine'], ['ravine*3'], ['ravine+water'], ['ravine+water*3'], ['mountain+ravine'], ['lava'], ['lava+mountain'], ['lava+ravine'], ['lava+water'], ['lava+ice'],
   ['volcano'], ['volcano+water'], ['volcano+life+water'], ['volcano+ice'],
   ['big+volcano'], ['volcano+mountain'], ['volcano+water*3'], ['volcano@0.45,0.5+ravine@0.62,0.5', 'volcano_by_ravine'],

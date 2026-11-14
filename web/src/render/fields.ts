@@ -10,6 +10,8 @@ export class FieldTextures {
   readonly d: THREE.DataTexture;
   /** Drawing only, worked out here from the lava: how burnt the ground around it is, how lit by it, and how close to it. */
   readonly e: THREE.DataTexture;
+  /** Wind (x, z) and wind-blown snow. */
+  readonly f: THREE.DataTexture;
   /** Where smoke rises, as table u, v and strength (found from the lava; see vents.ts). */
   readonly vents: THREE.Vector4[] = Array.from({ length: MAX_VENTS }, () => new THREE.Vector4());
   ventCount = 0;
@@ -18,6 +20,7 @@ export class FieldTextures {
   private dataC: Float32Array;
   private dataD: Float32Array;
   private dataE: Float32Array;
+  private dataF: Float32Array;
   private blurA: Float32Array;
   private blurB: Float32Array;
   private hadLava = true;
@@ -35,6 +38,7 @@ export class FieldTextures {
     this.dataC = new Float32Array(w * h * 4);
     this.dataD = new Float32Array(w * h * 4);
     this.dataE = new Float32Array(w * h * 4);
+    this.dataF = new Float32Array(w * h * 4);
     this.blurA = new Float32Array(w * h);
     this.blurB = new Float32Array(w * h);
     const make = (data: Float32Array) => {
@@ -52,6 +56,7 @@ export class FieldTextures {
     this.c = make(this.dataC);
     this.d = make(this.dataD);
     this.e = make(this.dataE);
+    this.f = make(this.dataF);
   }
 
   dispose(): void {
@@ -60,6 +65,7 @@ export class FieldTextures {
     this.c.dispose();
     this.d.dispose();
     this.e.dispose();
+    this.f.dispose();
   }
 
   update(frame: WorldFrame): void {
@@ -67,7 +73,7 @@ export class FieldTextures {
     if (frame.w * frame.h * 4 !== this.dataA.length) return; // a frame from before a shape change
     this.version = frame.version;
     const n = frame.w * frame.h;
-    const { dataA, dataB, dataC, dataD } = this;
+    const { dataA, dataB, dataC, dataD, dataF } = this;
     const { homes, farms, fishing, cleared, logging, lava, lavaHeat, lavaSurface } = frame;
     const { height, temperature, wetness, vegetation, waterSurface, river, precipitation, mask } = frame;
     let peak = -Infinity;
@@ -99,6 +105,9 @@ export class FieldTextures {
       dataD[o + 1] = logging[i] * (1 - cleared[i]);
       dataD[o + 2] = lavaSurface[i];
       dataD[o + 3] = lava[i];
+      dataF[o] = frame.windX[i];
+      dataF[o + 1] = frame.windY[i];
+      dataF[o + 2] = frame.snowBlow[i];
       dataB[o + 3] = Math.min(1, Math.max(0, 0.5 + mask[i]));
     }
     this.peak = peak;
@@ -108,6 +117,7 @@ export class FieldTextures {
     this.b.needsUpdate = true;
     this.c.needsUpdate = true;
     this.d.needsUpdate = true;
+    this.f.needsUpdate = true;
     if (lavaMoved) this.updateLavaHalo(frame);
     if (lavaMoved || ventsMoved) {
       const found = findVents(frame);

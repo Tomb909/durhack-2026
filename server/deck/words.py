@@ -191,7 +191,7 @@ class WordStore:
 
 # --- the model call ------------------------------------------------------------------------
 
-FIELDS = ["height", "temperature", "wetness", "life", "people", "seaLevel"]
+FIELDS = ["height", "temperature", "wetness", "life", "settlement", "seaLevel"]
 SHAPES = ["box", "cylinder", "cone", "pyramid", "prism", "sphere"]
 
 # Flat on purpose: structured outputs cannot carry number ranges, so every range is checked in code.
@@ -272,10 +272,10 @@ A card can do three things. Use any mix, but use only what fits the word.
 1. Push on the world (effects). The world is made from a few fields, and everything you see is derived from \
 them, so pushing a field is how a card changes the land itself. Fields: height (mountains up, canyons down), \
 temperature (hot dries the land into desert, cold brings snow and ice), wetness (rain, lakes, rivers; negative \
-dries), life (forest grows where it is also warm and wet enough; negative kills it), people (villages, farms \
+dries), life (forest grows where it is also warm and wet enough; negative kills it), settlement (villages, farms \
 and fishing boats appear), seaLevel (the sea rises or falls everywhere). For scale, the built-in cards are: \
 MOUNTAIN height +0.5 radius 0.15; WATER wetness +0.5 radius 0.2 and seaLevel +0.017; SUN temperature +0.62 \
-radius 0.24; ICE temperature -0.62 radius 0.24; LIFE life +1.0 radius 0.24; PEOPLE people +1.0 radius 0.13. \
+radius 0.24; ICE temperature -0.62 radius 0.24; LIFE life +1.0 radius 0.24; SETTLEMENT settlement +1.0 radius 0.13. \
 Radius is a share of the world's width (0.05 to 0.3); seaLevel ignores it. At most four effects. Use effects \
 for places, landscapes, weather and climates (a desert, a marsh, a glacier, a hill). Leave effects empty for \
 an object that simply stands in the world: a lighthouse does not raise the land.
@@ -316,7 +316,7 @@ in that language. A misspelt word means the word it was meant to be.
 Do not make things the world already makes for itself unless the word is about them: it has trees, houses, \
 rain, snow and boats of its own, and a TREE card is better as a few large striking trees than as a forest \
 effect, while a FOREST card is better as life plus wetness. Built-in cards already cover MOUNTAIN, WATER, \
-SUN, ICE, LIFE and PEOPLE.
+SUN, ICE, LIFE, SETTLEMENT, WIND, RAVINE, LAVA and VOLCANO.
 
 Also give: reading, one plain sentence on how you understood the word and what the card does, saying \
 where an object stands (for example "A stone keep with four corner towers. Stands on land."); icon, one \

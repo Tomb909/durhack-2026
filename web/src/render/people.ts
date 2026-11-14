@@ -3,16 +3,18 @@
 // the vertex shader from the homes / fishing textures, so nothing runs on the CPU.
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { GLSL_COMMON, type SharedUniforms } from './common';
+import type { LiveCard } from '../cards/store';
+import { sampleField, type WorldFrame } from '../sim/world';
+import { HSCALE, GLSL_COMMON, type SharedUniforms, world } from './common';
 import { SPARE, Sites, together, type Culled, type SiteTest } from './sites';
 
 // How strongly a place must call for a thing before one appears there: `base + spread x the
 // site's own random number`. The shaders and the CPU tests at the bottom of this file share
 // these numbers: change them here and both follow.
-const HOUSE = { base: 0.25, spread: 1.2 }; // at most about 6 in 10 sites built on
-const PERSON = { base: 0.2, spread: 1.0 };
+const HOUSE = { base: 0.3, spread: 1.5 }; // at most about 1 in 2 sites built on, so there are gardens and lanes
+const PERSON = { base: 0.3, spread: 2.6 }; // at most about 1 site in 4: a village, not a crowd
 const BOAT = { base: 0.2, spread: 0.75 };
-const SHEEP = { base: 0.4, spread: 2.4 };
+const SHEEP = { base: 0.4, spread: 6.0 }; // a few small flocks
 /** How much each calling counts for a person: living there, farming, woodcutting, fishing from the bank. */
 const ROLE = { villager: 0.7, farmer: 0.4, logger: 0.55, angler: 0.45 };
 /** Only people whose second random number is at least this fish from the bank. */
@@ -22,8 +24,10 @@ const FARMSTEAD = 0.18;
 /** How far boats and sheep wander from their site, and how far a person looks for water (fractions of the world's width). */
 const WANDER = 0.012;
 const SHORE = 0.018;
-/** Chimneys with the fire lit: those whose fract(random x 13.7) is at most this. */
-const FIRES = 0.5;
+/** How much further the wind pushes a boat: this in still air, and this much more in a full gale. */
+const GUST = { still: 0.008, more: 0.018 };
+/** Chimneys with the fire lit: those whose fract(random x 13.7) is at most this (about two houses in five). */
+const FIRES = 0.4;
 const glsl = (v: number) => v.toFixed(4);
 
 /** Parts share corners: each is worked out once by the GPU, not once per triangle that touches it. */
@@ -56,12 +60,27 @@ function gable(length: number, width: number, height: number): THREE.BufferGeome
     .scale(1, height / (1.5 * r), 1);
 }
 
+/**
+ * A cottage. Parts: 0 = walls (each house gets its own wash of colour), 1 = roof
+ * (terracotta, slate or thatch), 2 = keeps its own colour (stone footing, door,
+ * windows, chimney).
+ */
 function house(): THREE.BufferGeometry {
-  const walls: [number, number, number] = [0.88, 0.82, 0.70];
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+  const glass: [number, number, number] = [0.20, 0.22, 0.27];
+  const window = (x: number, y: number, z: number, side: boolean) => paint(side ? box(0.006, 0.03, 0.032, x, y, z) : box(0.032, 0.03, 0.006, x, y, z), glass, 2);
   return weld([
-    paint(new THREE.BoxGeometry(0.22, 0.13, 0.16).translate(0, 0.065, 0), walls, 0),
-    paint(gable(0.26, 0.21, 0.11).translate(0, 0.13, 0), [1, 1, 1], 1),
-    paint(new THREE.BoxGeometry(0.035, 0.07, 0.035).translate(0.06, 0.2, 0.03), [0.45, 0.40, 0.36], 0), // chimney
+    paint(box(0.232, 0.018, 0.172, 0, 0.009, 0), [0.52, 0.49, 0.45], 2), // stone footing
+    paint(box(0.22, 0.125, 0.16, 0, 0.0625 + 0.006, 0), [1, 1, 1], 0), // walls
+    paint(gable(0.27, 0.215, 0.12).translate(0, 0.13, 0), [1, 1, 1], 1), // roof with eaves
+    paint(box(0.036, 0.062, 0.006, -0.045, 0.031 + 0.012, 0.081), [0.36, 0.24, 0.15], 2), // door
+    window(0.05, 0.08, 0.081, false),
+    window(-0.05, 0.08, -0.081, false),
+    window(0.05, 0.08, -0.081, false),
+    window(0.111, 0.08, 0, true),
+    window(-0.111, 0.08, 0, true),
+    paint(box(0.034, 0.08, 0.034, 0.06, 0.2, 0.03), [0.56, 0.36, 0.28], 2), // brick chimney
+    paint(box(0.044, 0.012, 0.044, 0.06, 0.246, 0.03), [0.32, 0.30, 0.29], 2), // its cap
   ]);
 }
 
@@ -124,6 +143,9 @@ void main() {
   vec4 d0 = fieldD(aSite);
   vec4 a0 = fieldA(aSite);
   vec4 b0 = fieldB(aSite);
+  vec2 wind = fieldF(aSite).rg;
+  float gust = length(wind);
+  vec2 windUv = vec2(wind.x, wind.y * WORLD_W / WORLD_D);
   // Is open water close by (for anglers on the bank)? Which way is it?
   vec2 e = vec2(${glsl(SHORE)}, ${glsl(SHORE)} * WORLD_W / WORLD_D);
   float wE = fieldC(aSite + vec2(e.x, 0.0)).b, wW = fieldC(aSite - vec2(e.x, 0.0)).b;
@@ -154,6 +176,7 @@ void main() {
     offset = vec2(cos(u), sin(u)) * r;
     float moving = smoothstep(0.45, 0.55, fract(t * (0.05 + 0.04 * aRand.z)));
     heading = vec2(-sin(u), cos(u));
+    if (gust > 0.12) heading = normalize(mix(heading, wind, min(0.7, gust)));
     bounce = abs(sin(t * 9.0)) * 0.006 * moving;
     lean = 0.05 * sin(t * 0.7) * (1.0 - moving);
   } else if (role == 1) {
@@ -180,6 +203,7 @@ void main() {
     swing = 0.75 + 0.05 * sin(t * 0.9) + 0.06 * step(0.97, fract(t * 0.05)) * sin(t * 20.0);
   }
 
+  offset += windUv * sin(uTime * 2.8 + aRand.w * 30.0) * 0.012 * gust;
   vec2 site = aSite + offset * vec2(1.0, WORLD_W / WORLD_D); // offsets are in widths of the world
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
@@ -198,6 +222,7 @@ void main() {
   }
   if (sit > 0.5) q.y *= 0.6;
   q = rotZ(q, -lean);
+  q.xz -= wind * q.y * 0.38;
 
   float angle = atan(heading.y, heading.x);
   float co = cos(angle), si = sin(angle);
@@ -238,22 +263,26 @@ void main() {
   float threshold = ${glsl(HOUSE.base)} + ${glsl(HOUSE.spread)} * aRand.x;
   float dry = 1.0 - smoothstep(0.0, 0.0012, b.r - a.r);
   float grow = smoothstep(threshold, threshold + 0.08, density) * dry * step(0.5, b.a);
-  float size = uSize * (0.8 + 0.45 * aRand.y) * grow;
+  float size = uSize * (0.85 + 0.3 * aRand.y) * grow;
 
-  // Houses line up roughly with the field pattern, some turned side-on.
+  // Houses line up roughly with the field pattern, some turned side-on; some are long cottages.
   float angle = -0.35 + (aRand.z < 0.5 ? 0.0 : 1.5708) + (aRand.w - 0.5) * 0.25;
   float co = cos(angle), si = sin(angle);
-  vec3 p = vec3(co * position.x - si * position.z, position.y, si * position.x + co * position.z) * size;
+  vec3 q = position * vec3(0.9 + 0.35 * fract(aRand.z * 7.31), 1.0, 1.0);
+  vec3 p = vec3(co * q.x - si * q.z, q.y, si * q.x + co * q.z) * size;
 
   vec2 xz = tableXz(aSite);
   vec3 world = vec3(xz.x, a.r * HSCALE - 0.01, xz.y) + p;
   // Roofs: terracotta, slate or thatch.
   vec3 roof = aRand.w < 0.45 ? vec3(0.66, 0.27, 0.17) : aRand.w < 0.75 ? vec3(0.36, 0.38, 0.44) : vec3(0.62, 0.50, 0.28);
-  vColor = mix(color, roof, aPart) * (0.88 + 0.24 * aRand.y);
+  // Walls: whitewash, ochre, pale stone or rose.
+  float w = fract(aRand.x * 11.7);
+  vec3 wash = w < 0.4 ? vec3(0.93, 0.90, 0.84) : w < 0.65 ? vec3(0.89, 0.77, 0.56) : w < 0.85 ? vec3(0.78, 0.76, 0.72) : vec3(0.88, 0.72, 0.64);
+  vColor = (aPart < 0.5 ? wash : aPart < 1.5 ? roof : color) * (0.9 + 0.2 * aRand.y);
   vWorld = world;
   vTemperature = a.g;
   vRain = b.b;
-  vRoof = aPart;
+  vRoof = step(0.5, aPart) * step(aPart, 1.5);
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }
 `;
@@ -275,7 +304,10 @@ void main() {
   float u = uTime * (0.03 + 0.03 * aRand.z) + aRand.w * 9.0;
   float t = (floor(u) + smoothstep(0.5, 1.0, fract(u))) * 1.4 + aRand.w * 6.2832;
   vec2 drift = vec2(cos(t), sin(t)) * ${glsl(WANDER)};
-  vec2 site = aSite + drift;
+  vec2 wind = fieldF(aSite).rg;
+  float gust = length(wind);
+  vec2 windUv = vec2(wind.x, wind.y * WORLD_W / WORLD_D);
+  vec2 site = aSite + drift + windUv * (${glsl(GUST.still)} + ${glsl(GUST.more)} * gust) * sin(uTime * 0.35 + aRand.w * 12.0);
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
   vec4 c = fieldC(site);
@@ -285,7 +317,7 @@ void main() {
   float size = uSize * (0.8 + 0.4 * aRand.y) * grow;
 
   // Bow points along the direction of travel; a gentle rock on the swell.
-  float angle = -t - 1.5708;
+  float angle = gust > 0.12 ? atan(wind.y, wind.x) : -t - 1.5708;
   float co = cos(angle), si = sin(angle);
   vec3 q = position;
   float roll = 0.12 * sin(uTime * 1.9 + aRand.w * 20.0);
@@ -326,9 +358,194 @@ void main() {
 }
 `;
 
-/** Three puffs of chimney smoke per house (part = which puff). Same sites as the houses. */
+const merchantVertex = /* glsl */ `
+${GLSL_COMMON}
+attribute vec3 color;
+varying vec3 vColor;
+varying vec3 vWorld;
+varying float vTemperature;
+varying float vRain;
+varying float vRoof;
+void main() {
+  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+  vec2 site = tableUv(worldPosition.xz);
+  vec4 a = fieldA(site);
+  vec4 b = fieldB(site);
+  vColor = color;
+  vWorld = worldPosition.xyz;
+  vTemperature = a.g;
+  vRain = b.b;
+  vRoof = 0.0;
+  gl_Position = projectionMatrix * viewMatrix * worldPosition;
+}
+`;
+
+function merchantBody(): THREE.BufferGeometry {
+  const horse: [number, number, number] = [0.43, 0.25, 0.13];
+  const harness: [number, number, number] = [0.22, 0.16, 0.10];
+  const wood: [number, number, number] = [0.40, 0.23, 0.11];
+  const clothes: [number, number, number] = [0.27, 0.36, 0.58];
+  return mergeGeometries([
+    paint(new THREE.SphereGeometry(1, 8, 6).scale(0.075, 0.04, 0.035).translate(0.075, 0.12, 0), horse, 0),
+    paint(new THREE.BoxGeometry(0.045, 0.095, 0.036).rotateZ(-0.45).translate(0.13, 0.16, 0), horse, 0),
+    paint(new THREE.SphereGeometry(1, 7, 5).scale(0.031, 0.023, 0.025).translate(0.166, 0.207, 0), horse, 0),
+    paint(new THREE.ConeGeometry(0.009, 0.025, 5).translate(0.15, 0.235, -0.012), horse, 0),
+    paint(new THREE.ConeGeometry(0.009, 0.025, 5).translate(0.15, 0.235, 0.012), horse, 0),
+    ...[0.035, 0.115].flatMap((x) =>
+      [-0.022, 0.022].map((z) =>
+        paint(new THREE.CylinderGeometry(0.006, 0.008, 0.07, 5).translate(x, 0.04, z), horse, 0),
+      ),
+    ),
+    paint(new THREE.BoxGeometry(0.14, 0.065, 0.11).translate(-0.09, 0.12, 0), wood, 0),
+    paint(new THREE.BoxGeometry(0.16, 0.012, 0.125).translate(-0.09, 0.158, 0), wood, 0),
+    ...[-1, 1].map((side) =>
+      paint(new THREE.BoxGeometry(0.12, 0.006, 0.008).translate(-0.015, 0.09, side * 0.04), harness, 0),
+    ),
+    paint(new THREE.BoxGeometry(0.025, 0.045, 0.025).translate(-0.09, 0.195, 0), clothes, 0),
+    paint(new THREE.SphereGeometry(0.014, 6, 5).translate(-0.09, 0.226, 0), [0.72, 0.52, 0.35], 0),
+  ]);
+}
+
+function merchantWheel(): THREE.BufferGeometry {
+  const spokes = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4].map((angle) =>
+    paint(new THREE.BoxGeometry(0.064, 0.004, 0.008).rotateZ(angle), [0.24, 0.15, 0.08], 0),
+  );
+  return mergeGeometries([
+    paint(new THREE.TorusGeometry(0.034, 0.006, 4, 10), [0.24, 0.15, 0.08], 0),
+    ...spokes,
+  ]);
+}
+
+const MERCHANT_SPEED = 0.32;
+
+export interface TradeRoute {
+  key: string;
+  from: LiveCard;
+  to: LiveCard;
+}
+
+/** Connect every settlement to the nearest already-connected settlement. */
+export function tradeRoutes(cards: readonly LiveCard[]): TradeRoute[] {
+  const settlements = cards.filter((card) => card.def.id === 'settlement' && card.strength > 0.15);
+  if (settlements.length < 2) return [];
+
+  const connected = new Set([0]);
+  const routes: TradeRoute[] = [];
+  while (connected.size < settlements.length) {
+    let best: { from: number; to: number; distance: number } | undefined;
+    for (const from of connected) {
+      for (let to = 0; to < settlements.length; to++) {
+        if (connected.has(to)) continue;
+        const dx = settlements[to].x - settlements[from].x;
+        const dy = (settlements[to].y - settlements[from].y) / world.aspect;
+        const distance = Math.hypot(dx, dy);
+        if (distance < 0.001) continue;
+        if (!best || distance < best.distance) best = { from, to, distance };
+      }
+    }
+    if (!best) break;
+    const from = settlements[best.from];
+    const to = settlements[best.to];
+    const key = [from.key, to.key].sort().join(':');
+    routes.push({ key, from, to });
+    connected.add(best.to);
+  }
+  return routes;
+}
+
+interface Convoy {
+  group: THREE.Group;
+  wheels: THREE.Group[];
+}
+
+function makeConvoy(body: THREE.BufferGeometry, wheel: THREE.BufferGeometry, material: THREE.ShaderMaterial): Convoy {
+  const group = new THREE.Group();
+  const bodyMesh = new THREE.Mesh(body, material);
+  bodyMesh.frustumCulled = false;
+  group.add(bodyMesh);
+  const wheels = [-1, 1].map((side) => {
+    const axle = new THREE.Group();
+    axle.position.set(-0.09, 0.045, side * 0.069);
+    const mesh = new THREE.Mesh(wheel, material);
+    mesh.frustumCulled = false;
+    axle.add(mesh);
+    group.add(axle);
+    return axle;
+  });
+  return { group, wheels };
+}
+
+/** Tiny horse-drawn carts linking the active SETTLEMENT cards. */
+export class Merchants {
+  readonly group = new THREE.Group();
+  private body = merchantBody();
+  private wheel = merchantWheel();
+  private material: THREE.ShaderMaterial;
+  private convoys = new Map<string, Convoy>();
+
+  constructor(shared: SharedUniforms) {
+    this.material = new THREE.ShaderMaterial({
+      uniforms: { ...shared },
+      vertexShader: merchantVertex,
+      fragmentShader: fragment,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  update(cards: LiveCard[], frame: WorldFrame, time: number): void {
+    const routes = tradeRoutes(cards);
+    const seen = new Set<string>();
+    for (const route of routes) {
+      seen.add(route.key);
+      let convoy = this.convoys.get(route.key);
+      if (!convoy) {
+        convoy = makeConvoy(this.body, this.wheel, this.material);
+        this.convoys.set(route.key, convoy);
+        this.group.add(convoy.group);
+      }
+
+      const dx = (route.to.x - route.from.x) * world.w;
+      const dz = (route.to.y - route.from.y) * world.d;
+      const distance = Math.hypot(dx, dz);
+      let hash = 0;
+      for (const char of route.key) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) | 0;
+      const offset = ((hash >>> 0) % 1000) / 1000 * 2;
+      const midX = (route.from.x + route.to.x) * 0.5;
+      const midY = (route.from.y + route.to.y) * 0.5;
+      const tailwind =
+        (sampleField(frame.windX, frame.w, frame.h, midX, midY) * dx +
+          sampleField(frame.windY, frame.w, frame.h, midX, midY) * dz) /
+        distance;
+      const speed = MERCHANT_SPEED * (1 + 0.7 * tailwind);
+      const phase = ((time * speed) / distance + offset) % 2;
+      const forward = phase <= 1;
+      const progress = forward ? phase : 2 - phase;
+      const x = route.from.x + (route.to.x - route.from.x) * progress;
+      const y = route.from.y + (route.to.y - route.from.y) * progress;
+      const ground = Math.max(
+        sampleField(frame.height, frame.w, frame.h, x, y),
+        sampleField(frame.waterSurface, frame.w, frame.h, x, y),
+      ) * HSCALE;
+
+      convoy.group.position.set((x - 0.5) * world.w, ground + Math.abs(Math.sin(time * 8 + offset)) * 0.003, (y - 0.5) * world.d);
+      convoy.group.rotation.y = Math.atan2(forward ? -dz : dz, forward ? dx : -dx);
+      convoy.group.rotation.z = Math.sin(time * 8 + offset) * 0.012;
+      const wheelTurn = (time * speed * (forward ? 1 : -1)) / 0.034;
+      for (const axle of convoy.wheels) axle.rotation.z = wheelTurn + offset;
+    }
+
+    for (const [key, convoy] of this.convoys) {
+      if (seen.has(key)) continue;
+      this.group.remove(convoy.group);
+      this.convoys.delete(key);
+    }
+  }
+}
+
+/** Five wisps of chimney smoke per house (part = which wisp). Same sites as the houses. */
+const WISPS = 5;
 function smoke(): THREE.BufferGeometry {
-  return weld([0, 1, 2].map((k) => paint(new THREE.IcosahedronGeometry(0.03, 1), [1, 1, 1], k)));
+  return weld(Array.from({ length: WISPS }, (_, k) => paint(new THREE.IcosahedronGeometry(1, 1), [1, 1, 1], k)));
 }
 
 const smokeVertex = /* glsl */ `
@@ -338,7 +555,9 @@ attribute vec4 aRand;
 attribute float aPart;
 uniform float uSize;
 varying float vAlpha;
+varying float vLife;
 varying vec3 vWorld;
+varying vec3 vNormal;
 void main() {
   // The same house as houseVertex at this site (keep the two in step).
   vec4 a = fieldA(aSite);
@@ -348,19 +567,26 @@ void main() {
   float threshold = ${glsl(HOUSE.base)} + ${glsl(HOUSE.spread)} * aRand.x;
   float dry = 1.0 - smoothstep(0.0, 0.0012, b.r - a.r);
   float grow = smoothstep(threshold, threshold + 0.08, density) * dry * step(0.5, b.a);
-  float size = uSize * (0.8 + 0.45 * aRand.y) * grow;
+  float size = uSize * (0.85 + 0.3 * aRand.y) * grow;
   float angle = -0.35 + (aRand.z < 0.5 ? 0.0 : 1.5708) + (aRand.w - 0.5) * 0.25;
   float co = cos(angle), si = sin(angle);
-  vec3 chimney = vec3(0.06, 0.24, 0.03);
+  vec3 chimney = vec3(0.06 * (0.9 + 0.35 * fract(aRand.z * 7.31)), 0.255, 0.03);
   chimney = vec3(co * chimney.x - si * chimney.z, chimney.y, si * chimney.x + co * chimney.z) * size;
-  // About half the houses have the fire lit. Puffs rise, swell and fade, drifting downwind.
+  // About two houses in five have the fire lit. Wisps leave the chimney thin and dark, then
+  // rise, swell, pale and bend with the wind, curling a little as they go.
   float lit = step(fract(aRand.y * 13.7), ${glsl(FIRES)}) * step(0.01, size);
-  float life = fract(uTime * 0.09 + aPart / 3.0 + aRand.y * 5.0);
-  vec3 rise = vec3(0.10 * life + 0.02 * sin(uTime * 0.8 + aRand.x * 9.0 + life * 4.0), 0.32 * life, 0.04 * life);
-  float puff = (0.45 + 1.6 * life) * lit;
+  float life = fract(uTime * 0.07 + aPart / ${WISPS}.0 + aRand.y * 5.0);
+  float curl = sin(uTime * 0.6 + aRand.x * 9.0 + life * 5.0);
+  vec2 wind = fieldF(aSite).rg;
+  vec3 rise = vec3(0.025 * curl * life, 0.42 * life, 0.02 * cos(uTime * 0.5 + aRand.z * 7.0) * life);
+  // A gentle drift even in still air; the wind bends it further the higher it rises.
+  rise.xz += vec2(0.06, 0.02) * life + wind * (0.12 * life + 0.3 * life * life);
+  float puff = (0.006 + 0.05 * life) * lit;
   vec2 xz = tableXz(aSite);
   vec3 world = vec3(xz.x, a.r * HSCALE - 0.01, xz.y) + chimney + rise * uSize + position * puff * uSize;
-  vAlpha = smoothstep(0.0, 0.12, life) * (1.0 - life) * 0.55 * lit;
+  vAlpha = smoothstep(0.0, 0.08, life) * pow(1.0 - life, 1.5) * 0.42 * lit;
+  vLife = life;
+  vNormal = position;
   vWorld = world;
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }
@@ -369,11 +595,17 @@ void main() {
 const smokeFragment = /* glsl */ `
 ${GLSL_COMMON}
 varying float vAlpha;
+varying float vLife;
 varying vec3 vWorld;
+varying vec3 vNormal;
 void main() {
-  vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
-  float light = 0.8 + 0.25 * max(dot(n, uSunDir), 0.0);
-  gl_FragColor = vec4(vec3(0.86, 0.87, 0.9) * light, vAlpha);
+  vec3 n = normalize(vNormal);
+  // Feathered edges: a wisp is thick in the middle and fades to nothing at its rim.
+  float facing = abs(dot(n, normalize(cameraPosition - vWorld)));
+  float soft = smoothstep(0.05, 0.85, facing);
+  float light = 0.78 + 0.3 * max(dot(n, uSunDir), 0.0);
+  vec3 col = mix(vec3(0.42, 0.41, 0.42), vec3(0.88, 0.89, 0.92), smoothstep(0.0, 0.45, vLife));
+  gl_FragColor = vec4(col * light, vAlpha * soft);
 }
 `;
 
@@ -432,7 +664,7 @@ void main() {
 
 function makeSites(
   shared: SharedUniforms, base: THREE.BufferGeometry, vertex: string, columns: number, rows: number, seed: number, size: number,
-  test: SiteTest, frag = fragment, transparent = false,
+  test: SiteTest, frag = fragment, transparent = false, jitter = 0.9,
 ): Sites {
   const count = columns * rows;
   const sites = new Float32Array(count * 2);
@@ -445,8 +677,8 @@ function makeSites(
   for (let j = 0; j < rows; j++) {
     for (let i = 0; i < columns; i++) {
       const k = j * columns + i;
-      sites[k * 2] = Math.min(0.99, Math.max(0.01, (i + 0.05 + 0.9 * random()) / columns));
-      sites[k * 2 + 1] = Math.min(0.99, Math.max(0.01, (j + 0.05 + 0.9 * random()) / rows));
+      sites[k * 2] = Math.min(0.99, Math.max(0.01, (i + 0.5 + jitter * (random() - 0.5)) / columns));
+      sites[k * 2 + 1] = Math.min(0.99, Math.max(0.01, (j + 0.5 + jitter * (random() - 0.5)) / rows));
       rand.set([random(), random(), random(), random()], k * 4);
     }
   }
@@ -487,7 +719,7 @@ const fireLit: SiteTest = (world, x, y, r, at) => {
 
 const sheepGrazes: SiteTest = (world, x, y, r, at) => world.most('farms', x, y, WANDER) > SHEEP.base + SHEEP.spread * r[at] - SPARE;
 
-const boatSails: SiteTest = (world, x, y, r, at) => world.most('fishing', x, y, WANDER) > BOAT.base + BOAT.spread * r[at] - SPARE;
+const boatSails: SiteTest = (world, x, y, r, at) => world.most('fishing', x, y, WANDER + GUST.still + GUST.more) > BOAT.base + BOAT.spread * r[at] - SPARE;
 
 const personWorks: SiteTest = (world, x, y, r, at) => {
   const needs = PERSON.base + PERSON.spread * r[at] - SPARE;
@@ -502,11 +734,12 @@ const personWorks: SiteTest = (world, x, y, r, at) => {
 export function makePeople(shared: SharedUniforms): THREE.Object3D & Culled {
   const kinds = [
     // Houses and their chimney smoke share sites (same grid and seed), so the smoke finds its chimney.
-    makeSites(shared, house(), houseVertex, 62, 44, 71, 0.75, houseStands),
-    makeSites(shared, smoke(), smokeVertex, 62, 44, 71, 0.75, fireLit, smokeFragment, true),
+    // A coarse grid with little jitter: each house has its own plot, so they never pile into each other.
+    makeSites(shared, house(), houseVertex, 44, 31, 71, 0.72, houseStands, fragment, false, 0.45),
+    makeSites(shared, smoke(), smokeVertex, 44, 31, 71, 0.72, fireLit, smokeFragment, true, 0.45),
     makeSites(shared, sheep(), sheepVertex, 70, 50, 113, 1.1, sheepGrazes),
     makeSites(shared, boat(), boatVertex, 40, 28, 83, 0.62, boatSails),
-    makeSites(shared, person(), personVertex, 90, 64, 97, 1.25, personWorks),
+    makeSites(shared, person(), personVertex, 64, 45, 97, 1.25, personWorks),
   ];
   const group = new THREE.Group();
   for (const kind of kinds) group.add(kind.mesh);
