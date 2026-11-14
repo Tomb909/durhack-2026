@@ -63,6 +63,45 @@ describe('mountain', () => {
   });
 });
 
+describe('BIG modifier', () => {
+  it('makes a modified mountain taller as well as wider', () => {
+    const empty = settle([]);
+    const mountain = settle([card('mountain', 0.5, 0.5)]);
+    const bigMountain = settle([card('big', 0.65, 0.5), card('mountain', 0.5, 0.5)]);
+    const lift = (frame: WorldFrame) => at(frame, frame.height, 0.5, 0.5) - at(empty, empty.height, 0.5, 0.5);
+    expect(lift(bigMountain)).toBeGreaterThan(lift(mountain) * 1.35);
+  });
+
+  it('widens the local influence radius of the nearest card to either side', () => {
+    const empty = settle([]);
+    const mountain = settle([card('mountain', 0.5, 0.5)]);
+    const bigMountain = settle([card('big', 0.65, 0.5), card('mountain', 0.5, 0.5)]);
+    const distantLift = (frame: WorldFrame) => at(frame, frame.height, 0.74, 0.5) - at(empty, empty.height, 0.74, 0.5);
+    expect(distantLift(bigMountain)).toBeGreaterThan(distantLift(mountain) * 1.5);
+  });
+
+  it('attaches by 2D proximity and ignores cards outside the larger range', () => {
+    const mountain = settle([card('mountain', 0.5, 0.5)]);
+    const bigBelow = settle([card('mountain', 0.5, 0.5), card('big', 0.5, 0.85)]);
+    const bigTooFar = settle([card('big', 0.81, 0.5), card('mountain', 0.5, 0.5)]);
+    const nearbyLift = (frame: WorldFrame) => at(frame, frame.height, 0.5, 0.7);
+    expect(nearbyLift(bigBelow)).toBeGreaterThan(nearbyLift(mountain));
+    expect(bigTooFar.height).toEqual(mountain.height);
+  });
+
+  it('stacks nearby BIG modifiers and leaves global effects alone', () => {
+    const empty = settle([]);
+    const oneBig = settle([card('big', 0.4, 0.5), card('mountain', 0.5, 0.5)]);
+    const twoBig = settle([card('big', 0.36, 0.5), card('big', 0.44, 0.5), card('mountain', 0.5, 0.5)]);
+    const water = settle([card('water', 0.5, 0.5)]);
+    const bigWater = settle([card('big', 0.4, 0.5), card('water', 0.5, 0.5)]);
+    const distantLift = (frame: WorldFrame) => at(frame, frame.height, 0.74, 0.5) - at(empty, empty.height, 0.74, 0.5);
+    expect(distantLift(twoBig)).toBeGreaterThan(distantLift(oneBig));
+    expect(at(bigWater, bigWater.wetness, 0.75, 0.5)).toBeGreaterThan(at(water, water.wetness, 0.75, 0.5) + 0.08);
+    expect(bigWater.seaLevel).toBe(water.seaLevel);
+  });
+});
+
 describe('water', () => {
   it('rains near the card and forms rivers or lakes', () => {
     const f = settle([card('water', 0.35, 0.35)]);
@@ -181,5 +220,63 @@ describe('shape', () => {
     expect(atRim + intoSea).toBeGreaterThan(0);
     // Outside the circle the land stays dry.
     expect(fractionWhere(f, (i) => f.mask[i] < -0.5 && f.waterSurface[i] > f.height[i])).toBe(0);
+  });
+});
+
+describe('people', () => {
+  const total = (a: Float32Array, t = 0.3) => a.filter((v) => v > t).length / a.length;
+
+  it('build houses where they are placed, on dry liveable land', () => {
+    const f = settle([card('people', 0.4, 0.5)]);
+    expect(at(f, f.homes, 0.4, 0.5)).toBeGreaterThan(0.5);
+    expect(at(f, f.homes, 0.9, 0.2)).toBe(0);
+    expect(total(f.homes)).toBeLessThan(0.12);
+  });
+
+  it('farm flat land only when it is wet enough', () => {
+    expect(total(settle([card('people', 0.4, 0.5)]).farms)).toBe(0);
+    const f = settle([card('people', 0.4, 0.5), card('water', 0.45, 0.5)]);
+    expect(total(f.farms)).toBeGreaterThan(0.05);
+  });
+
+  it('fish where there is open water nearby', () => {
+    const lake = [card('water', 0.3, 0.5), card('water', 0.5, 0.5), card('water', 0.6, 0.6)];
+    expect(total(settle(lake).fishing, 0.2)).toBe(0);
+    expect(total(settle([...lake, card('people', 0.4, 0.5)]).fishing, 0.2)).toBeGreaterThan(0.01);
+  });
+
+  it('do not live on mountain peaks or in frozen land', () => {
+    expect(Math.max(...settle([card('people', 0.4, 0.5), card('mountain', 0.4, 0.5)]).homes)).toBeLessThan(0.3);
+    expect(Math.max(...settle([card('people', 0.4, 0.5), card('ice', 0.4, 0.5), card('ice', 0.42, 0.5)]).homes)).toBeLessThan(0.3);
+  });
+
+  it('clear the forest for their fields', () => {
+    const wild = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5)]);
+    const farmed = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('people', 0.4, 0.5)]);
+    expect(total(farmed.vegetation)).toBeLessThan(total(wild.vegetation) * 0.6);
+  });
+});
+
+describe('woodcutters', () => {
+  const forest = () => [card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('people', 0.55, 0.5)];
+  const felled = (f: WorldFrame) => f.cleared.reduce((s, v) => s + v, 0);
+
+  it('fell the forest near people over time, never in an instant settle', () => {
+    const sim = new WorldSim();
+    sim.settleNow(forest());
+    expect(felled(sim.frame)).toBe(0);
+    for (let i = 0; i < 60 * 40; i++) sim.step(forest(), false, 1 / 60);
+    expect(felled(sim.frame)).toBeGreaterThan(5);
+    expect(fractionWhere(sim.frame, (i) => sim.frame.cleared[i] > 0 && sim.frame.logging[i] === 0)).toBe(0);
+  });
+
+  it('leave the land cleared after the people have gone', () => {
+    const sim = new WorldSim();
+    for (let i = 0; i < 60 * 20; i++) sim.step(forest(), i === 0, 1 / 60);
+    const before = felled(sim.frame);
+    const wild = forest().slice(0, 2);
+    sim.step(wild, true, 1 / 60);
+    for (let i = 0; i < 60 * 5; i++) sim.step(wild, false, 1 / 60);
+    expect(felled(sim.frame)).toBeCloseTo(before, 3);
   });
 });

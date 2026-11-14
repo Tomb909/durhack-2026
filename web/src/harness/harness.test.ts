@@ -63,7 +63,8 @@ describe('the Combinations view filter', () => {
   });
 });
 
-describe('the settled world depends on the cards alone', () => {
+// These run every combination of cards (2^cards), so they get slower with each new card.
+describe('the settled world depends on the cards alone', { timeout: 30_000 }, () => {
   const all = resolveScenarios({ set: 'all' });
   it('gives the same world whatever came before it', () => {
     const fresh = all.map((s) => measure(new WorldSim().settleNow(liveCards(s.cards))).hash);

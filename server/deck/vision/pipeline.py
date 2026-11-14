@@ -137,7 +137,7 @@ class Vision:
                 status["outline"] = [[round(float(x) / w, 4), round(float(y) / h, 4)] for x, y in contour]
             if self.to_image is None:
                 return status
-            tracks = self.tracker.tracks
+            tracks = self.tracker.display_tracks()
             if tracks:
                 points = np.array([[[t.x, t.y]] for t in tracks], dtype=np.float32)
                 image_points = cv2.perspectiveTransform(points, self.to_image).reshape(-1, 2)

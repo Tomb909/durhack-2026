@@ -214,6 +214,37 @@ class Tracker:
         patch = occluder[y0:y1, x0:x1]
         return float(np.count_nonzero(patch)) / patch.size > 0.12
 
+    @staticmethod
+    def _bounds(track: Track) -> tuple[float, float, float, float]:
+        theta = np.deg2rad(track.angle)
+        half_long, half_short = track.long / 2, track.short / 2
+        half_x = abs(float(np.cos(theta))) * half_long + abs(float(np.sin(theta))) * half_short
+        half_y = abs(float(np.sin(theta))) * half_long + abs(float(np.cos(theta))) * half_short
+        return track.x - half_x, track.y - half_y, track.x + half_x, track.y + half_y
+
+    @classmethod
+    def _is_fragment_of_known(cls, candidate: Track, known_cards: list[Track]) -> bool:
+        x0, y0, x1, y1 = cls._bounds(candidate)
+        area = (x1 - x0) * (y1 - y0)
+        if area <= 0:
+            return False
+        for known in known_cards:
+            kx0, ky0, kx1, ky1 = cls._bounds(known)
+            known_area = (kx1 - kx0) * (ky1 - ky0)
+            if area >= known_area * 0.55:
+                continue
+            overlap = max(0.0, min(x1, kx1) - max(x0, kx0)) * max(0.0, min(y1, ky1) - max(y0, ky0))
+            if overlap / area >= 0.75:
+                return True
+        return False
+
+    def display_tracks(self) -> list[Track]:
+        known_cards = [track for track in self.tracks if track.card is not None]
+        return [
+            track for track in self.tracks
+            if track.card is not None or not self._is_fragment_of_known(track, known_cards)
+        ]
+
     # --- output -------------------------------------------------------------
 
     def resize(self, size: tuple[int, int]) -> None:
@@ -239,6 +270,6 @@ class Tracker:
         return [
             {"id": t.id, "x": round(t.x / w, 4), "y": round(t.y / h, 4), "text": t.text,
              "confidence": round(t.confidence, 3), "reads": t.reads}
-            for t in self.tracks
+            for t in self.display_tracks()
             if t.card is None
         ]

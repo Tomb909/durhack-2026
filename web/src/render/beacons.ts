@@ -6,6 +6,7 @@
 // card that sit close together share one label ("WATER ×3"), and labels that
 // would collide on screen are stacked instead.
 import * as THREE from 'three';
+import { modifierTargets } from '../cards/modifiers';
 import type { LiveCard } from '../cards/store';
 import { sampleField, type WorldFrame } from '../sim/world';
 import { HSCALE, world } from './common';
@@ -13,6 +14,10 @@ import { HSCALE, world } from './common';
 const LABEL_HEIGHT = 3.5; // scene units above the base of the world
 const GROUP_RADIUS = 0.14; // copies closer than this (fraction of the world's width) share a label
 const LABEL_GAP = 5; // pixels kept clear between stacked labels
+
+function titleCase(word: string): string {
+  return word.charAt(0) + word.slice(1).toLowerCase();
+}
 
 interface Mark {
   beam: THREE.Mesh;
@@ -59,7 +64,10 @@ export class Beacons {
 
   /** Call every frame after the camera has been placed. */
   update(cards: LiveCard[], frame: WorldFrame, time: number, camera: THREE.Camera, width: number, height: number): void {
-    // --- pillars and rings, one per card
+    const modifiersByTarget = modifierTargets(cards);
+    const attachedModifiers = new Set([...modifiersByTarget.values()].flat());
+
+    // --- pillars and rings, one per physical card
     const ground = new Map<LiveCard, number>();
     const seen = new Set<string>();
     for (const card of cards) {
@@ -79,7 +87,7 @@ export class Beacons {
       const pulse = 1 + 0.12 * Math.sin(time * 2.2 + card.y * 7);
       mark.ring.position.set(x, g + 0.03, z);
       mark.ring.scale.set(pulse, 1, pulse);
-      const held = card.visible ? 1 : 0.45; // dimmer while the camera cannot see the scrap
+      const held = card.visible ? 1 : 0.45;
       (mark.beam.material as THREE.MeshBasicMaterial).opacity = 0.3 * card.strength * held;
       (mark.ring.material as THREE.MeshBasicMaterial).opacity = 0.55 * card.strength * held;
     }
@@ -92,15 +100,16 @@ export class Beacons {
       }
     }
 
-    // --- group nearby copies of the same card
+    // --- group nearby copies of the same card; attached modifiers share the target label
     const groups: LiveCard[][] = [];
     for (const card of cards) {
+      if (attachedModifiers.has(card)) continue;
       let home: LiveCard[] | undefined;
       for (const group of groups) {
         if (group[0].def !== card.def) continue;
         if (group.some((other) => Math.hypot(other.x - card.x, (other.y - card.y) / world.aspect) < GROUP_RADIUS)) {
           if (home) {
-            home.push(...group); // this card links two groups: merge them
+            home.push(...group);
             group.length = 0;
           } else {
             home = group;
@@ -139,7 +148,10 @@ export class Beacons {
       y /= weight;
       const count = group.filter((c) => c.present).length || group.length;
       const def = group[0].def;
-      const text = count > 1 ? `${def.word} ×${count}` : def.word;
+      const modifiers = group.flatMap((card) => modifiersByTarget.get(card) ?? []);
+      const text = modifiers.length
+        ? `${modifiers.map((modifier) => titleCase(modifier.def.word)).join(' ')} ${titleCase(def.word)}${count > 1 ? ` ×${count}` : ''}`
+        : count > 1 ? `${def.word} ×${count}` : def.word;
 
       let label = this.labels.get(key);
       if (!label) {

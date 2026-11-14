@@ -6,8 +6,6 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { HorizontalTiltShiftShader } from 'three/addons/shaders/HorizontalTiltShiftShader.js';
-import { VerticalTiltShiftShader } from 'three/addons/shaders/VerticalTiltShiftShader.js';
 import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
 import type { LiveCard } from '../cards/store';
 import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
@@ -20,6 +18,7 @@ import { CALM, worldMood, type Mood } from './mood';
 import { makePalettes } from './palette';
 import { makeSlabSides } from './slab';
 import { makeTerrain } from './terrain';
+import { makePeople } from './people';
 import { makeTrees } from './trees';
 import { makeWater } from './water';
 import { makeWeather } from './weather';
@@ -28,7 +27,6 @@ const FOV = 30;
 const SWAY = THREE.MathUtils.degToRad(22); // never a full spin: left stays left
 const SWAY_PERIOD = 52;
 const TARGET = new THREE.Vector3(0, 0.55, 0.25);
-const TILT_SHIFT = 1.7; // blur strength away from the focus line
 
 export class WorldRenderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -37,8 +35,6 @@ export class WorldRenderer {
   private camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 400);
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
-  private tiltH: ShaderPass;
-  private tiltV: ShaderPass;
   private shared: SharedUniforms;
   private fields!: FieldTextures;
   private palettes = makePalettes();
@@ -78,6 +74,7 @@ export class WorldRenderer {
     this.scene.add(makeBackdrop(this.shared));
     this.setShape(DEFAULT_SHAPE);
     this.scene.add(makeTrees(this.shared));
+    this.scene.add(makePeople(this.shared));
     this.scene.add(makeWeather(this.shared));
     this.scene.add(this.beacons.group);
 
@@ -86,10 +83,6 @@ export class WorldRenderer {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.22, 0.55, 1.6);
     this.composer.addPass(this.bloom);
-    this.tiltH = new ShaderPass(HorizontalTiltShiftShader);
-    this.tiltV = new ShaderPass(VerticalTiltShiftShader);
-    this.composer.addPass(this.tiltH);
-    this.composer.addPass(this.tiltV);
     const vignette = new ShaderPass(VignetteShader);
     vignette.uniforms.offset.value = 1.05;
     vignette.uniforms.darkness.value = 1.0;
@@ -119,6 +112,8 @@ export class WorldRenderer {
     this.fields = new FieldTextures(gw, gh, this.renderer.extensions.has('OES_texture_float_linear'));
     this.shared.uFieldA.value = this.fields.a;
     this.shared.uFieldB.value = this.fields.b;
+    this.shared.uFieldC.value = this.fields.c;
+    this.shared.uFieldD.value = this.fields.d;
     setSharedWorld(this.shared, gw, gh);
     this.shaped = [makeTerrain(this.shared, this.palettes, gw, gh), makeSlabSides(this.shared, shape.outline, gw), makeWater(this.shared, gw, gh)];
     for (const object of this.shaped) this.scene.add(object);
@@ -145,10 +140,6 @@ export class WorldRenderer {
     this.composer.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    this.tiltH.uniforms.h.value = TILT_SHIFT / width;
-    this.tiltV.uniforms.v.value = TILT_SHIFT / height;
-    this.tiltH.uniforms.r.value = 0.47;
-    this.tiltV.uniforms.r.value = 0.47;
   }
 
   private placeCamera(): void {
@@ -241,4 +232,3 @@ export class WorldRenderer {
     this.composer.render(dt);
   }
 }
-
