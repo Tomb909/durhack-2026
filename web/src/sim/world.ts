@@ -127,6 +127,25 @@ export const RULES = {
   plantWetGood: 0.5,
   plantColdLimit: -0.45,
   plantColdGood: -0.2,
+  /** People: where they will settle, farm and fish. */
+  people: {
+    homeStart: 0.45, // how strongly People must reach before houses appear
+    homeFull: 1.0,
+    farmStart: 0.12, // fields spread a bit further out than the houses
+    farmFull: 0.5,
+    fishStart: 0.1,
+    fishFull: 0.45,
+    /** Woodcutters work forest within this reach of people, felling a cell in about this many seconds. */
+    logStart: 0.1,
+    logFull: 0.4,
+    fellSeconds: 480,
+    steep: 0.012, // height change per cell above which nobody builds
+    tooSteep: 0.026,
+    highland: 0.2, // and nobody lives up on the peaks
+    peaks: 0.3,
+    flat: 0.004, // farmland wants it flatter still
+    hilly: 0.011,
+  },
   settleSeconds: 0.35, // how fast rivers and lakes ease to their new shape
   /** Land beside water is damper, which can move the water again. Look this many times at most. */
   settlePasses: 12,
@@ -156,6 +175,19 @@ export interface WorldFrame {
   river: Float32Array;
   /** 0..1 rain or snow falling here. */
   precipitation: Float32Array;
+  /** 0..1 how many houses. */
+  homes: Float32Array;
+  /** 0..1 farmland (flat, fertile land near people). */
+  farms: Float32Array;
+  /** 0..1 fishing boats (open water near people). */
+  fishing: Float32Array;
+  /** 0..1 woodcutters at work (forest near people). */
+  logging: Float32Array;
+  /**
+   * 0..1 forest felled so far. Grows while woodcutters work and never shrinks, so
+   * the land remembers. Kept apart from `vegetation` (which follows the cards alone).
+   */
+  cleared: Float32Array;
   /** Signed distance to the play area's outline in cells, positive inside. */
   mask: Float32Array;
   /** Long / short side. */
@@ -209,7 +241,7 @@ export class WorldSim {
     const n = (this.n = w * h);
     const f = () => new Float32Array(n);
     this.base = f(); this.ridge = f(); this.rough = f();
-    this.push = { height: f(), temperature: f(), wetness: f(), life: f() };
+    this.push = { height: f(), temperature: f(), wetness: f(), life: f(), people: f() };
     this.copies = f(); this.surfaceTarget = f(); this.riverTarget = f(); this.nearWater = f(); this.scratch = f();
     this.lastSurface = f(); this.lastRiver = f();
     this.hydrology = new Hydrology(w, h);
@@ -220,7 +252,7 @@ export class WorldSim {
       w, h,
       height: f(), temperature: f(), wetness: f(),
       vegetation: f(), waterSurface: f(), river: f(),
-      precipitation: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
+      precipitation: f(), homes: f(), farms: f(), fishing: f(), logging: f(), cleared: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
     };
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
@@ -275,7 +307,29 @@ export class WorldSim {
       if (this.settle <= 0 && this.passesLeft-- > 0 && this.refine(cards)) this.settle = RULES.settleSeconds * 5;
       this.frame.version++;
     }
+    this.fell(dt);
     return this.frame;
+  }
+
+  private fellTimer = 0;
+  /** Woodcutters slowly clear the forest they work. Only in running time, never in settleNow. */
+  private fell(dt: number): void {
+    if (dt <= 0) return;
+    const { logging, cleared } = this.frame;
+    const rate = dt / RULES.people.fellSeconds;
+    let any = false;
+    for (let i = 0; i < this.n; i++) {
+      if (logging[i] > 0.01 && cleared[i] < 1) {
+        cleared[i] = Math.min(1, cleared[i] + rate * logging[i]);
+        any = true;
+      }
+    }
+    // Let the renderer know a few times a second, not every frame.
+    this.fellTimer += dt;
+    if (any && this.fellTimer > 0.25) {
+      this.fellTimer = 0;
+      this.frame.version++;
+    }
   }
 
   /**
@@ -403,7 +457,46 @@ export class WorldSim {
       const submerged = smoothstep(0.0, 0.004, this.surfaceTarget[i] - height[i]);
       vegetation[i] = this.inside[i] ? life * suits * (1 - submerged) : 0;
     }
+
+    // --- 6. people: houses on dry, gentle, liveable land; fields on flat fertile land; boats on open water
+    this.settlePeople();
     frame.version++;
+  }
+
+  private settlePeople(): void {
+    const { n, frame, push, w } = this;
+    const { height, temperature, wetness, vegetation, homes, farms, fishing } = frame;
+    const P = RULES.people;
+    for (let i = 0; i < n; i++) {
+      const reach = Math.min(1.2, push.people[i]);
+      if (reach <= 0.01 || !this.inside[i]) {
+        homes[i] = farms[i] = fishing[i] = frame.logging[i] = 0;
+        continue;
+      }
+      const x = i % w;
+      const left = x > 0 ? height[i - 1] : height[i];
+      const right = x < w - 1 ? height[i + 1] : height[i];
+      const up = i >= w ? height[i - w] : height[i];
+      const down = i + w < n ? height[i + w] : height[i];
+      const slope = 0.5 * Math.hypot(right - left, down - up);
+      const t = temperature[i];
+      const depth = this.surfaceTarget[i] - height[i];
+      const dry = 1 - smoothstep(0.0, 0.0012, depth);
+      const climate = smoothstep(-0.8, -0.5, t) * (1 - smoothstep(0.65, 0.92, t));
+      const gentle = (1 - smoothstep(P.steep, P.tooSteep, slope)) * (1 - smoothstep(P.highland, P.peaks, height[i]));
+      const home = smoothstep(P.homeStart, P.homeFull, reach) * climate * gentle * dry;
+      const fertile =
+        smoothstep(0.28, 0.5, wetness[i]) * smoothstep(-0.35, -0.12, t) * (1 - smoothstep(0.45, 0.75, t)) *
+        (1 - smoothstep(P.flat, P.hilly, slope));
+      const farm = smoothstep(P.farmStart, P.farmFull, reach) * fertile * dry * (1 - 0.7 * home);
+      const open = smoothstep(0.002, 0.006, depth) * smoothstep(RULES.freezing - 0.05, RULES.freezing + 0.1, t);
+      homes[i] = home;
+      farms[i] = farm;
+      fishing[i] = smoothstep(P.fishStart, P.fishFull, reach) * open;
+      // Fields and villages are cleared of forest; woodcutters work what is left nearby.
+      vegetation[i] *= 1 - Math.min(1, 0.9 * home + farm);
+      frame.logging[i] = smoothstep(P.logStart, P.logFull, reach) * smoothstep(0.25, 0.5, vegetation[i]) * dry;
+    }
   }
 
   /** Sum of gaussian falloffs for every copy in the group, into `this.copies`. */

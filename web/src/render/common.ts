@@ -3,6 +3,8 @@
 // The renderer's whole view of the world is two textures (see fields.ts):
 //   uFieldA = height, temperature, wetness, vegetation
 //   uFieldB = waterSurface, river, precipitation, inside mask (0.5 on the outline)
+//   uFieldC = homes, farms, fishing, (spare)
+//   uFieldD = cleared (felled forest, permanent), logging, (spare), (spare)
 // plus the sea level. Rewrite anything in render/ freely: nothing else in the
 // app depends on it.
 import * as THREE from 'three';
@@ -26,6 +28,8 @@ export interface SharedUniforms {
   [name: string]: THREE.IUniform;
   uFieldA: THREE.IUniform<THREE.Texture | null>;
   uFieldB: THREE.IUniform<THREE.Texture | null>;
+  uFieldC: THREE.IUniform<THREE.Texture | null>;
+  uFieldD: THREE.IUniform<THREE.Texture | null>;
   uTexel: THREE.IUniform<THREE.Vector2>;
   uGrid: THREE.IUniform<THREE.Vector2>;
   /** World width and depth in scene units. */
@@ -46,6 +50,8 @@ export function makeSharedUniforms(): SharedUniforms {
   return {
     uFieldA: { value: null },
     uFieldB: { value: null },
+    uFieldC: { value: null },
+    uFieldD: { value: null },
     uTexel: { value: new THREE.Vector2(1 / GW, 1 / gridHeight(world.aspect)) },
     uGrid: { value: new THREE.Vector2(GW, gridHeight(world.aspect)) },
     uWorld: { value: new THREE.Vector2(world.w, world.d) },
@@ -63,6 +69,8 @@ export function makeSharedUniforms(): SharedUniforms {
 export const GLSL_COMMON = /* glsl */ `
 uniform sampler2D uFieldA;
 uniform sampler2D uFieldB;
+uniform sampler2D uFieldC;
+uniform sampler2D uFieldD;
 uniform vec2 uTexel;
 uniform vec2 uGrid;
 uniform float uSea;
@@ -83,6 +91,8 @@ vec2 tableXz(vec2 uv) { return vec2((uv.x - 0.5) * WORLD_W, (uv.y - 0.5) * WORLD
 vec2 fieldUv(vec2 uv) { return (clamp(uv, 0.0, 1.0) * (uGrid - 1.0) + 0.5) * uTexel; }
 vec4 fieldA(vec2 uv) { return texture2D(uFieldA, fieldUv(uv)); }
 vec4 fieldB(vec2 uv) { return texture2D(uFieldB, fieldUv(uv)); }
+vec4 fieldC(vec2 uv) { return texture2D(uFieldC, fieldUv(uv)); }
+vec4 fieldD(vec2 uv) { return texture2D(uFieldD, fieldUv(uv)); }
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));

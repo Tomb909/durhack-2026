@@ -50,5 +50,13 @@
     "icon": "🌱",
     "color": "#58c46a",
     "effects": [{ "field": "life", "amount": 1.0, "radius": 0.24 }]
+  },
+  {
+    "id": "people",
+    "word": "PEOPLE",
+    "aliases": ["PERSON", "HUMANS"],
+    "icon": "🏠",
+    "color": "#e8743b",
+    "effects": [{ "field": "people", "amount": 1.0, "radius": 0.13 }]
   }
 ]
