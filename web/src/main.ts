@@ -54,6 +54,10 @@ function applyShape(now: number): void {
 
 // --- status, toast, connect panel -------------------------------------------------
 
+// The card panel starts hidden, so nothing asks for the cards' typeface until a card is down:
+// fetch it now, so the first label in the world is already in it.
+void document.fonts?.load('15px "Permanent Marker"');
+
 const statusButton = document.getElementById('status')!;
 const statusText = document.getElementById('status-text')!;
 const toastEl = document.getElementById('toast')!;
@@ -106,7 +110,7 @@ seenWords.onMade = (word, { def, source, why }) =>
   toast(
     source === 'near' ? `Read ${word} as ${def.word}, a guess (${why}).`
     : source === 'fallback' ? `${word}: a guess from its sound, because ${why}.`
-    : `${def.icon} ${def.word}. ${def.reading ?? ''}`,
+    : `${def.word}. ${def.reading ?? ''}`,
     8,
   );
 
@@ -136,12 +140,12 @@ link.onSnapshot = (snapshot) => {
     store.setTracked(cards);
     // A word whose card is still being made shows as "?" on the table map, like one still being read.
     table.setCandidates([...snapshot.candidates, ...reading.map((t) => ({ id: t.id, x: t.x, y: t.y, text: t.word ?? '', confidence: 1 }))]);
-    if (snapshot.playArea.found) setStatus('live', `Camera · play area found · ${cards.length} cards`);
-    else if (snapshot.playArea.locked) setStatus('warn', 'Camera · border hidden, holding position');
-    else setStatus('warn', 'Camera · looking for the black border');
+    if (snapshot.playArea.found) setStatus('live', `Camera: play area found, ${cards.length} card${cards.length === 1 ? '' : 's'}`);
+    else if (snapshot.playArea.locked) setStatus('warn', 'Camera: border hidden, holding position');
+    else setStatus('warn', 'Camera: looking for the black border');
   } else {
     cameraLost();
-    setStatus('off', 'Simulated cards · click to connect phone');
+    setStatus('off', 'Simulated cards. Click to connect the phone');
   }
   if (!connectPanel.hidden && urlsChanged) renderConnect();
 };
@@ -276,7 +280,7 @@ window.addEventListener('keydown', (e) => {
     case 'q':
       quality = (quality + 1) % qualities.length;
       view.setQuality(qualities[quality]);
-      toast(`Quality ${qualities[quality]}× · ${view.gpuName}`);
+      toast(`Quality ${qualities[quality]}× on ${view.gpuName}`);
       break;
     case 't': {
       // The table's shape (was S, which now walks the view).
@@ -378,7 +382,7 @@ function drawFrame(now: number): void {
   if (view.rig.moved && viewReset.hidden && !cameraHintShown) {
     // The first time someone takes the camera, say what else it does (once: after that it is noise).
     cameraHintShown = true;
-    toast('Drag to turn · scroll or pinch to zoom · W A S D to move · double-click to reset', 7);
+    toast('Drag to turn, scroll or pinch to zoom, W A S D to move, double-click to reset', 7);
   }
   viewReset.hidden = !view.rig.moved;
   const pose = view.rig.target;

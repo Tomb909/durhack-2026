@@ -6,6 +6,7 @@ import { modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { CardStore, LiveCard } from '../cards/store';
 import { forgetWords, resolveWord } from '../cards/words';
 import { WORD_CARDS } from '../flags';
+import { ARROW_SVG } from './glyphs';
 import type { Candidate } from '../net/link';
 import { DEFAULT_SHAPE, type WorldShape } from '../sim/world';
 
@@ -77,19 +78,13 @@ export class TablePanel {
       const el = document.createElement('div');
       el.className = `tray-card${def.origin ? ' made' : ''}${def.origin === 'fallback' ? ' guess' : ''}`;
       el.title = `Drag ${def.word} onto the table${def.reading ? `. ${def.reading}` : ''}`;
-      // Text, not markup: the icon and word of a made card come from a typed word.
-      const icon = document.createElement('span');
-      icon.className = 'icon';
-      icon.textContent = def.icon;
-      const word = document.createElement('span');
-      word.className = 'word';
-      word.textContent = def.word;
-      el.append(icon, word);
+      // A scrap of paper with the word on it, like the real cards. Text, not markup: the word may be a typed one.
+      el.textContent = def.word;
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         const ghost = document.createElement('div');
         ghost.className = 'ghost';
-        ghost.textContent = def.icon;
+        ghost.textContent = def.word;
         document.body.appendChild(ghost);
         this.drag = { cardId: def.id, key: null, ghost };
         this.move(e);
@@ -258,11 +253,11 @@ export class TablePanel {
       let chip = this.chips.get(card.key);
       if (!chip) {
         chip = document.createElement('div');
-        chip.textContent = card.def.icon;
+        chip.textContent = card.def.word;
         if (card.def.id === 'wind') {
           const arrow = document.createElement('span');
           arrow.className = 'wind-arrow';
-          arrow.textContent = '➤';
+          arrow.innerHTML = ARROW_SVG;
           chip.appendChild(arrow);
         }
         chip.style.setProperty('--c', card.def.color);
@@ -281,7 +276,7 @@ export class TablePanel {
       const modifierTarget = targetByModifier.get(card);
       chip.className = `chip ${sim ? 'sim' : 'camera'}${card.visible ? '' : ' held'}${card.def.modifier ? ' modifier-source' : ''}${modifiers.length ? ' modified' : ''}`;
       if (modifierTarget) {
-        chip.title = `${card.def.word} → ${modifierTarget.def.word}: expands its local effect radius`;
+        chip.title = `${card.def.word} on ${modifierTarget.def.word}: expands its local effect radius`;
       } else if (modifiers.length) {
         chip.title = `${card.def.word} + ${modifiers.map((modifier) => modifier.def.word).join('+')}: local effect radius ×${radiusMultiplier(modifiers).toFixed(2)}`;
       } else if (card.def.modifier) {

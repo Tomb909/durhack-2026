@@ -17,6 +17,7 @@ import { parseCode, type Layout, type Placement, type Scenario } from '../harnes
 import { combinations, copiesOf, countCombinations, defaultFilter, MOST_COPIES, type ComboFilter } from '../harness/filter';
 import { METRIC_KEYS, METRIC_LABELS, type Metrics } from '../harness/metrics';
 import { tileHeight, TileRenderer, type View } from '../harness/tiles';
+import { CROSS_SVG } from './glyphs';
 
 type Size = 's' | 'm' | 'l';
 
@@ -76,7 +77,7 @@ function chips(scenario: Scenario): string {
   return items
     .map(([id, count]) => {
       const def = cardDef(id)!;
-      return `<span class="combo-chip${def.origin === 'fallback' ? ' guess' : ''}" style="--c:${esc(def.color)}"><span aria-hidden="true">${esc(def.icon)}</span>${esc(def.word)}${count > 1 ? ` ×${count}` : ''}</span>`;
+      return `<span class="combo-chip${def.origin === 'fallback' ? ' guess' : ''}" style="--c:${esc(def.color)}">${esc(def.word)}${count > 1 ? ` ×${count}` : ''}</span>`;
     })
     .join('');
 }
@@ -90,7 +91,7 @@ function spoken(scenario: Scenario): string {
 function summary(metrics: Metrics): string {
   const parts = METRIC_KEYS.filter((k) => METRIC_LABELS[k].share && metrics[k] > 0).map((k) => `${METRIC_LABELS[k].label} ${metrics[k]}%`);
   if (metrics.objects > 0) parts.push(`${metrics.objects} object${metrics.objects === 1 ? '' : 's'}`);
-  return parts.join(' · ') || 'Bare, dry land';
+  return parts.join(', ') || 'Bare, dry land';
 }
 
 const signed = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100) / 100}`;
@@ -187,7 +188,7 @@ export class Combinations {
         <p class="combos-count" role="status" aria-live="polite"></p>
         <div class="combos-cards" role="group" aria-label="Cards to combine"></div>
         <div class="combos-options"></div>
-        <button type="button" class="combos-btn combos-x" data-do="close" aria-label="Close" title="Close (Esc)"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" /></svg></button>
+        <button type="button" class="combos-btn combos-x" data-do="close" aria-label="Close" title="Close (Esc)">${CROSS_SVG}</button>
         <div class="combos-wordrow"${WORD_CARDS ? '' : ' hidden'}>
           <form class="combos-add" autocomplete="off">
             <label for="combos-word">Add a word</label>
@@ -285,11 +286,11 @@ export class Combinations {
         ? (guess
           ? `<button type="button" data-do="retry" aria-label="Try ${name} again with the model" title="Try again with the model">Try again</button>`
           : `<button type="button" data-do="retry" aria-label="Have the model read ${name} again" title="Ask the model again and replace this card (one model call)">Read again</button>`) +
-          `<button type="button" data-do="remove" aria-label="Remove ${name}" title="Remove this card">✕</button>`
+          `<button type="button" data-do="remove" aria-label="Remove ${name}" title="Remove this card">${CROSS_SVG}</button>`
         : '';
       return `
       <span class="combos-card${made ? ' made' : ''}${guess ? ' guess' : ''}" data-card="${esc(def.id)}" style="--c:${esc(def.color)}">
-        <button type="button" class="combos-toggle" data-do="card" role="switch"><span class="combos-switch" aria-hidden="true"></span><span class="combos-icon" aria-hidden="true">${esc(def.icon)}</span>${esc(def.word)}${tag}</button>
+        <button type="button" class="combos-toggle" data-do="card" role="switch"><span class="combos-switch" aria-hidden="true"></span>${esc(def.word)}${tag}</button>
         <span class="combos-copies" role="group" aria-label="Copies of ${name}">
           <button type="button" data-do="fewer" aria-label="Fewer copies of ${name}" title="One copy fewer">−</button>
           <output></output>
@@ -640,12 +641,12 @@ export class Combinations {
     const spacedOn = this.layoutOf(s) === 'spread';
     this.detail.innerHTML = `
       <div class="combos-detail-bar">
-        <button type="button" class="combos-btn" data-do="back">← All</button>
+        <button type="button" class="combos-btn" data-do="back">All combinations</button>
         <span class="combo-chips">${chips(s)}</span>
         ${this.canSpace(s) ? `<button type="button" class="combos-btn" data-do="spaced" aria-pressed="${spacedOn}" title="Place these cards apart instead of together">Spaced</button>` : ''}
         <span class="combos-pos">${index + 1} of ${this.shown.length}</span>
-        <button type="button" class="combos-btn" data-do="prev" aria-label="Previous combination">←</button>
-        <button type="button" class="combos-btn" data-do="next" aria-label="Next combination">→</button>
+        <button type="button" class="combos-btn" data-do="prev" aria-label="Previous combination">Previous</button>
+        <button type="button" class="combos-btn" data-do="next" aria-label="Next combination">Next</button>
         <button type="button" class="combos-btn primary" data-do="show">Show in the live world</button>
       </div>
       <div class="combos-detail-main">
@@ -671,7 +672,7 @@ export class Combinations {
       .map((def) => {
         const made = isGuess(def) ? `A guess, made in the page${def.ms ? ` after ${seconds(def.ms)}` : ''}` : `Read by the model${def.ms ? ` in ${seconds(def.ms)}` : ''}`;
         const items = [...doings(def), esc(made)].map((line) => `<li>${line}</li>`).join('');
-        return `<section class="combos-word" style="--c:${esc(def.color)}"><h3><span aria-hidden="true">${esc(def.icon)}</span> ${esc(def.word)}</h3>` +
+        return `<section class="combos-word" style="--c:${esc(def.color)}"><h3>${esc(def.word)}</h3>` +
           `<p>${esc(def.reading || 'No reading.')}</p><ul>${items}</ul></section>`;
       })
       .join('');

@@ -1,242 +1,252 @@
+/* Type: Barlow Semi Condensed for the interface, Permanent Marker for a card's word
+   (the cards are scraps of paper written on with a marker). See fonts/CREDITS.md. */
+@font-face { font-family: "Barlow Semi Condensed"; font-weight: 400; font-display: swap; src: url("./fonts/barlow-semi-condensed-400.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Semi Condensed"; font-weight: 500; font-display: swap; src: url("./fonts/barlow-semi-condensed-500.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Semi Condensed"; font-weight: 600; font-display: swap; src: url("./fonts/barlow-semi-condensed-600.woff2") format("woff2"); }
+@font-face { font-family: "Permanent Marker"; font-weight: 400; font-display: block; src: url("./fonts/permanent-marker-400.woff2") format("woff2"); }
+
 :root {
   color-scheme: dark;
-  --panel: rgba(14, 18, 28, 0.72);
-  --line: rgba(160, 180, 220, 0.22);
-  --text: #eef2f8;
-  --muted: #9aa6ba;
+  /* Surfaces: flat and solid, darkest to lightest. */
+  --bg: #0d0c0a;
+  --well: #131210;
+  --panel: #1c1a16;
+  --raised: #27241e;
+  --line: #3d3830;
+  --line-strong: #5c5548;
+  --text: #ece7da;
+  --muted: #a69e8c;
+  /* A card is paper with ink on it; a chosen option is shown the same way. */
+  --paper: #efeadd;
+  --ink: #16140f;
+  --focus: #f2c14e;
+  --ok: #86b56b;
+  --warn: #e0a83a;
+  --danger: #b5412c;
+  --danger-hover: #cc5138;
+  --danger-text: #ec9a87;
+  --dim: rgba(8, 7, 6, 0.8);
+  --ui: "Barlow Semi Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  --marker: "Permanent Marker", "Marker Felt", "Segoe Print", cursive;
+  --mono: ui-monospace, Consolas, Menlo, monospace;
+  --r: 2px;
+  --r-panel: 3px;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #05060a; color: var(--text); font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 500 15px/1.4 var(--ui); }
 #world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 html, body { overscroll-behavior: none; } /* two fingers turn the world, never "go back a page" */
 #ui { position: fixed; inset: 0; pointer-events: none; user-select: none; }
 #ui > * { pointer-events: auto; }
 body.bare #ui > :not(#toast) { display: none; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-#status { position: absolute; left: 18px; top: 16px; display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); }
-#status .dot { width: 10px; height: 10px; border-radius: 50%; background: #7c8698; box-shadow: 0 0 0 0 transparent; }
-#status.live .dot { background: #34d17a; box-shadow: 0 0 10px #34d17a; }
-#status.warn .dot { background: #f5a524; box-shadow: 0 0 10px #f5a524; }
+/* Every plain button is the same flat block. */
+#status, #topbar button, #connect button, .overlay .close, .confirm button, .combos-btn, #tray-add button, .combo-spaced {
+  font: inherit; font-weight: 600; padding: 6px 12px; border-radius: var(--r); border: 1px solid var(--line-strong);
+  background: var(--panel); color: var(--text); cursor: pointer; white-space: nowrap;
+}
+#status:hover, #topbar button:hover, #connect button:hover, .overlay .close:hover, .confirm button:hover, .combos-btn:hover, #tray-add button:hover:not(:disabled), .combo-spaced:hover { background: var(--raised); border-color: var(--muted); }
+/* A scrap of paper with a card's word on it. */
+.scrap, .tray-card, .chip, .ghost, .world-label, .combo-chip, .overlay .word {
+  font: 400 13px/1 var(--marker); text-transform: uppercase; white-space: nowrap; background: var(--paper); color: var(--ink); border-radius: 1px;
+}
 
-#table-panel { position: absolute; left: 18px; bottom: 18px; width: min(300px, 26vw); padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); backdrop-filter: blur(10px); }
-#tray { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; margin-bottom: 9px; max-height: 152px; overflow-y: auto; }
-.tray-card { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 4px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); cursor: grab; touch-action: none; font-size: 9px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); }
-.tray-card:hover { background: rgba(255, 255, 255, 0.12); color: var(--text); }
-.tray-card .icon { font-size: 20px; line-height: 1.15; }
-.tray-card .word { max-width: 100%; padding: 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 7.5px; letter-spacing: 0; }
-.tray-card.event { border-color: rgba(255, 120, 90, 0.35); background: rgba(255, 110, 80, 0.08); }
-.tray-card.event:hover { background: rgba(255, 110, 80, 0.18); }
-.tray-card.guess { border-style: dashed; }
+#status { position: absolute; left: 18px; top: 16px; display: flex; align-items: center; gap: 9px; }
+#status .dot { width: 9px; height: 9px; border: 1.5px solid var(--muted); }
+#status.live .dot { background: var(--ok); border-color: var(--ok); }
+#status.warn .dot { background: var(--warn); border-color: var(--warn); }
+#topbar { position: absolute; right: 18px; top: 16px; display: flex; gap: 8px; }
+#combos-open { display: flex; align-items: center; gap: 8px; }
+#combos-open svg { width: 13px; height: 13px; fill: currentColor; }
+#topbar #world-reset { border-color: var(--danger); color: var(--danger-text); }
+#topbar #world-reset:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+#table-panel { position: absolute; left: 18px; bottom: 18px; width: min(320px, 30vw); padding: 10px; border-radius: var(--r-panel); border: 1px solid var(--line); background: var(--panel); }
+#tray { display: flex; flex-wrap: wrap; gap: 7px 6px; margin-bottom: 10px; padding: 2px; max-height: 152px; overflow-y: auto; scrollbar-color: var(--line-strong) transparent; }
+.tray-card { max-width: 100%; padding: 6px 8px 5px; overflow: hidden; text-overflow: ellipsis; cursor: grab; touch-action: none; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.6); }
+/* Torn by hand: no two scraps sit quite straight. */
+.tray-card:nth-child(3n + 1) { transform: rotate(-1.2deg); }
+.tray-card:nth-child(3n + 2) { transform: rotate(0.9deg); }
+.tray-card:nth-child(3n) { transform: rotate(-0.4deg); }
+.tray-card:hover { background: #fff; }
+.tray-card.guess, .combo-chip.guess { outline: 1.5px dashed var(--ink); outline-offset: -4px; }
 #tray-add { display: flex; gap: 6px; margin-bottom: 7px; }
-/* Switched off with the WORD_CARDS flag (flags.ts). */
-#tray-add[hidden], .combos-wordrow[hidden] { display: none; }
-#tray-add input { flex: 1; min-width: 0; padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.28); color: var(--text); font: inherit; font-size: 12px; }
-#tray-add input::placeholder { color: var(--muted); }
-#tray-add button { padding: 6px 11px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-#tray-add button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
-#tray-forget { display: block; margin: 0 0 8px auto; padding: 4px 9px; border-radius: 8px; border: 1px solid rgba(248, 113, 113, 0.5); background: rgba(255, 255, 255, 0.06); color: #f3a5a5; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
-#tray-forget:hover:not(:disabled) { background: rgba(248, 113, 113, 0.18); }
-#tray-forget:disabled { opacity: 0.55; cursor: progress; }
-#tray-forget:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-#tray-forget[hidden] { display: none; }
-#tray-add :disabled, #tray-add input:read-only { opacity: 0.55; cursor: progress; }
-#tray-status { margin: 0 0 8px; font-size: 11px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
+#tray-add input, .combos-add input { flex: 1; min-width: 0; padding: 6px 9px; border-radius: var(--r); border: 1px solid var(--line-strong); background: var(--well); color: var(--text); font: inherit; }
+#tray-add input::placeholder, .combos-add input::placeholder { color: var(--muted); opacity: 0.75; }
+#tray-forget { display: block; margin: 0 0 8px auto; padding: 0; border: 0; background: none; color: var(--danger-text); font: inherit; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+#tray-forget:hover:not(:disabled) { color: #fff; }
+#tray-forget:disabled, #tray-add :disabled, #tray-add input:read-only { opacity: 0.55; cursor: progress; }
+#tray-status { margin: 0 0 8px; font-size: 13px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
 #tray-status:empty { display: none; }
-#tray-status.guess { color: #e6c27a; }
+#tray-status.guess { color: var(--warn); }
 #table { position: relative; width: 100%; aspect-ratio: 420 / 297; overflow: visible; }
 #table .border { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-#table .border polygon { fill: #e9e6dd; stroke: #15171c; stroke-width: 4px; stroke-linejoin: round; filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.35)); }
-#table .edge { position: absolute; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(20, 22, 28, 0.38); pointer-events: none; }
-#table .edge.far { top: 7px; }
-#table .edge.near { bottom: 7px; }
-.chip { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; display: grid; place-items: center; border-radius: 7px; background: #fff; border: 2px solid var(--c, #333); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); font-size: 17px; line-height: 1; cursor: grab; touch-action: none; will-change: left, top, opacity; }
-.chip.camera { cursor: default; border-style: solid; }
-.chip.camera::after { content: ""; position: absolute; right: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #34d17a; border: 1.5px solid #fff; }
+#table .border polygon { fill: var(--paper); stroke: var(--ink); stroke-width: 4px; stroke-linejoin: round; }
+#table .edge { position: absolute; left: 50%; transform: translateX(-50%); font-size: 12px; color: rgba(22, 20, 15, 0.5); pointer-events: none; }
+#table .edge.far { top: 6px; }
+#table .edge.near { bottom: 6px; }
+.chip { position: absolute; transform: translate(-50%, -50%); padding: 4px 5px 3px; background: #fff; border: 2px solid var(--c, var(--ink)); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); font-size: 10px; cursor: grab; touch-action: none; will-change: left, top, opacity; }
+.chip.camera { cursor: default; }
+.chip.camera::after { content: ""; position: absolute; right: -4px; top: -4px; width: 7px; height: 7px; background: var(--ok); border: 1.5px solid #fff; }
 .chip.held { filter: grayscale(0.7); }
-.chip.held::after { background: #9aa6ba; }
+.chip.held::after { background: var(--muted); }
 .chip.modifier-source { border-style: dashed; }
 .chip.modified { z-index: 2; }
-.chip .modifier-badge { position: absolute; top: -9px; right: -18px; padding: 1px 3px; border: 1px solid #fff; border-radius: 5px; background: #7c3aed; color: #fff; font-size: 7px; font-weight: 800; line-height: 1.1; white-space: nowrap; pointer-events: none; }
-.chip .wind-arrow { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(var(--wind-angle, 0rad)); color: #1683b5; font-size: 23px; line-height: 1; text-shadow: 0 0 2px #fff, 0 0 3px #fff; pointer-events: none; }
-.maybe { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; display: grid; place-items: center; border-radius: 50%; background: rgba(245, 165, 36, 0.9); color: #111; font-size: 11px; font-weight: 800; pointer-events: none; }
-.ghost { position: fixed; z-index: 20; width: 34px; height: 34px; margin: -17px 0 0 -17px; display: grid; place-items: center; border-radius: 8px; background: #fff; font-size: 19px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5); pointer-events: none; }
+.chip .modifier-badge { position: absolute; bottom: 100%; left: 100%; margin: 0 0 -5px -8px; padding: 1px 3px; background: var(--ink); color: var(--paper); font: 600 9px/1.1 var(--ui); white-space: nowrap; pointer-events: none; }
+.chip .wind-arrow { position: absolute; left: 50%; top: 100%; width: 14px; height: 14px; margin: 1px 0 0 -7px; transform: rotate(var(--wind-angle, 0rad)); color: var(--ink); pointer-events: none; }
+.wind-arrow svg, .world-wind-arrow svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.maybe { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; display: grid; place-items: center; background: var(--warn); color: var(--ink); font: 600 12px/1 var(--ui); pointer-events: none; }
+.ghost { position: fixed; z-index: 20; transform: translate(-50%, -50%) rotate(-2deg); padding: 7px 10px 6px; font-size: 15px; box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5); pointer-events: none; }
 
-#connect { position: absolute; left: 18px; top: 62px; width: 290px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(14, 18, 28, 0.92); backdrop-filter: blur(10px); }
-#connect h2 { margin: 0 0 10px; font-size: 15px; }
-#connect img { width: 100%; border-radius: 8px; background: #fff; display: block; }
-#connect code { display: block; margin: 8px 0; font-size: 12px; color: #9ecbff; word-break: break-all; user-select: text; }
-#connect ol { margin: 8px 0; padding-left: 1.3em; color: var(--muted); }
-#connect button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer; }
+#connect { position: absolute; left: 18px; top: 60px; width: 290px; padding: 14px; border-radius: var(--r-panel); border: 1px solid var(--line); background: var(--panel); }
+#connect h2 { margin: 0 0 10px; font-size: 17px; font-weight: 600; }
+#connect p { margin: 0 0 10px; }
+#connect img { width: 100%; background: #fff; display: block; }
+#connect code { padding: 1px 4px; background: var(--well); font: 12.5px var(--mono); user-select: text; }
+#connect img + code { display: block; margin: 8px 0; padding: 5px 7px; word-break: break-all; }
+#connect ol { margin: 8px 0 12px; padding-left: 1.3em; color: var(--muted); }
 
-#toast { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); padding: 9px 16px; border-radius: 99px; background: rgba(14, 18, 28, 0.9); border: 1px solid var(--line); font-weight: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+#toast { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); max-width: min(560px, 60vw); padding: 7px 14px; border-radius: var(--r); background: var(--panel); border: 1px solid var(--line-strong); opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 #toast.show { opacity: 1; }
-#keys { position: absolute; right: 18px; bottom: 14px; font-size: 11px; color: rgba(154, 166, 186, 0.7); }
-#keys b { color: rgba(238, 242, 248, 0.8); }
+kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--r); background: var(--panel); color: var(--text); font: 600 12px/1.5 var(--ui); text-align: center; }
+/* The keys, bottom right. Over the world itself, so the words carry their own shadow. */
+#keys { position: absolute; left: 230px; right: 18px; bottom: 14px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 14px; font-size: 13px; color: var(--muted); text-shadow: 0 1px 2px #000, 0 0 6px #000; }
+#keys span { white-space: nowrap; }
 /* The same quiet hint, bottom left, where the card panel opens. It goes while the panel is showing. */
-#tab-hint { position: absolute; left: 18px; bottom: 14px; padding: 0; border: 0; background: none; font: inherit; font-size: 11px; color: rgba(154, 166, 186, 0.7); cursor: pointer; }
-#tab-hint b { color: rgba(238, 242, 248, 0.8); }
+#tab-hint { position: absolute; left: 18px; bottom: 14px; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--muted); text-shadow: 0 1px 2px #000, 0 0 6px #000; cursor: pointer; }
 #tab-hint:hover { color: var(--text); }
-#tab-hint:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 3px; }
 #table-panel:not([hidden]) ~ #tab-hint { display: none; }
+#table-panel:not([hidden]) ~ #keys { left: calc(min(320px, 30vw) + 36px); }
 
-.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(4, 6, 12, 0.62); backdrop-filter: blur(6px); z-index: 30; }
-.overlay[hidden] { display: none; }
-.overlay .sheet { width: min(980px, 92vw); max-height: 88vh; overflow: auto; padding: 20px 24px 22px; border-radius: 16px; border: 1px solid var(--line); background: rgba(16, 20, 31, 0.96); user-select: text; }
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: var(--dim); z-index: 30; }
+.overlay .sheet { width: min(980px, 92vw); max-height: 88vh; overflow: auto; padding: 18px 22px 20px; border-radius: var(--r-panel); border: 1px solid var(--line); background: var(--panel); user-select: text; }
 .overlay header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-.overlay h2 { margin: 0; font-size: 20px; }
-.overlay .close { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer; }
+.overlay h2, .confirm h2 { margin: 0; font-size: 22px; font-weight: 600; }
 .overlay .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .overlay figure { margin: 0; }
-.overlay figure svg { width: 100%; border-radius: 10px; background: #2a3040; display: block; }
-.overlay figcaption { margin-top: 9px; color: var(--muted); font-size: 13.5px; }
-.overlay figcaption b { color: var(--text); }
-.overlay .words { margin: 18px 0 6px; font-weight: 600; }
-.overlay .word { display: inline-block; margin: 0 8px 6px 0; padding: 4px 10px; border-radius: 8px; background: #f4f1e8; color: #111; font-weight: 800; letter-spacing: 0.04em; }
-.overlay .hint { color: var(--muted); margin: 6px 0; }
-.overlay .hint b { color: var(--text); }
+.overlay figure svg { width: 100%; background: var(--raised); display: block; }
+.overlay figcaption { margin-top: 9px; color: var(--muted); }
+.overlay figcaption b, .overlay .hint b { color: var(--text); font-weight: 600; }
+.overlay .words { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 18px 0 10px; }
+.overlay .word { padding: 6px 9px 5px; font-size: 14px; }
+.overlay .hint { color: var(--muted); margin: 6px 0; max-width: 78ch; }
 .overlay table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 .overlay th, .overlay td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.overlay td img { height: 44px; min-width: 60px; max-width: 320px; border-radius: 4px; background: #fff; display: block; }
-.overlay td.ok { color: #4ade80; font-weight: 800; font-size: 18px; }
-.overlay td.no { color: #fbbf24; font-weight: 700; }
+.overlay th { color: var(--muted); font-weight: 500; font-size: 13px; }
+.overlay td img { height: 44px; min-width: 60px; max-width: 320px; background: #fff; display: block; }
+.overlay td.ok { color: var(--ok); font-weight: 600; font-size: 17px; }
+.overlay td.no { color: var(--warn); }
 @media (max-width: 900px) { .overlay .steps { grid-template-columns: repeat(2, 1fr); } }
 
 #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
-.world-label { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 7px; padding: 5px 12px 5px 8px; border-radius: 99px; background: rgba(10, 13, 22, 0.82); border: 2px solid var(--c, #fff); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: 0.05em; white-space: nowrap; will-change: transform, opacity; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
-.world-label .i { font-size: 19px; line-height: 1; }
-.world-wind-arrow { display: inline-block; margin-left: 1px; color: #b6eaff; font-size: 17px; line-height: 1; transform-origin: center; }
-.world-label::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 2px; height: 7px; margin-left: -1px; background: var(--c, #fff); }
-#table-panel[hidden] { display: none; }
+.world-label { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px; padding: 6px 9px 5px; border: 2px solid var(--c, var(--ink)); font-size: 15px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45); will-change: transform, opacity; }
+.world-wind-arrow { display: block; width: 16px; height: 16px; transform-origin: center; }
+.world-label::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 2px; height: 7px; margin-left: -1px; background: var(--c, #fff); }
+
+.confirm { width: min(400px, 90vw); padding: 18px 20px; border-radius: var(--r-panel); border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); pointer-events: auto; }
+.confirm::backdrop { background: var(--dim); }
+.confirm h2 { margin-bottom: 8px; }
+.confirm p { margin: 0 0 18px; color: var(--muted); }
+.confirm form { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm button.danger { border-color: var(--danger); background: var(--danger); color: #fff; }
+.confirm button.danger:hover { border-color: var(--danger-hover); background: var(--danger-hover); }
 
 /* --- Combinations view (ui/combos.ts) --------------------------------------------- */
-:root { --focus: #9ecbff; }
-#combos-open { position: absolute; right: 18px; top: 16px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); }
-#combos-open:hover { background: rgba(40, 50, 74, 0.8); }
-#world-reset { position: absolute; right: 172px; top: 16px; padding: 8px 14px; border-radius: 99px; border: 1px solid #f87171; background: #c62828; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
-#world-reset:hover { background: #e53935; }
-#world-reset:focus-visible, .confirm button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.confirm { width: min(400px, 90vw); padding: 20px 22px; border-radius: 16px; border: 1px solid var(--line); background: rgba(16, 20, 31, 0.98); color: var(--text); pointer-events: auto; }
-.confirm::backdrop { background: rgba(4, 6, 12, 0.62); backdrop-filter: blur(6px); }
-.confirm h2 { margin: 0 0 8px; font-size: 20px; }
-.confirm p { margin: 0 0 18px; color: var(--muted); }
-.confirm form { display: flex; justify-content: flex-end; gap: 10px; }
-.confirm button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer; }
-.confirm button.danger { border-color: #f87171; background: #c62828; color: #fff; }
-.confirm button.danger:hover { background: #e53935; }
-#view-reset { position: absolute; right: 256px; top: 16px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); }
-#view-reset:hover { background: rgba(40, 50, 74, 0.8); }
-#view-reset[hidden] { display: none; }
-#view-reset:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-#combos-open svg { width: 14px; height: 14px; fill: currentColor; opacity: 0.85; }
-.combos kbd { font: inherit; font-size: 11px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
-#status:focus-visible, #combos-open:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-
-.combos { --raised: #151b2a; --well: #0c101a; position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #080b13; color: var(--text); }
-.combos[hidden], .combos [hidden] { display: none; }
-.combos ::selection { background: rgba(158, 203, 255, 0.35); }
-.combos :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.combos { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
+.combos ::selection { background: var(--paper); color: var(--ink); }
 .combos h2:focus-visible { outline: none; }
 .combos-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* One row: title, how many, a switch per card, picture, tile size, close. */
-.combos-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 16px; background: var(--raised); border-bottom: 1px solid var(--line); }
-.combos-bar h2 { margin: 0; font-size: 18px; }
-.combos-count { margin: 0 6px 0 -4px; min-width: 2ch; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.combos-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.combos-bar h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.combos-count { margin: 0 6px 0 -2px; min-width: 2ch; color: var(--muted); font-variant-numeric: tabular-nums; }
 .combos-cards { display: flex; flex-wrap: wrap; gap: 6px; margin-right: auto; }
-/* The row is tight on a laptop: there the switch, colour and word carry the card, and the icon goes. */
-@media (max-width: 1439px) { .combos-icon { display: none; } }
-/* Narrower still: the heading is read out but not shown (the count stays), so everything keeps to one row. */
+/* Narrow: the heading is read out but not shown (the count stays), so everything keeps to one row. */
 @media (max-width: 1340px) { .combos-bar h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .combos-count { margin-left: 0; } .combos-count::after { content: " worlds"; } }
 .combos-options { display: flex; gap: 8px; }
-.combos-btn { font: inherit; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.07); color: var(--text); cursor: pointer; white-space: nowrap; }
-.combos-btn:hover { background: rgba(255, 255, 255, 0.14); }
-.combos-btn:active { background: rgba(255, 255, 255, 0.2); }
-.combos-btn.primary, .combos-btn[aria-pressed="true"] { background: #eef2f8; border-color: #eef2f8; color: #0b0f18; }
-.combos-btn.primary:hover, .combos-btn[aria-pressed="true"]:hover { background: #ffffff; }
+.combos-btn:active { background: var(--line); }
+.combos-btn.primary, .combos-btn[aria-pressed="true"], .combo-spaced[aria-pressed="true"] { background: var(--paper); border-color: var(--paper); color: var(--ink); }
+.combos-btn.primary:hover, .combos-btn[aria-pressed="true"]:hover, .combo-spaced[aria-pressed="true"]:hover { background: #fff; border-color: #fff; }
 .combos-x { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; }
-.combos-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.combos-x svg, .combos-made svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 
-/* A card: a real on/off switch, and (while on) its number of copies with − and +. */
-.combos-card { display: inline-flex; align-items: stretch; border-radius: 99px; border: 1.5px solid var(--c, var(--line)); background: color-mix(in srgb, var(--c, #fff) 16%, var(--well)); overflow: hidden; }
+/* A card: a real on/off switch in the card's colour, and (while on) its number of copies with − and +. */
+.combos-card { display: inline-flex; align-items: stretch; border-radius: var(--r); border: 1px solid var(--line-strong); background: var(--well); overflow: hidden; }
 .combos-card button { font: inherit; border: 0; background: none; color: var(--text); cursor: pointer; }
-.combos-card button:focus-visible { outline-offset: -3px; border-radius: 99px; }
-.combos-toggle { display: flex; align-items: center; gap: 6px; padding: 5px 9px 5px 7px; font-size: 12.5px; font-weight: 800; letter-spacing: 0.03em; }
-.combos-toggle:hover, .combos-copies button:not(:disabled):hover { background: rgba(255, 255, 255, 0.12); }
-.combos-switch { position: relative; flex: none; width: 28px; height: 16px; border-radius: 99px; background: var(--c, #9aa6ba); transition: background 0.15s ease-out; }
-.combos-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #0b0f18; transform: translateX(12px); transition: transform 0.15s ease-out; }
-.combos-copies { display: flex; align-items: center; border-left: 1px solid color-mix(in srgb, var(--c, #fff) 45%, transparent); }
-.combos-copies button { width: 22px; align-self: stretch; padding: 0; font-size: 15px; font-weight: 700; line-height: 1; }
-.combos-copies [data-do="more"] { padding-right: 3px; width: 25px; }
-.combos-copies button:disabled { color: #68738a; cursor: default; }
-.combos-copies output { min-width: 19px; text-align: center; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.combos-card button:focus-visible { outline-offset: -3px; }
+.combos-toggle { display: flex; align-items: center; gap: 7px; padding: 5px 9px 5px 7px; font-size: 14px; font-weight: 600; }
+.combos-toggle:hover, .combos-copies button:not(:disabled):hover, .combos-made button:hover { background: var(--raised); }
+.combos-switch { position: relative; flex: none; width: 24px; height: 12px; background: var(--c, var(--muted)); transition: background 0.15s ease-out; }
+.combos-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; background: var(--ink); transform: translateX(12px); transition: transform 0.15s ease-out; }
+.combos-copies, .combos-made, .combos-copies .combos-only { display: flex; align-items: center; border-left: 1px solid var(--line); }
+.combos-copies button { width: 22px; align-self: stretch; padding: 0; font-size: 16px; line-height: 1; }
+.combos-copies button:disabled { color: var(--line-strong); cursor: default; }
+.combos-copies output { min-width: 20px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
 .combos-card.off { border-color: var(--line); background: none; }
-.combos-card.off .combos-toggle { padding-right: 12px; color: #97a3b9; }
-.combos-card.off .combos-switch { background: #343d52; }
-.combos-card.off .combos-switch::after { background: #97a3b9; transform: none; }
-.combos-card.off .combos-icon { filter: grayscale(1); opacity: 0.55; }
+.combos-card.off .combos-toggle { padding-right: 11px; color: var(--muted); font-weight: 500; }
+.combos-card.off .combos-switch { background: var(--line); }
+.combos-card.off .combos-switch::after { background: var(--muted); transform: none; }
+.combos-copies .combos-only { width: auto; padding: 0 8px; font-size: 13px; color: var(--muted); }
+.combos-copies .combos-only[aria-pressed="true"] { background: var(--paper); color: var(--ink); }
+.combos-made { align-items: stretch; }
+.combos-made button { display: grid; place-items: center; padding: 0 8px; font-size: 13px; color: var(--muted); }
+.combos-made button + button { border-left: 1px solid var(--line); }
+.combos-tag { padding: 0 4px; border: 1px solid var(--line-strong); font-size: 11px; font-weight: 500; line-height: 1.35; color: var(--muted); }
+.combos-card.guess, .combos-card.guess .combos-tag { border-style: dashed; }
 
-.combos-seg { display: inline-flex; margin: 0; padding: 2px; gap: 2px; min-width: 0; border-radius: 9px; background: var(--well); border: 1px solid var(--line); }
+.combos-seg { display: inline-flex; margin: 0; padding: 0; min-width: 0; border-radius: var(--r); background: var(--well); border: 1px solid var(--line-strong); overflow: hidden; }
 .combos-seg label { position: relative; display: block; cursor: pointer; }
+.combos-seg label + label { border-left: 1px solid var(--line); }
 .combos-seg input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
-.combos-seg span { display: block; min-width: 30px; padding: 4px 9px; border-radius: 7px; text-align: center; font-size: 13px; font-weight: 600; color: #b3bdd0; }
-.combos-seg label:hover span { color: var(--text); background: rgba(255, 255, 255, 0.07); }
-.combos-seg input:checked + span { background: #eef2f8; color: #0b0f18; }
-.combos-seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.combos-seg span { display: block; min-width: 30px; padding: 6px 10px; text-align: center; font-size: 14px; color: var(--muted); }
+.combos-seg label:hover span { color: var(--text); background: var(--raised); }
+.combos-seg input:checked + span { background: var(--paper); color: var(--ink); font-weight: 600; }
+.combos-seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: -3px; }
 
-.combo-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 6px; border-radius: 99px; border: 1.5px solid var(--c, var(--line)); background: rgba(8, 11, 19, 0.6); color: var(--text); font-size: 12px; font-weight: 800; letter-spacing: 0.05em; white-space: nowrap; }
-.combo-chip.none { padding-left: 9px; border-style: dashed; font-weight: 600; letter-spacing: 0; color: var(--muted); }
+.combo-chip { display: inline-block; padding: 5px 7px 4px; border: 1.5px solid var(--c, var(--ink)); font-size: 12px; }
+.combo-chip.none, .combo-chip.busy { padding: 3px 8px; border: 1px dashed var(--line-strong); background: none; color: var(--muted); font: 500 13px/1.3 var(--ui); text-transform: none; }
 
-.combos-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 28px; scrollbar-color: #2d3750 transparent; }
-.combos-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--tile, 380px), 100%), 1fr)); gap: 14px; }
-.combo { position: relative; display: flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--well); }
-.combo:hover { border-color: rgba(190, 208, 240, 0.6); }
+.combos-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 28px; scrollbar-color: var(--line-strong) transparent; }
+.combos-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--tile, 380px), 100%), 1fr)); gap: 12px; }
+.combo { position: relative; display: flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--well); }
+.combo:hover { border-color: var(--muted); }
 .combo-open { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: zoom-in; }
-.combo-open:focus-visible { outline-offset: -3px; border-radius: 12px; }
-.combo canvas { display: block; width: 100%; height: auto; background: #05060a; opacity: 0.25; transition: opacity 0.18s ease-out; }
+.combo-open:focus-visible { outline-offset: -3px; }
+.combo canvas { display: block; width: 100%; height: auto; background: var(--bg); opacity: 0.25; transition: opacity 0.18s ease-out; }
 .combo.ready canvas { opacity: 1; }
-.combo-caption { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 9px 11px 10px; border-top: 1px solid var(--line); background: var(--raised); }
+.combo-caption { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 9px 11px 9px; border-top: 1px solid var(--line); background: var(--panel); }
 .combo-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.combo-numbers { color: #a9b4c8; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.combo-numbers { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
 /* The tile's own switch: these cards together, or spaced apart. */
-.combo-spaced { position: absolute; top: 8px; right: 8px; padding: 4px 11px; border-radius: 99px; border: 1px solid rgba(200, 214, 240, 0.4); background: rgba(8, 11, 19, 0.78); color: #dbe3f1; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.combo-spaced:hover { background: rgba(40, 50, 74, 0.92); color: #ffffff; }
-.combo-spaced[aria-pressed="true"] { background: #eef2f8; border-color: #eef2f8; color: #0b0f18; }
+.combo-spaced { position: absolute; top: 8px; right: 8px; padding: 3px 9px; font-size: 13px; }
 
-.combos-detail-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.combos-detail-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
 .combos-pos { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
-.combos-detail-main { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 20px; align-items: start; }
-.combos-picture canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100vh - 160px); margin: 0 auto; border-radius: 12px; border: 1px solid var(--line); background: #05060a; }
+.combos-detail-main { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 20px; align-items: start; }
+.combos-picture canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100vh - 160px); margin: 0 auto; border: 1px solid var(--line); background: var(--bg); }
 .combos-numbers { margin: 0; }
-.combos-numbers div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(160, 180, 220, 0.14); }
-.combos-numbers dt { color: #a9b4c8; }
-.combos-numbers dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
-.combos-code { margin: 14px 0 0; color: var(--muted); font-size: 12.5px; }
-.combos-code code { display: block; margin-top: 4px; padding: 6px 8px; border-radius: 6px; background: var(--well); border: 1px solid var(--line); color: #cfe1ff; font-size: 12.5px; word-break: break-all; user-select: all; }
+.combos-numbers div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.combos-numbers dt { color: var(--muted); }
+.combos-numbers dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.combos-code { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+.combos-code code { display: block; margin-top: 4px; padding: 6px 8px; background: var(--well); border: 1px solid var(--line); color: var(--text); font: 12.5px var(--mono); word-break: break-all; user-select: all; }
 @media (max-width: 900px) { .combos-detail-main { grid-template-columns: 1fr; } }
 
 /* Cards made from typed words (cards/words.ts) */
 .combos-wordrow { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .combos-add { display: flex; align-items: center; gap: 8px; }
-.combos-add label { font-weight: 700; font-size: 13px; }
-.combos-add input { width: 260px; max-width: 52vw; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--well); color: var(--text); font: inherit; }
-.combos-add input::placeholder { color: #6f7a90; }
+.combos-add label { font-weight: 600; }
+.combos-add input { flex: none; width: 260px; max-width: 52vw; }
 .combos-pending { display: flex; flex-wrap: wrap; gap: 6px; }
-.combo-chip.busy { border-style: dashed; color: var(--muted); animation: combos-busy 1.2s ease-in-out infinite alternate; }
+.combo-chip.busy { animation: combos-busy 1.2s ease-in-out infinite alternate; }
 @keyframes combos-busy { from { opacity: 0.45; } to { opacity: 1; } }
-.combos-word-status { margin: 0; flex: 1; min-width: 200px; color: #c3cde0; font-size: 13px; }
-.combos-tag { margin-left: 2px; padding: 0 5px; border-radius: 99px; background: rgba(255, 255, 255, 0.14); font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
-.combos-card.guess { border-style: dashed; }
-.combos-card.guess .combos-tag { background: none; border: 1px dashed currentColor; }
-.combos-copies .combos-only { width: auto; padding: 0 8px; font-size: 11px; font-weight: 700; color: #b3bdd0; border-left: 1px solid color-mix(in srgb, var(--c, #fff) 45%, transparent); }
-.combos-copies .combos-only[aria-pressed="true"] { background: #eef2f8; color: #0b0f18; }
-.combos-made { display: flex; align-items: stretch; border-left: 1px solid color-mix(in srgb, var(--c, #fff) 45%, transparent); }
-.combos-made button { padding: 0 8px; font-size: 11.5px; font-weight: 700; }
-.combos-made button:hover, .combos-only:hover { background: rgba(255, 255, 255, 0.12); }
-.combo-chip.guess { border-style: dashed; }
-.combos-word { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--c, var(--line)); background: color-mix(in srgb, var(--c, #fff) 10%, var(--well)); }
-.combos-word h3 { margin: 0 0 6px; font-size: 14px; letter-spacing: 0.04em; }
-.combos-word p { margin: 0 0 6px; color: #dbe3f1; font-size: 13px; line-height: 1.4; }
-.combos-word ul { margin: 0; padding-left: 16px; color: #a9b4c8; font-size: 12.5px; line-height: 1.45; }
-.combos-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 3px; background: var(--s); vertical-align: -1px; }
-@media (prefers-reduced-motion: reduce) { .combo-chip.busy { animation: none; } }
-@media (prefers-reduced-motion: reduce) { .combo canvas, .combos-switch, .combos-switch::after { transition: none; } }
+.combos-word-status { margin: 0; flex: 1; min-width: 200px; color: var(--muted); font-size: 14px; }
+.combos-word { margin: 0 0 14px; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
+.combos-word h3 { display: inline-block; margin: 0 0 8px; padding: 5px 7px 4px; border: 1.5px solid var(--c, var(--ink)); border-radius: 1px; background: var(--paper); color: var(--ink); font: 400 13px/1 var(--marker); text-transform: uppercase; }
+.combos-word p { margin: 0 0 6px; font-size: 14px; }
+.combos-word ul { margin: 0; padding-left: 16px; color: var(--muted); font-size: 14px; }
+.combos-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 4px; background: var(--s); vertical-align: -1px; }
+@media (prefers-reduced-motion: reduce) { .combo-chip.busy { animation: none; } .combo canvas, .combos-switch, .combos-switch::after, #toast { transition: none; } }

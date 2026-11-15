@@ -270,6 +270,14 @@ class Server:
         print("[link] phone page loaded", flush=True)
         return web.FileResponse(STATIC / "phone" / "index.html", headers={"Cache-Control": "no-cache"})
 
+    async def phone_font(self, request: web.Request) -> web.StreamResponse:
+        """The phone page's typeface, kept beside it so the page needs no internet."""
+        name = request.match_info["name"]
+        path = STATIC / "phone" / "fonts" / name
+        if "/" in name or "\\" in name or ".." in name or not path.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(path, headers={"Cache-Control": "max-age=86400"})
+
     async def debug_page(self, request: web.Request) -> web.StreamResponse:
         return web.FileResponse(STATIC / "debug.html", headers={"Cache-Control": "no-cache"})
 
@@ -380,6 +388,7 @@ class Server:
         app = web.Application(client_max_size=12 * 1024 * 1024)
         app.router.add_get("/", self.index)
         app.router.add_get("/phone", self.phone_page)
+        app.router.add_get("/phone/fonts/{name}", self.phone_font)
         app.router.add_get("/debug", self.debug_page)
         app.router.add_post("/frame", self.frame)
         app.router.add_get("/ws", self.websocket)

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hand of God</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%231c1a16'/%3E%3Cpath d='M5 9l22-2 1 15-22 3z' fill='%23efeadd'/%3E%3Cpath d='M10 19v-7l5 4 5-5v7' fill='none' stroke='%2316140f' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -14,14 +15,14 @@
         <span class="dot"></span><span id="status-text">Simulated cards</span>
       </button>
 
-      <button id="combos-open" type="button" title="See every combination of cards side by side (V)">
-        <svg viewBox="0 0 14 14" aria-hidden="true"><rect x="0" y="0" width="6" height="6" rx="1.2" /><rect x="8" y="0" width="6" height="6" rx="1.2" /><rect x="0" y="8" width="6" height="6" rx="1.2" /><rect x="8" y="8" width="6" height="6" rx="1.2" /></svg>
-        Combinations
-      </button>
-
-      <button id="view-reset" type="button" title="Back to the usual view (double-click the world, or press 0)" hidden>Reset view</button>
-
-      <button id="world-reset" type="button" title="Clear the cards and start the world again">Reset</button>
+      <div id="topbar">
+        <button id="view-reset" type="button" title="Back to the usual view (double-click the world, or press 0)" hidden>Reset view</button>
+        <button id="world-reset" type="button" title="Clear the cards and start the world again">Reset</button>
+        <button id="combos-open" type="button" title="See every combination of cards side by side (V)">
+          <svg viewBox="0 0 14 14" aria-hidden="true"><rect x="0" y="0" width="6" height="6" /><rect x="8" y="0" width="6" height="6" /><rect x="0" y="8" width="6" height="6" /><rect x="8" y="8" width="6" height="6" /></svg>
+          Combinations
+        </button>
+      </div>
       <dialog id="reset-confirm" class="confirm" aria-labelledby="reset-title">
         <h2 id="reset-title">Reset the world?</h2>
         <p>This removes every simulated card and starts the world again from empty. It cannot be undone.</p>
@@ -54,7 +55,7 @@
         </div>
       </section>
       <!-- Shown while the card panel is closed, so it is obvious how to open it. -->
-      <button id="tab-hint" type="button" title="Open the panel of cards to drag onto the world"><b>Tab</b> open the card panel</button>
+      <button id="tab-hint" type="button" title="Open the panel of cards to drag onto the world"><kbd>Tab</kbd> open the card panel</button>
 
       <section id="connect" hidden>
         <h2>Connect the phone camera</h2>
@@ -63,7 +64,7 @@
       </section>
 
       <div id="toast" role="status"></div>
-      <div id="keys"><b>G</b> setup guide · <b>C</b> card check · <b>P</b> phone · <b>F</b> fullscreen · <b>R</b> rotate table · <b>L</b> re-find border · <b>B</b> labels · <b>V</b> combinations · <b>H</b> hide panels · <b>M</b> sound</div>
+      <div id="keys"><span><kbd>G</kbd> setup guide</span><span><kbd>C</kbd> card check</span><span><kbd>P</kbd> phone</span><span><kbd>F</kbd> fullscreen</span><span><kbd>R</kbd> rotate table</span><span><kbd>L</kbd> re-find border</span><span><kbd>B</kbd> labels</span><span><kbd>V</kbd> combinations</span><span><kbd>H</kbd> hide panels</span><span><kbd>M</kbd> sound</span></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -11,6 +11,7 @@ import { modifierTargets } from '../cards/modifiers';
 import { combine, settlementsOf } from '../cards/recipes';
 import type { LiveCard } from '../cards/store';
 import { sampleField, type WorldFrame } from '../sim/world';
+import { ARROW_SVG } from '../ui/glyphs';
 import { HSCALE, world } from './common';
 
 const LABEL_HEIGHT = 3.5; // scene units above the base of the world
@@ -77,7 +78,15 @@ export class Beacons {
   private point = new THREE.Vector3();
   private directionPoint = new THREE.Vector3();
 
-  constructor(private layer: HTMLElement) {}
+  constructor(private layer: HTMLElement) {
+    // A label is measured once, when its words change. When the marker typeface arrives after
+    // that, the label is a different size: measure them all again.
+    if (typeof document !== 'undefined') {
+      document.fonts?.addEventListener('loadingdone', () => {
+        for (const label of this.labels.values()) label.text = '';
+      });
+    }
+  }
 
   private makeMark(card: LiveCard): Mark {
     const glow = {
@@ -194,18 +203,15 @@ export class Beacons {
         const el = document.createElement('div');
         el.className = 'world-label';
         el.style.setProperty('--c', def.color);
-        // Built as elements, not markup: a card's icon and word may come from a typed word.
-        const icon = document.createElement('span');
-        icon.className = 'i';
-        icon.textContent = def.icon;
+        // A scrap of paper with the word on it. Built as elements, not markup: the word may be a typed one.
         const word = document.createElement('span');
         word.className = 'w';
-        el.append(icon, word);
+        el.append(word);
         if (def.id === 'wind') {
           const arrow = document.createElement('span');
           arrow.className = 'world-wind-arrow';
           arrow.setAttribute('aria-hidden', 'true');
-          arrow.textContent = '➤';
+          arrow.innerHTML = ARROW_SVG;
           el.append(arrow);
         }
         this.layer.appendChild(el);

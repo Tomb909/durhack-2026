@@ -23,30 +23,30 @@ const SHEET_SVG = `<svg viewBox="0 0 210 150" role="img" aria-label="A sheet of 
 
 const CARD_SVG = `<svg viewBox="0 0 210 150" role="img" aria-label="A scrap of paper with the word WIND in thick capitals, an arrow underneath pointing right, and a blank margin around it">
   <path d="M30 42 l150 -6 l6 70 l-152 8 z" fill="#fbfaf5" stroke="#bbb"/>
-  <text x="105" y="75" text-anchor="middle" font-size="34" font-weight="800" font-family="Arial, sans-serif" fill="#111">WIND</text>
+  <text x="105" y="75" text-anchor="middle" font-size="34" font-family="Permanent Marker, Arial, sans-serif" fill="#111">WIND</text>
   <path d="M72 96 H138 M126 86 L138 96 L126 106" fill="none" stroke="#111" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="105" y="132" text-anchor="middle" font-size="10" fill="#2f6fed">blank margin all round</text></svg>`;
+  <text x="105" y="132" text-anchor="middle" font-size="10" fill="#a69e8c">blank margin all round</text></svg>`;
 
 const SIDE_SVG = `<svg viewBox="0 0 210 150" role="img" aria-label="Two RAIN scraps side by side is right; one on top of the other is wrong">
-  <rect x="8" y="40" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="37" y="58" text-anchor="middle" font-size="11" font-weight="800" fill="#111">RAIN</text>
-  <rect x="8" y="74" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="37" y="92" text-anchor="middle" font-size="11" font-weight="800" fill="#111">RAIN</text>
-  <text x="37" y="124" text-anchor="middle" font-size="22" fill="#15803d">✓</text>
-  <rect x="132" y="50" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="161" y="68" text-anchor="middle" font-size="11" font-weight="800" fill="#111">RAIN</text>
-  <rect x="140" y="60" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="169" y="78" text-anchor="middle" font-size="11" font-weight="800" fill="#111">RAIN</text>
-  <text x="165" y="124" text-anchor="middle" font-size="22" fill="#b91c1c">✗</text></svg>`;
+  <rect x="8" y="40" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="37" y="58" text-anchor="middle" font-size="11" font-family="Permanent Marker, Arial, sans-serif" fill="#111">RAIN</text>
+  <rect x="8" y="74" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="37" y="92" text-anchor="middle" font-size="11" font-family="Permanent Marker, Arial, sans-serif" fill="#111">RAIN</text>
+  <path d="M29 117l6 6 11-13" fill="none" stroke="#86b56b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="132" y="50" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="161" y="68" text-anchor="middle" font-size="11" font-family="Permanent Marker, Arial, sans-serif" fill="#111">RAIN</text>
+  <rect x="140" y="60" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="169" y="78" text-anchor="middle" font-size="11" font-family="Permanent Marker, Arial, sans-serif" fill="#111">RAIN</text>
+  <path d="M158 110l14 14M172 110l-14 14" fill="none" stroke="#cc5138" stroke-width="3" stroke-linecap="round"/></svg>`;
 
 const PHONE_SVG = `<svg viewBox="0 0 210 150" role="img" aria-label="A phone held 40 to 60 centimetres above the sheet, looking down">
-  <rect x="78" y="10" width="54" height="16" rx="3" fill="#222"/><circle cx="105" cy="26" r="3" fill="#2f6fed"/>
-  <path d="M105 28 L40 128 M105 28 L170 128" stroke="#2f6fed" stroke-dasharray="4 3" fill="none"/>
+  <rect x="78" y="10" width="54" height="16" rx="2" fill="#0d0c0a" stroke="#5c5548"/><circle cx="105" cy="26" r="3" fill="#efeadd"/>
+  <path d="M105 28 L40 128 M105 28 L170 128" stroke="#a69e8c" stroke-dasharray="4 3" fill="none"/>
   <rect x="34" y="128" width="142" height="8" fill="#f4f1e8" stroke="#111"/>
-  <text x="182" y="80" font-size="10" fill="#555">40–60 cm</text></svg>`;
+  <text x="146" y="70" font-size="10" fill="#a69e8c">40–60 cm</text></svg>`;
 
 export class Guide {
   private root: HTMLElement;
   constructor() {
     const { root, body } = overlay('guide', 'Setting up');
     this.root = root;
-    const words = CARD_DEFS.map((d) => `<span class="word">${d.icon} ${d.word}</span>`).join('');
+    const words = CARD_DEFS.map((d) => `<span class="word">${d.word}</span>`).join('');
     body.innerHTML = `
       <div class="steps">
         <figure>${SHEET_SVG}<figcaption><b>1. Mark the play area.</b> On a big light sheet (A3, or two A4s taped flat), draw one closed rectangle with a thick black marker, a finger-width in from the edge. Keep the inside clean.</figcaption></figure>
@@ -54,7 +54,7 @@ export class Guide {
         <figure>${SIDE_SVG}<figcaption><b>3. More scraps means more.</b> Make several of each word. Put copies side by side, never on top of each other: the camera cannot see a covered card.</figcaption></figure>
         <figure>${PHONE_SVG}<figcaption><b>4. Prop the phone above.</b> 40–60 cm up, the whole sheet in view with a little table showing on every side. Press <b>P</b> for the QR code, then tap Start camera.</figcaption></figure>
       </div>
-      <p class="words">The words: ${words}</p>
+      <p class="words"><span>The words:</span> ${words}</p>
       <p class="hint">Turning ordinary cards does nothing. WIND is directional: rotate its card to point the arrow where the wind should blow. WIND+FOREST+RAIN grows a downwind tree line; WIND+COLD makes a blizzard and blows snow off high ground. Check a new card with <b>C</b>. If left and right are swapped, press <b>R</b>.</p>`;
   }
   toggle(): void {
@@ -103,14 +103,14 @@ export class CardCheck {
     if (!tbody) {
       this.rows.clear();
       this.body.innerHTML =
-        '<p class="hint">Put a freshly written scrap inside the play area. A tick within a second means it will work.</p>' +
+        '<p class="hint">Put a freshly written scrap inside the play area. If its word shows here within a second, it will work.</p>' +
         '<table><thead><tr><th>What the camera sees</th><th>Recognised as</th><th></th></tr></thead><tbody></tbody></table>' +
         '<p class="hint empty">No scraps in view.</p>';
       tbody = this.body.querySelector('tbody')!;
     }
     const entries = [
-      ...snapshot.cards.map((c) => ({ id: c.id, cls: 'ok', label: `✓ ${(c.word ?? c.card).toUpperCase()}`, note: c.visible ? 'in view' : 'covered, held in place' })),
-      ...snapshot.candidates.map((c) => ({ id: c.id, cls: 'no', label: '✗ not a card yet', note: `read as “${c.text || '…'}”` })),
+      ...snapshot.cards.map((c) => ({ id: c.id, cls: 'ok', label: (c.word ?? c.card).toUpperCase(), note: c.visible ? 'in view' : 'covered, held in place' })),
+      ...snapshot.candidates.map((c) => ({ id: c.id, cls: 'no', label: 'Not a card yet', note: `read as “${c.text || '…'}”` })),
     ];
     const seen = new Set<number>();
     for (const entry of entries) {
