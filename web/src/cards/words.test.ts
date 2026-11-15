@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUILT_IN_IDS, CARD_DEFS, cardDef } from './defs';
-import { cleanCard, fallbackCard, findCard, nearMatch, normaliseWord, register, removeWord, resolveWord, wordId, wordSound, type AskServer, MAX_PRIMITIVES, MAX_PARTS, copiesOf } from './words';
+import { cleanCard, fallbackCard, findCard, forgetWords, nearMatch, normaliseWord, register, removeWord, resolveWord, wordId, wordSound, type AskServer, MAX_PRIMITIVES, MAX_PARTS, copiesOf } from './words';
 
 describe('words and ids', () => {
   it('normalises what was typed', () => {
@@ -111,6 +111,13 @@ describe('cleanCard, the one gate', () => {
     expect(cleanCard({ word: 'moon', origin: 'llm', biome: { ground: '#cccccc', strength: 0.8, liquid: { glow: 1 }, trees: false } })!.biome)
       .toEqual({ ground: '#cccccc', strength: 0.8, radius: 0.2, trees: false });
     expect(cleanCard({ word: 'moon', origin: 'llm', effects: [{ field: 'life', amount: -1 }], biome: { ground: '#cccccc', strength: 0 } })!.biome).toBeUndefined();
+  });
+  it('reads a colour written loosely, and nothing that is not a colour', () => {
+    const part = (color: unknown) => ({ shape: 'box', at: [0, 0.3, 0], size: [0.5, 0.6, 0.5], rotate: [0, 0, 0], color });
+    const colours = ['c8d3de', ' #CFC6B4', '#abc', 'url(x)', '#12345', 'red', 7];
+    const def = cleanCard({ word: 'tower', origin: 'llm', color: 'E3B84C ', prop: { parts: colours.map(part), scale: 'large', count: 'one', habitat: 'land', motion: 'still' } })!;
+    expect(def.color).toBe('#e3b84c');
+    expect(def.prop!.parts.map((p) => p.color)).toEqual(['#c8d3de', '#cfc6b4', '#aabbcc', '#9a8f80', '#9a8f80', '#9a8f80', '#9a8f80']);
   });
   it('reads the ground colour of a card made before biomes as a biome', () => {
     const def = cleanCard({ word: 'mars', origin: 'llm', ground: { color: '#B5532E', strength: 0.8, radius: 0.3 } })!;
@@ -228,6 +235,21 @@ describe('where a word comes from', () => {
     const r = await resolveWord('glorp', { ask: model({ nonsense: true }) });
     expect(r.source).toBe('fallback');
     removeWord('glorp');
+  });
+  it('forgets every made card, and says whether the server was told', async () => {
+    const before = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id)).length;
+    register(cleanCard(fallbackCard('pebble'))!);
+    register(cleanCard({ word: 'tower', origin: 'llm', reading: 'A tower.' })!);
+    let asked = 0;
+    expect(await forgetWords(async () => { asked++; })).toEqual({ removed: 2, server: true });
+    expect(asked).toBe(1);
+    expect(findCard('pebble')).toBeNull();
+    expect(findCard('tower')).toBeNull();
+    expect(CARD_DEFS.length).toBe(before); // only the built-in cards are left
+    // With no server the cards here still go.
+    register(cleanCard(fallbackCard('pebble'))!);
+    expect(await forgetWords(async () => { throw new Error('no server'); })).toEqual({ removed: 1, server: false });
+    expect(findCard('pebble')).toBeNull();
   });
   it('removing a made card leaves the built-in cards alone', () => {
     const before = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id)).length;

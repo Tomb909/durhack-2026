@@ -4,7 +4,7 @@
 import { CARD_DEFS, onCardsChanged } from '../cards/defs';
 import { modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { CardStore, LiveCard } from '../cards/store';
-import { resolveWord } from '../cards/words';
+import { forgetWords, resolveWord } from '../cards/words';
 import { WORD_CARDS } from '../flags';
 import type { Candidate } from '../net/link';
 import { DEFAULT_SHAPE, type WorldShape } from '../sim/world';
@@ -103,12 +103,36 @@ export class TablePanel {
     const form = root.querySelector('#tray-add') as HTMLFormElement | null;
     const input = root.querySelector('#tray-word') as HTMLInputElement | null;
     const status = root.querySelector('#tray-status') as HTMLElement | null;
+    const forget = root.querySelector('#tray-forget') as HTMLButtonElement | null;
     if (!form || !input || !status) return;
     if (!WORD_CARDS) {
       form.hidden = status.hidden = true;
+      if (forget) forget.hidden = true;
       return;
     }
-    const button = form.querySelector('button') as HTMLButtonElement;
+    const button = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+    // Reset made cards: after a warning, forget every card made from a word, here and on the server.
+    const confirm = document.getElementById('forget-confirm') as HTMLDialogElement | null;
+    if (forget && confirm) {
+      forget.addEventListener('click', () => {
+        confirm.returnValue = 'cancel';
+        confirm.showModal();
+      });
+      confirm.addEventListener('close', async () => {
+        if (confirm.returnValue !== 'forget' || button.disabled) return;
+        button.disabled = forget.disabled = true;
+        try {
+          // Made cards on the table go with their definitions.
+          for (const card of this.store.cards) if (card.def.origin && card.source === 'sim') this.store.removeSim(card.key);
+          const { removed, server } = await forgetWords();
+          const cards = `${removed} made card${removed === 1 ? '' : 's'}`;
+          status.textContent = server ? `Forgot ${cards}.` : `Forgot ${cards} here, but the server could not be reached: the ones it has stored come back when the page is reloaded.`;
+          status.className = server ? '' : 'guess';
+        } finally {
+          button.disabled = forget.disabled = false;
+        }
+      });
+    }
     // Typing a word must not steer the camera or open other panels: the page's keys stop here.
     // (Only key presses stop: a key let go must still reach the page, or a W held down while
     // clicking in here would walk the camera for ever.)

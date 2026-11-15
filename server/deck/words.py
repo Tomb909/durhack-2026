@@ -188,6 +188,14 @@ class WordStore:
             raise
         self._mtime = self.path.stat().st_mtime
 
+    def clear(self) -> int:
+        """Forget every stored card (the file goes). Returns how many there were."""
+        self._load()
+        count = len(self._cards)
+        self.path.unlink(missing_ok=True)
+        self._cards, self._mtime = {}, None
+        return count
+
 
 # --- the model call ------------------------------------------------------------------------
 
@@ -291,7 +299,7 @@ A card can do four things. Use any mix, but use only what fits the word.
 them, so pushing a field is how a card changes the land itself. Fields: height (up for hills, down for \
 hollows), temperature (hot dries the land into desert, cold brings snow and ice), wetness (rain, lakes, \
 rivers; negative dries), life (forest grows where it is also warm and wet enough; negative kills it), \
-settlement (villages, farms and fishing boats appear), lava (molten rock wells up, runs downhill and pools in \
+settlement (people: ploughed fields and fishing boats at a little, houses and streets at more), lava (molten rock wells up, runs downhill and pools in \
 hollows; it glows, burns plants, and sets to black rock under water or in the cold), seaLevel (the sea rises \
 or falls everywhere). At most six effects.
 
@@ -302,12 +310,15 @@ radius small (0.05 to 0.3). Good for weather and gentle climate; bad for a place
   Every other shape STOPS at its radius (0.04 to 0.6), with an uneven natural outline, so it changes only \
 its own region:
   mound     a smooth dome (a hill, a burial mound), or with a negative amount a bowl
-  flat      level with steep sides: a mesa or plateau; with a negative amount a basin, pit or crater floor
+  flat      level with steep sides: a mesa or plateau; with a negative amount a basin or pit
   ridges    sharp crests and valleys: a mountain range, badlands, a rocky waste
   spires    many separate needles: stalagmites, hoodoos, crystal fields, termite mounds, a stone forest
   dunes     long rounded waves: sand dunes, snow drifts, rolling waves of land
   terraces  a dome cut into level steps: rice terraces, a stepped hill, an open-cast mine (negative)
-  rim       a ring wall with a hollow middle: a crater, an atoll, a caldera, an arena
+  rim       a whole crater in one effect: a raised crest, a gentle slope outside it, and inside it a \
+floor sunk below the land around (a crater, a caldera, an atoll). amount is how high the crest stands and \
+is always positive: 0.04 for a shallow old crater, 0.1 for a fresh deep one. The floor sinks by itself, so \
+add no second effect to dig it. Radius 0.08 to 0.2; a crater wider than that swallows the world.
 On temperature, wetness, life, settlement and lava only the outline matters: mound fades from the middle, \
 and every other shape but patch is level right up to a hard edge.
 
@@ -326,6 +337,7 @@ lake, give a flat basin a lava effect of the same radius or a little less; for a
 - A place has an edge. Give a place's climate (temperature, wetness, life) the flat shape at the place's \
 own radius, so the place is hot, dry or dead inside and the rest of the world is left alone. life -1 as \
 a patch kills forest across half the world.
+- settlement is how many people live there, not that something was built. Up to 0.4 gives ploughed fields on flat fertile land and fishing boats on open water, with no houses; houses begin above 0.45, and 1.0 is a whole village of dozens of houses. Fields grow only on moist ground, so a FARM, an ORCHARD or a VINEYARD is settlement +0.4 and wetness +0.3, both with the flat shape at the same radius of 0.1 to 0.15 (that makes the fields; the barn is the card's object). A HAMLET is +0.6, and only a word that means many homes (a town, a port, a market) goes to 1.0. One building (a barn, a castle, a temple, a lighthouse, a factory) is the card's object and needs no settlement at all.
 Use effects for places, landscapes, weather and climates (a desert, a marsh, a glacier, a hill). Leave \
 effects empty for an object that simply stands in the world: a lighthouse does not raise the land.
 
@@ -861,6 +873,12 @@ class WordService:
     async def handle_words(self, request: web.Request) -> web.Response:
         return web.json_response({"cards": self.store.all()})
 
+    async def handle_forget(self, request: web.Request) -> web.Response:
+        removed = self.store.clear()
+        print(f"[words] forgot {removed} stored card{'' if removed == 1 else 's'}", flush=True)
+        return web.json_response({"removed": removed})
+
     def add_routes(self, app: web.Application) -> None:
         app.router.add_post("/api/word", self.handle_word)
         app.router.add_get("/api/words", self.handle_words)
+        app.router.add_delete("/api/words", self.handle_forget)

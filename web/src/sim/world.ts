@@ -253,8 +253,10 @@ export const RULES = {
     evenOut: 0.85, // `flat` and `terraces`: how far the ground underneath is levelled (0 keeps every hill, 1 is dead level)
     steps: 5, // `terraces`: how many
     crests: 9, // `dunes`: how many would fit across the world's width
-    rimAt: 0.72, // `rim`: the wall stands at this share of the radius
-    rimWidth: 0.26, // and is this wide either side of that, as a share of the radius
+    rimAt: 0.6, // `rim` (a crater): the crest stands at this share of the radius
+    rimFloor: 0.45, // the floor inside sits this far below the ground outside, as a share of the crest's height
+    rimWall: 3, // the inner wall rises as (distance / crest)^this: a level floor, then a steep wall
+    rimApron: 1.7, // the outer slope falls as (1 - d)^this from crest to foot: steepest under the crest, then a long apron
     grit: 0.06, // fine roughness on a landform, as a share of its height
   },
   settleSeconds: 0.35, // how fast rivers and lakes ease to their new shape
@@ -1487,8 +1489,10 @@ export class WorldSim {
               break;
             }
             case 'rim': {
-              const off = (d - F.rimAt) / F.rimWidth;
-              e = off > -1 && off < 1 ? (1 - off * off) * (1 - off * off) : 0;
+              // One whole crater: a sunken floor, a steep inner wall up to the crest, a gentle apron outside.
+              e = d < F.rimAt
+                ? -F.rimFloor + (1 + F.rimFloor) * Math.pow(d / F.rimAt, F.rimWall)
+                : Math.pow((1 - d) / (1 - F.rimAt), F.rimApron);
               break;
             }
           }
@@ -1504,8 +1508,12 @@ export class WorldSim {
     const into = isHeight ? this.formed : target;
     if (isHeight) this.hadForm = true;
     const ceiling = RULES.copiesCeiling;
+    // A crater is the same crater whichever way its amount points: the amount is how high the crest
+    // stands, and the floor sinks by itself (a negative rim used to dig a ring-shaped ditch).
+    const amount = isHeight && shape === 'rim' ? Math.abs(effect.amount) : effect.amount;
     for (let i = 0; i < this.n; i++) {
-      if (copies[i] > 0) into[i] += effect.amount * ceiling * Math.tanh(copies[i] / ceiling);
+      // Only a crater's floor is below zero here; every other shape is zero or more.
+      if (copies[i] !== 0) into[i] += amount * ceiling * Math.tanh(copies[i] / ceiling);
     }
   }
 

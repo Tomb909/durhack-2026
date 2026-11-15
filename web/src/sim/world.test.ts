@@ -933,6 +933,19 @@ describe('landforms (effects with a shape)', () => {
     expect(at(f, f.height, 0.5, 0.5)).toBeGreaterThan(at(empty, empty.height, 0.5, 0.5) + 0.09);
     expect(spread(f)).toBeLessThan(spread(empty) * 0.5 + 0.004);
   });
+  it('rim is a whole crater, whichever way its amount points', () => {
+    const up = settle([made(shaped('rim', 0.1, 0.2), 0.5, 0.5)]);
+    const down = settle([made(shaped('rim', -0.1, 0.2), 0.5, 0.5)]);
+    const ground = at(empty, empty.height, 0.5, 0.5);
+    for (const f of [up, down]) {
+      // The floor is below the land around; the crest (at 0.6 of the radius) stands well above it.
+      expect(at(f, f.height, 0.5, 0.5)).toBeLessThan(ground - 0.02);
+      const crest = Math.max(...[0.1, 0.11, 0.12, 0.13, 0.14].map((r) => at(f, f.height, 0.5 + r, 0.5)));
+      expect(crest).toBeGreaterThan(at(empty, empty.height, 0.62, 0.5) + 0.04);
+    }
+    // A negative amount is the same crater, not a ring-shaped ditch.
+    expect(Array.from(down.height)).toEqual(Array.from(up.height));
+  });
   it('each shape is its own landform', () => {
     const top = (shape: string) => at(settle([made(shaped(shape, 0.2), 0.5, 0.5)]), settle([made(shaped(shape, 0.2), 0.5, 0.5)]).height, 0.5, 0.5);
     // A rim is hollow in the middle; a mound and a table are highest there.

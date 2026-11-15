@@ -55,12 +55,13 @@ export interface CardEffect {
 /**
  * Landforms. `amount` is the height of the top (or, below zero, the depth of the floor).
  * - mound: a smooth dome, or a bowl
- * - flat: a level top or floor with steep sides (a mesa, a plateau, a basin, a crater floor)
+ * - flat: a level top or floor with steep sides (a mesa, a plateau, a basin)
  * - ridges: sharp parallel-ish crests and valleys (a mountain range, badlands)
  * - spires: many separate needles (stalagmites, hoodoos, crystals, termite mounds)
  * - dunes: long rounded waves
  * - terraces: a dome cut into level steps (rice terraces, a ziggurat hill, a stepped canyon)
- * - rim: a ring wall with a hollow middle (a crater, an atoll, a caldera)
+ * - rim: a whole crater (also an atoll, a caldera): a raised crest with a gentle slope outside and a
+ *   floor sunk below the ground inside. `amount` is the height of the crest; its sign is ignored.
  */
 export const LAND_SHAPES = ['mound', 'flat', 'ridges', 'spires', 'dunes', 'terraces', 'rim'] as const;
 export type LandShape = (typeof LAND_SHAPES)[number];

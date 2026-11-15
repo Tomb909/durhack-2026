@@ -70,8 +70,15 @@ const num = (v: unknown, lo: number, hi: number, fallback: number): number => {
   const n = typeof v === 'number' ? v : Number.NaN;
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
 };
-const colour = (v: unknown, fallback: string): string =>
-  typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : fallback;
+/**
+ * A colour as #rrggbb. Models also write `c8d3de`, ` #cfc6b4` and `#abc`: those are read as the
+ * colours they plainly are (a card whose every part fell back to grey was the alternative).
+ */
+const colour = (v: unknown, fallback: string): string => {
+  const hex = typeof v === 'string' ? /^\s*#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\s*$/.exec(v)?.[1] : undefined;
+  if (!hex) return fallback;
+  return `#${hex.length === 3 ? hex.replace(/./g, '$&$&') : hex}`.toLowerCase();
+};
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
   allowed.includes(v as T) ? (v as T) : fallback;
 /** Plain text only: no markup characters, no control characters, bounded. */
@@ -536,6 +543,29 @@ export function register(def: CardDef, quiet = false): void {
 export function removeWord(id: string): void {
   unregisterCard(id);
   writeLocal();
+}
+
+/** Asks the server to forget its stored cards. Swappable in tests. */
+export type ForgetServer = () => Promise<void>;
+
+export const forgetServer: ForgetServer = async () => {
+  const response = await fetch('/api/words', { method: 'DELETE' });
+  const body = await response.json().catch(() => null);
+  // An answer without a count is not our server talking (the dev server with nothing behind it, say).
+  if (!response.ok || typeof body?.removed !== 'number') throw new Error('no server');
+};
+
+/**
+ * Forget every card made from a typed word: here, in this browser's copy, and in the server's
+ * store, so each word is read afresh the next time it is typed. Built-in cards stay.
+ * `server` is false when the server could not be told: its stored cards will come back on a reload.
+ */
+export async function forgetWords(forget: ForgetServer = forgetServer): Promise<{ removed: number; server: boolean }> {
+  const server = await forget().then(() => true, () => false);
+  const made = CARD_DEFS.filter((d) => !BUILT_IN_IDS.has(d.id)).map((d) => d.id);
+  for (const id of made) unregisterCard(id);
+  writeLocal();
+  return { removed: made.length, server };
 }
 
 /** Register a list of stored cards, each through the gate. Returns how many were taken. */

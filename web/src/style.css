@@ -34,6 +34,11 @@ body.bare #ui > :not(#toast) { display: none; }
 #tray-add input::placeholder { color: var(--muted); }
 #tray-add button { padding: 6px 11px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 #tray-add button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+#tray-forget { display: block; margin: 0 0 8px auto; padding: 4px 9px; border-radius: 8px; border: 1px solid rgba(248, 113, 113, 0.5); background: rgba(255, 255, 255, 0.06); color: #f3a5a5; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
+#tray-forget:hover:not(:disabled) { background: rgba(248, 113, 113, 0.18); }
+#tray-forget:disabled { opacity: 0.55; cursor: progress; }
+#tray-forget:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#tray-forget[hidden] { display: none; }
 #tray-add :disabled, #tray-add input:read-only { opacity: 0.55; cursor: progress; }
 #tray-status { margin: 0 0 8px; font-size: 11px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
 #tray-status:empty { display: none; }
@@ -109,15 +114,15 @@ body.bare #ui > :not(#toast) { display: none; }
 #combos-open:hover { background: rgba(40, 50, 74, 0.8); }
 #world-reset { position: absolute; right: 172px; top: 16px; padding: 8px 14px; border-radius: 99px; border: 1px solid #f87171; background: #c62828; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 #world-reset:hover { background: #e53935; }
-#world-reset:focus-visible, #reset-confirm button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-#reset-confirm { width: min(400px, 90vw); padding: 20px 22px; border-radius: 16px; border: 1px solid var(--line); background: rgba(16, 20, 31, 0.98); color: var(--text); pointer-events: auto; }
-#reset-confirm::backdrop { background: rgba(4, 6, 12, 0.62); backdrop-filter: blur(6px); }
-#reset-confirm h2 { margin: 0 0 8px; font-size: 20px; }
-#reset-confirm p { margin: 0 0 18px; color: var(--muted); }
-#reset-confirm form { display: flex; justify-content: flex-end; gap: 10px; }
-#reset-confirm button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer; }
-#reset-confirm button.danger { border-color: #f87171; background: #c62828; color: #fff; }
-#reset-confirm button.danger:hover { background: #e53935; }
+#world-reset:focus-visible, .confirm button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.confirm { width: min(400px, 90vw); padding: 20px 22px; border-radius: 16px; border: 1px solid var(--line); background: rgba(16, 20, 31, 0.98); color: var(--text); pointer-events: auto; }
+.confirm::backdrop { background: rgba(4, 6, 12, 0.62); backdrop-filter: blur(6px); }
+.confirm h2 { margin: 0 0 8px; font-size: 20px; }
+.confirm p { margin: 0 0 18px; color: var(--muted); }
+.confirm form { display: flex; justify-content: flex-end; gap: 10px; }
+.confirm button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer; }
+.confirm button.danger { border-color: #f87171; background: #c62828; color: #fff; }
+.confirm button.danger:hover { background: #e53935; }
 #view-reset { position: absolute; right: 256px; top: 16px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); }
 #view-reset:hover { background: rgba(40, 50, 74, 0.8); }
 #view-reset[hidden] { display: none; }

@@ -22,12 +22,20 @@
       <button id="view-reset" type="button" title="Back to the usual view (double-click the world, or press 0)" hidden>Reset view</button>
 
       <button id="world-reset" type="button" title="Clear the cards and start the world again">Reset</button>
-      <dialog id="reset-confirm" aria-labelledby="reset-title">
+      <dialog id="reset-confirm" class="confirm" aria-labelledby="reset-title">
         <h2 id="reset-title">Reset the world?</h2>
         <p>This removes every simulated card and starts the world again from empty. It cannot be undone.</p>
         <form method="dialog">
           <button type="submit" value="cancel" autofocus>Cancel</button>
           <button type="submit" value="reset" class="danger">Reset world</button>
+        </form>
+      </dialog>
+      <dialog id="forget-confirm" class="confirm" aria-labelledby="forget-title">
+        <h2 id="forget-title">Forget the made cards?</h2>
+        <p>This removes every card made from a typed word, here and on the server. Each word is read afresh the next time it is typed. The built-in cards stay. It cannot be undone.</p>
+        <form method="dialog">
+          <button type="submit" value="cancel" autofocus>Cancel</button>
+          <button type="submit" value="forget" class="danger">Forget cards</button>
         </form>
       </dialog>
 
@@ -39,6 +47,7 @@
           <button type="submit" title="Make a card from this word and put it on the table">Add</button>
         </form>
         <p id="tray-status" role="status" aria-live="polite"></p>
+        <button id="tray-forget" type="button" title="Forget every card made from a typed word, so each is read afresh">Reset made cards</button>
         <div id="table">
           <span class="edge far">far side</span>
           <span class="edge near">your side</span>

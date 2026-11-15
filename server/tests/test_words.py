@@ -192,6 +192,26 @@ def test_schema_is_strict_everywhere():
     assert "<word>" in PROMPT
 
 
+def test_forgets_every_stored_card(tmp_path: Path):
+    messages, client = stub()
+    path = tmp_path / "words.json"
+    service = WordService(WordStore(path), client_factory=lambda: client)
+
+    async def run(http):
+        await http.post("/api/word", json={"text": "castle"})
+        assert path.exists()
+        forgot = await http.delete("/api/words")
+        assert forgot.status == 200 and (await forgot.json()) == {"removed": 1}
+        assert not path.exists()
+        assert (await (await http.get("/api/words")).json()) == {"cards": []}
+        # Nothing left to forget is not an error, and the word is read afresh afterwards.
+        assert (await (await http.delete("/api/words")).json()) == {"removed": 0}
+        return await (await http.post("/api/word", json={"text": "castle"})).json()
+
+    again = asyncio.run(with_client(service, run))
+    assert again["source"] == "model" and len(messages.calls) == 2
+
+
 def test_makes_stores_and_reuses(tmp_path: Path):
     messages, client = stub()
     service = WordService(WordStore(tmp_path / "words.json"), client_factory=lambda: client)
