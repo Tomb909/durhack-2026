@@ -3,8 +3,10 @@
 //
 // Like the rest of the world there is no pair logic: an object only knows its own
 // habitat. A boat finds water because its habitat is water, the way LIFE only grows
-// where it is warm and wet. Placement is seeded from the card's id and position, so
-// the same cards on the same world always put the same objects in the same places.
+// where it is warm and wet. Placement is seeded from the card's id (and which copy of it
+// this is), never its position: moving a card carries its objects along as they are,
+// instead of re-rolling which way each one faces. The same cards on the same world
+// always put the same objects in the same places.
 import type { CardDef, Habitat, Prop } from '../cards/defs';
 import type { LiveCard } from '../cards/store';
 import { hashText, seeded } from '../cards/words';
@@ -67,10 +69,13 @@ export interface PlacedObject {
  */
 const MOST_SUNK = 0.6;
 
-/** A number from a card's id and position: the same card in the same place always gives the same objects. */
-function seedFor(card: LiveCard): number {
+/**
+ * A number from a card's id and which copy of it this is (0 for the first on the table).
+ * Not from its position: then every nudge of the card would turn its objects a new way.
+ */
+function seedFor(card: LiveCard, copy: number): number {
   const id = parseInt(hashText(card.def.id), 16);
-  return (id ^ Math.imul(Math.round(card.x * 1e4), 73856093) ^ Math.imul(Math.round(card.y * 1e4), 19349663)) >>> 0;
+  return (id ^ Math.imul(copy + 1, 73856093)) >>> 0;
 }
 
 interface Grid {
@@ -145,9 +150,12 @@ export function placeProps(frame: WorldFrame, cards: LiveCard[]): PlacedObject[]
   const order = cards
     .filter((c) => c.def.prop && c.strength > 0)
     .sort((a, b) => (a.def.id < b.def.id ? -1 : a.def.id > b.def.id ? 1 : a.x - b.x || a.y - b.y));
+  const copies = new Map<string, number>();
   for (const card of order) {
     const prop = card.def.prop!;
-    const random = seeded(seedFor(card));
+    const copy = copies.get(card.def.id) ?? 0;
+    copies.set(card.def.id, copy + 1);
+    const random = seeded(seedFor(card, copy));
     const size = propSize(prop);
     const [lo, hi] = COUNT[prop.count];
     let count = lo + Math.floor(random() * (hi - lo + 1));
