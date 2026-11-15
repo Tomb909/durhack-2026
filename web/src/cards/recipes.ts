@@ -1,14 +1,14 @@
 // Cards that make something else when they lie next to each other.
 //
-//   MOUNTAIN + LAVA            a volcano, between the two
+//   MOUNTAIN + LAVA            a volcano: the mountain stays, and gets a crater at its top
 //   CIVILIZATION               a village
 //   CIVILIZATION x 2           a town, between them
 //   CIVILIZATION x 3 or more   a city, in the middle of them, with a district at every card:
 //                              a long line of cards is a long city
 //   LAKE x 2 or more           one bigger lake, in the middle of them
 //
-// The world and the picture never see the cards that went in: `combine` hands them the
-// volcano, village, town or city instead, as cards of their own (the `MADE` definitions
+// The world and the picture never see the cards that went in (but for the mountain under a
+// volcano): `combine` hands them the volcano, village, town or city, as cards of their own (the `MADE` definitions
 // below, which are not in cards.json, so nobody can write or drag one). Everything here
 // is smooth in where the cards are and how strong they are, so sliding a card towards
 // another grows the new thing; it does not pop in.
@@ -24,14 +24,17 @@ export const NEXT_TO = { full: 0.26, none: 0.3 };
 
 const TABLE_ASPECT = 420 / 297;
 
-/** What the recipes make. Plain card data, like cards.json. */
+/**
+ * What the recipes make. Plain card data, like cards.json.
+ * The volcano is only the top of one: a summit cone with a crater, sized to stand on a MOUNTAIN.
+ */
 export const MADE: Record<'volcano' | 'village' | 'town' | 'city' | 'district', CardDef> = {
   volcano: {
     id: 'volcano', word: 'VOLCANO', icon: '🌋', color: '#d9482b',
     effects: [
       {
-        field: 'height', amount: 0.38, radius: 0.2,
-        cone: { crater: 0.24, craterDepth: 0.3, power: 2.0, gullies: 10, gullyDepth: 0.22, notches: 4, notchDepth: 0.38, lava: 60 },
+        field: 'height', amount: 0.22, radius: 0.17,
+        cone: { crater: 0.24, craterDepth: 0.42, power: 2.0, gullies: 10, gullyDepth: 0.22, notches: 4, notchDepth: 0.38, lava: 60 },
       },
       { field: 'lava', amount: 1.6, radius: 0.014 },
       { field: 'temperature', amount: 0.45, radius: 0.09 },
@@ -171,7 +174,8 @@ function lakes(water: LiveCard[], out: LiveCard[]): void {
 
 /**
  * Each LAVA next to a MOUNTAIN turns it into a volcano: the nearest pairs first, one lava to one
- * mountain. As they close in, the mountain and the welling lava give way to the cone between them.
+ * mountain. The mountain stays as it is, and as they close in a crater grows at its top while the
+ * lava welling at the LAVA card gives way to the lava pouring from that crater.
  */
 function volcanoes(mountains: LiveCard[], lavas: LiveCard[], out: LiveCard[]): void {
   const pairs: { m: number; l: number; near: number }[] = [];
@@ -180,7 +184,6 @@ function volcanoes(mountains: LiveCard[], lavas: LiveCard[], out: LiveCard[]): v
     if (near > 0) pairs.push({ m, l, near });
   }));
   pairs.sort((a, b) => b.near - a.near || a.m - b.m || a.l - b.l);
-  const leftM = mountains.map((c) => c.strength);
   const leftL = lavas.map((c) => c.strength);
   const usedM = new Set<number>();
   const usedL = new Set<number>();
@@ -190,14 +193,10 @@ function volcanoes(mountains: LiveCard[], lavas: LiveCard[], out: LiveCard[]): v
     usedL.add(l);
     const mountain = mountains[m];
     const lava = lavas[l];
-    leftM[m] = mountain.strength * (1 - near * lava.strength);
     leftL[l] = lava.strength * (1 - near * mountain.strength);
-    // It starts on the mountain and ends up half way between the two.
-    const x = mountain.x + 0.5 * near * (lava.x - mountain.x);
-    const y = mountain.y + 0.5 * near * (lava.y - mountain.y);
-    out.push(made(MADE.volcano, `volcano:${mountain.key}+${lava.key}`, mountain, x, y, near * mountain.strength * lava.strength));
+    out.push(made(MADE.volcano, `volcano:${mountain.key}+${lava.key}`, mountain, mountain.x, mountain.y, near * mountain.strength * lava.strength));
   }
-  mountains.forEach((card, m) => out.push(leftM[m] === card.strength ? card : { ...card, strength: leftM[m] }));
+  out.push(...mountains);
   lavas.forEach((card, l) => out.push(leftL[l] === card.strength ? card : { ...card, strength: leftL[l] }));
 }
 

@@ -62,7 +62,7 @@ Useful while testing: **Tab** opens the card tray, **V** the Combinations view, 
 ## 2. Lava, ravine and volcano
 
 - [ ] **LAVA** alone: a glowing pool with dark crust, smoke and embers over it, ash on the ground around.
-- [ ] **MOUNTAIN next to LAVA** (`mountain+lava`): a volcano between the two cards, a cone with a crater, lava running down gullies, a smoke column. **Not yet checked with real cards:** slide LAVA slowly towards MOUNTAIN from the far side of the table: the mountain grows into the volcano with no jump, and slides back the same way.
+- [ ] **MOUNTAIN next to LAVA** (`mountain+lava`): the mountain becomes a volcano where it stands, no smaller than it was: a crater at its top, lava running down gullies, a smoke column. **Not yet checked with real cards:** slide LAVA slowly towards MOUNTAIN from the far side of the table: the mountain grows into the volcano with no jump, and slides back the same way.
 - [ ] MOUNTAIN and LAVA far apart: a mountain, and a pool of lava by itself.
 - [ ] **RAVINE** alone: a narrow crack, not a round pit. `ravine+rain`: it stays dry until rain runs into it, then holds a lake.
 - [ ] `lava+lake` and `mountain+lava+lake`: lava under water sets to dark rock.

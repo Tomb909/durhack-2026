@@ -659,9 +659,9 @@ describe('volcano', () => {
     const low = Math.min(...tops);
     const high = Math.max(...tops);
     const floor = at(f, f.height, X, Y);
-    expect(high).toBeGreaterThan(0.35);
+    expect(high).toBeGreaterThan(0.2);
     expect(floor).toBeLessThan(low - 0.03); // even the lowest notch holds a crater
-    expect(high - floor).toBeGreaterThan(0.07);
+    expect(high - floor).toBeGreaterThan(0.04);
     expect(high - low).toBeGreaterThan(0.02); // notches: the rim is not level
     // A crest, not a shoulder: the ground falls away on both sides of the rim.
     const rim = ring(f, rc);
@@ -729,7 +729,7 @@ describe('volcano', () => {
     for (const [x, y] of [[0.25, 0.45], [0.75, 0.55]]) {
       let top = 0;
       for (let r = 0; r < 0.08; r += 0.004) top = Math.max(top, at(pair, pair.height, x + r, y), at(pair, pair.height, x - r, y));
-      expect(at(pair, pair.height, x, y)).toBeLessThan(top - 0.07);
+      expect(at(pair, pair.height, x, y)).toBeLessThan(top - 0.04);
       expect(at(pair, pair.lavaHeat, x, y)).toBeGreaterThan(0.9);
     }
   });
@@ -756,9 +756,9 @@ describe('cards that make something together', () => {
     return most;
   };
 
-  it('MOUNTAIN next to LAVA is a volcano, standing between them', () => {
+  it('MOUNTAIN next to LAVA is a volcano: the same mountain, with a crater at its top', () => {
     const pair = settle([card('mountain', X - near / 2, Y), card('lava', X + near / 2, Y)]);
-    const volcano = settle([card('volcano', X, Y)]);
+    const volcano = settle([card('mountain', X - near / 2, Y), card('volcano', X - near / 2, Y)]);
     expect(same(pair, volcano, 'height')).toBeLessThan(1e-6);
     expect(same(pair, volcano, 'lava')).toBeLessThan(1e-6);
     expect(volcano.rules).toBeGreaterThan(0);
@@ -784,9 +784,11 @@ describe('cards that make something together', () => {
   });
 
   it('one lava makes one volcano: a second mountain beside it stays a mountain', () => {
+    // The mountain under the volcano is still there too.
     const made = combine([card('mountain', 0.4, Y), card('mountain', 0.6, Y), card('lava', 0.45, Y)]);
     const strong = made.filter((c) => c.strength > 0.5).map((c) => c.def.id).sort();
-    expect(strong).toEqual(['mountain', 'volcano']);
+    expect(strong).toEqual(['mountain', 'mountain', 'volcano']);
+    expect(made.find((c) => c.def.id === 'volcano')!.x).toBe(0.4);
   });
 
   it('BIG beside the pair makes a bigger volcano', () => {
