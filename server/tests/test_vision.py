@@ -56,6 +56,15 @@ def test_match_is_forgiving_but_not_ambiguous():
     assert match("CIVILZATION", VOCAB) == ("civilization", 1)
 
 
+def test_a_real_word_near_a_card_word_is_itself():
+    # Written on a scrap these mean themselves: each is made into a card of its own.
+    for word in ("TRAIN", "FOUNTAIN", "PIG", "CAKE", "GUN", "TEMPLE", "CANNON", "MICE", "WINE", "FORT", "BATTLE"):
+        assert match(word, VOCAB) == (None, 99), word
+    # A slip of the pen or of the reader is still forgiven.
+    assert match("MOUNTIAN", VOCAB)[0] == "mountain" and match("RAlN", VOCAB)[0] == "rain"
+    assert match("FORESTS", VOCAB) == ("forest", 0)
+
+
 def test_reader_refreshes_vocabulary_when_card_data_changes(tmp_path):
     cards_path = tmp_path / "cards.json"
     cards_path.write_text(json.dumps([{"id": "rain", "word": "WATER"}]), encoding="utf-8")

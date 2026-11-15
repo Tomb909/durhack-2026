@@ -24,8 +24,15 @@ export const PROP_SIZE = { small: 0.028, medium: 0.05, large: 0.085, landmark: 0
  */
 export function propSize(prop: Prop): number {
   if (prop.metres === undefined) return PROP_SIZE[prop.scale];
-  return Math.min(0.15, Math.max(0.02, 0.022 * prop.metres ** 0.4));
+  return Math.min(0.15, Math.max(LEAST[prop.count], 0.022 * prop.metres ** 0.4));
 }
+/**
+ * The least an object is drawn at, by how many of it there are. One thing alone is all its card
+ * has to show, so it is drawn big enough to be made out from across the table whatever its real
+ * size (a lone cat, a heart, a house: about the size of a castle); a few of something a little
+ * less so; a crowd is seen as a crowd.
+ */
+const LEAST = { one: 0.11, few: 0.055, many: 0.02 } as const;
 /** How many objects a card puts down. */
 const COUNT = { one: [1, 1], few: [3, 4], many: [7, 10] } as const;
 /** How far an object will move to find its habitat, as a fraction of the world's width. */

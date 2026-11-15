@@ -25,6 +25,32 @@ PAD_MM = 4.0
 # Characters OCR commonly returns in place of capital letters.
 LOOKALIKES = str.maketrans({"0": "O", "1": "I", "5": "S", "8": "B", "6": "G", "2": "Z", "4": "A", "7": "T", "3": "E", "|": "I", "!": "I", "$": "S", "@": "A"})
 
+# Real words that are a letter or two from a card's word. Written on a scrap they mean themselves
+# (TRAIN is not RAIN, FOUNTAIN is not MOUNTAIN), so they are never matched to a card: they are
+# words of their own, and a card is made for each. Add to it when a word is taken for a card.
+OTHER_WORDS = frozenset(
+    """
+    PIG BUG BAG BOG FIG WIG BIN BIB BAT BOX
+    TRAIN TRAINS BRAIN GRAIN DRAIN RUIN PAIN WAFER WAITER
+    CAKE CAKES RAKE LANE LACE WAKE BAKE
+    DRIVER LIVER DIVER DIVERS ROVER ROVERS TIGERS LOVERS RIDERS
+    GUN GUNS BUN NUN SON SIN SUB RUN FUN
+    DICE MICE RICE ACE VICE NICE
+    WINE MIND WAND WING WINGS WILD WINK
+    WIFE LIME LINE LIFT
+    FORT FROST FLORIST FORGE
+    FOUNTAIN FOUNTAINS
+    CANNON CANON CRAYON CANOE CARBON
+    RAVEN MARINE VINE DIVINE
+    KETTLE BATTLE BOTTLE CATTLE BEETLE NETTLE RATTLE SHUTTLE SEATTLE LITTLE
+    PURPLE TEMPLE PEBBLE
+    VILLAIN VINTAGE COLLAGE PILLAGE
+    TISSUE FIGURE
+    JAVA LARVA LAMA CHARM CHAOS
+    PITY DOWN GOWN TOW CLOWN CROWN TOWER
+    """.split()
+)
+
 CARDS_JSON = Path(__file__).resolve().parents[3] / "web" / "src" / "cards" / "cards.json"
 
 
@@ -77,7 +103,7 @@ class Reading:
 def match(text: str, vocabulary: dict[str, str]) -> tuple[str | None, int]:
     """Return (card id, edit distance) for the closest word, or (None, 99)."""
     text = normalise(text)
-    if not text:
+    if not text or (text in OTHER_WORDS and text not in vocabulary):
         return None, 99
     scored = sorted((Levenshtein.distance(text, word), word) for word in vocabulary)
     best_distance, best_word = scored[0]

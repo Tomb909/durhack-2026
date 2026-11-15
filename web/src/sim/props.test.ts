@@ -102,5 +102,9 @@ describe('where objects stand', () => {
     expect(sizes[0]).toBe(0.02);
     expect(sizes[6]).toBe(0.15);
     expect(sizes[3]).toBeCloseTo(PROP_SIZE.medium, 2); // a house is still about a house
+    // One thing alone, or a few, is never too small to make out; big things are as they were.
+    const lone = (metres: number, count: 'one' | 'few') => propSize({ ...hut.prop!, count, metres });
+    expect([lone(0.5, 'one'), lone(9, 'one'), lone(1.8, 'few')]).toEqual([0.11, 0.11, 0.055]);
+    expect(lone(60, 'one')).toBeCloseTo(0.113, 3);
   });
 });
