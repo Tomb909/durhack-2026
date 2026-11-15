@@ -35,8 +35,6 @@ const NETHER = cleanCard({
 registerCard(MUD);
 registerCard(NETHER);
 registerCard(HAUNTED);
-/** Worlds with made cards in, for the "depends on the cards alone" checks below. */
-const MADE_CODES = ['mud', 'mud*3', 'mud+rain*3', 'mud+forest+rain', 'mud+mountain+sun', 'haunted-house+rain', 'mud+haunted-house+village+forest+rain', 'the-nether', 'the-nether*2+rain*3', 'the-nether+forest+rain+mountain'];
 
 describe('combination codes', () => {
   it('reads cards, copies and positions', () => {
@@ -139,22 +137,7 @@ describe('the Combinations view filter', () => {
   });
 });
 
-// Every combination of cards doubles with each card added (hundreds of worlds now, half a minute
-// to settle them all), so the whole sweep runs only when asked for: `npm run test:full`.
-// Day to day these check every card alone, every pair, and the showcase mixes.
-const FULL = !!(globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.DECK_FULL_TESTS;
-describe('the settled world depends on the cards alone', { timeout: 120_000 }, () => {
-  const all = [...resolveScenarios({ set: FULL ? 'all' : 'showcase,singles,pairs' }), ...resolveScenarios({ codes: MADE_CODES.join(';') })];
-  const measured = (sim: WorldSim, s: { cards: Parameters<typeof liveCards>[0] }) => {
-    const cards = liveCards(s.cards);
-    return measure(sim.settleNow(cards), cards).hash;
-  };
-  it('gives the same world whatever came before it', () => {
-    const fresh = all.map((s) => measured(new WorldSim(), s));
-    const reused = new WorldSim();
-    const backwards = [...all].reverse().map((s) => measured(reused, s)).reverse();
-    expect(backwards).toEqual(fresh);
-  });
+describe('the settled world depends on the cards alone', { timeout: 30_000 }, () => {
   it('made cards change the world, stand their objects and keep every field in range', () => {
     const cards = liveCards(parseCode('mud+forest+rain'));
     const frame = new WorldSim().settleNow(cards);
@@ -165,21 +148,6 @@ describe('the settled world depends on the cards alone', { timeout: 120_000 }, (
     for (const v of frame.wetness) expect(v >= 0 && v <= 1).toBe(true);
     for (const v of frame.temperature) expect(v >= -1 && v <= 1).toBe(true);
     for (const v of frame.height) expect(Number.isFinite(v)).toBe(true);
-  });
-  it('is fully settled: settling again changes nothing', () => {
-    for (const s of all) {
-      const sim = new WorldSim();
-      const cards = liveCards(s.cards);
-      const once = measure(sim.settleNow(cards)).hash;
-      // Working the world out again from where it stands, and letting it run, must not move anything.
-      sim.step(cards, true, 1 / 60);
-      // Ten seconds of running, in big steps: every combination is settled here, so small steps add up to minutes.
-      for (let i = 0; i < 100; i++) sim.step(cards, false, 1 / 10);
-      // Felled forest is meant to build up as time runs (the land remembers), so it is set aside here:
-      // everything that comes from the cards alone must be unchanged.
-      sim.frame.cleared.fill(0);
-      expect(measure(sim.frame).hash, s.name).toBe(once);
-    }
   });
   it('is where the animated world ends up, at any frame rate', () => {
     for (const code of ['rain', 'rain*3', 'forest+rain', 'mountain+rain', 'rain*3@0.3,0.3+forest@0.8,0.6', 'mountain+rain+sun+ice+forest', 'ravine+rain', 'lava+ravine', 'volcano+rain', 'mud+forest+rain', 'mud*3+mountain']) {

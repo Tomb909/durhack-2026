@@ -23,7 +23,7 @@ The prototype is judged by eye, in the Combinations view: type a word, see what 
 These are the reasons the idea is viable. Break one and the prototype proves nothing.
 
 - **Cards are data.** A generated card is a `CardDef` like the ones in `web/src/cards/cards.json`. No code is written, compiled or run per word: no generated shaders, no generated scripts. The model returns values; code checks every one.
-- **No pair logic.** A new word must work with every other card, built-in or generated, without knowing they exist. BOAT finds water because its habitat is water, the way LIFE only grows where it is warm and wet.
+- **No pair logic.** A new word must work with every other card, built-in or generated, without knowing they exist. BOAT finds water because its habitat is water, the way FOREST only grows where it is warm and wet.
 - **Every word shows something.** Never a "?" and never nothing. The worst case is abstract but still reads as that word (see "The abstract fallback").
 - **No emoji in the world.** No billboards, no sprites of the icon. (An emoji as the card's label icon is fine; built-in cards have one.)
 - **Same cards, same picture.** The harness depends on it. No `Math.random`, nothing keyed on a card's `key` (tiles use a fresh key each time) and nothing eased across tiles: one renderer draws every tile, so state from one tile must not leak into the next.
@@ -35,7 +35,7 @@ These are the reasons the idea is viable. Break one and the prototype proves not
 
 All three are optional and a word may use any mix. Extend `CardDef` in `web/src/cards/defs.ts`; everything new is optional so `cards.json` needs no change.
 
-**1. Push on the world (exists today).** `effects` on the existing fields. Generated cards may also push the other way: negative `height` (CANYON), `wetness` (DESERT), `temperature`, `life` (BLIGHT). Check the sim copes: anything derived must stay in range (clamp life to 0..1 after the sum). At most 4 effects.
+**1. Push on the world (exists today).** `effects` on the existing fields. Generated cards may also push the other way: negative `height` (CANYON), `wetness` (DESERT), `temperature`, `life` (BLIGHT; the word server's name for the field the page calls `forest`). Check the sim copes: anything derived must stay in range (clamp forest to 0..1 after the sum). At most 4 effects.
 
 **2. Change the air.** New `atmosphere`:
 
@@ -66,7 +66,7 @@ A generated card also carries `origin` (`llm` or `fallback`) and `reading`: one 
 
 In this order, stopping at the first that answers:
 
-1. **A built-in card** by word or alias (`water`, `mountains`). No new card.
+1. **A built-in card** by word or alias (`rain`, `mountains`). No new card.
 2. **The stored cards.** Instant.
 3. **The model.** One call, stored on success.
 4. **A near match**: a known word one or two letters away (`volcanoe`). Marked as a guess.
