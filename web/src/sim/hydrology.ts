@@ -41,6 +41,8 @@ export class Hydrology {
   /** After flood(): the cell each cell drains to, or -1 at an outlet. */
   parent: Int32Array;
   private fillFlow: Float32Array;
+  /** 1 once a cell has been counted into its hollow. */
+  private pooled: Uint8Array;
   private order: Int32Array;
   private visited: Uint8Array;
   private flow: Float32Array;
@@ -69,6 +71,7 @@ export class Hydrology {
     this.flow = new Float32Array(this.n);
     this.lakeFlow = new Float32Array(this.n);
     this.fillFlow = new Float32Array(this.n);
+    this.pooled = new Uint8Array(this.n);
     this.heapCell = new Int32Array(this.n);
     this.heapLevel = new Float32Array(this.n);
     this.scratch = new Float32Array(this.n);
@@ -245,6 +248,7 @@ export class Hydrology {
 
     // Rain runs downhill: add each cell's flow to the cell it drains to.
     const keep = rules.keep ?? 1;
+    const minDepth = rules.lakeMinDepth;
     for (let i = 0; i < n; i++) {
       flow[i] = rain[i];
       fillFlow[i] = spring ? spring[i] : 0;
@@ -254,11 +258,46 @@ export class Hydrology {
       const p = parent[c];
       if (p >= 0) {
         flow[p] += flow[c] * keep;
-        fillFlow[p] += fillFlow[c] * keep;
+        // Spring water fills the hollow it is in and goes no further: a LAKE's overflow
+        // does not go on to flood every dip below it.
+        const leavesHollow = !seaCell[c] && filled[c] - height[c] > minDepth && (seaCell[p] || !(filled[p] - height[p] > minDepth));
+        if (!leavesHollow) fillFlow[p] += fillFlow[c] * keep;
       }
     }
 
-    // Every cell of a hollow shares the flow leaving at its spill point.
+    // Every cell of a hollow shares the flow that leaves the hollow. A hollow is all the deep
+    // cells that touch one another, whichever way each happens to drain: the climb inland
+    // also creeps round a lake's shallow shore, so the cells of one lake drain by many
+    // routes, and a lake fed at one point (a spring) used to fill only along its own route.
+    const { pooled, stack: pool } = this;
+    pooled.fill(0);
+    for (let k = 0; k < count; k++) {
+      const first = order[k];
+      if (pooled[first] || seaCell[first] || !(filled[first] - height[first] > minDepth)) continue;
+      let size = 0;
+      let leaving = 0;
+      pool[size++] = first;
+      pooled[first] = 1;
+      for (let at = 0; at < size; at++) {
+        const c = pool[at];
+        // What this cell passes on to a cell outside the hollow leaves the hollow.
+        const p = parent[c];
+        if (p < 0 || seaCell[p] || !(filled[p] - height[p] > minDepth)) leaving += flow[c] + fillFlow[c];
+        const cx = c % w;
+        const cy = (c - cx) / w;
+        for (let d = 0; d < 8; d++) {
+          const nx = cx + DX[d];
+          const ny = cy + DY[d];
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const ni = ny * w + nx;
+          if (pooled[ni] || seaCell[ni] || !(filled[ni] - height[ni] > minDepth)) continue;
+          pooled[ni] = 1;
+          pool[size++] = ni;
+        }
+      }
+      for (let at = 0; at < size; at++) lakeFlow[pool[at]] = leaving;
+    }
+
     const { basin, basinLow } = this;
     const level = rules.levelLakes === true;
     for (let k = 0; k < count; k++) {
@@ -273,9 +312,6 @@ export class Hydrology {
       }
       if (depth > rules.lakeMinDepth) {
         const p = parent[c];
-        const upstream = p >= 0 ? lakeFlow[p] : 0;
-        const here = flow[c] + fillFlow[c];
-        lakeFlow[c] = here > upstream ? here : upstream;
         const full = smoothstep(rules.lakeStart, rules.lakeFull, lakeFlow[c]);
         surface[c] = height[c] + depth * full - rules.dryOffset * (1 - full);
         raw[c] = 0;

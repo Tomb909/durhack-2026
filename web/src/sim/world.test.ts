@@ -140,6 +140,43 @@ describe('lake', () => {
     expect(openWater(f)).toBeGreaterThan(0.005);
     expect(openWater(f)).toBeLessThan(0.06);
   });
+  // Lakes all over the table, on the flat and on a mountainside.
+  const places: [number, number][] = [[0.4, 0.42], [0.7, 0.6], [0.25, 0.3], [0.5, 0.5], [0.6, 0.25], [0.3, 0.7], [0.8, 0.4], [0.15, 0.55]];
+  const RADIUS = 0.075;
+  /** Each cell within `share` of a lake's radius, with its distance from the card as a share of the radius. */
+  const around = (f: WorldFrame, x: number, y: number, share: number, each: (k: number, d: number) => void) => {
+    for (let j = 0; j < f.h; j++) {
+      for (let i = 0; i < f.w; i++) {
+        const d = Math.hypot(i / (f.w - 1) - x, (j / (f.h - 1) - y) / f.aspect) / RADIUS;
+        if (d < share) each(j * f.w + i, d);
+      }
+    }
+  };
+  it('fills its basin, wherever it is put (it used to fill a half, or a sixth)', () => {
+    for (const cards of [...places.map(([x, y]) => [card('lake', x, y)]), [card('mountain', 0.3, 0.4), card('lake', 0.45, 0.45)]]) {
+      const f = settle(cards);
+      const lake = cards[cards.length - 1];
+      let cells = 0, wet = 0;
+      // Well inside the shoreline (which wanders in and out of the plain oval).
+      around(f, lake.x, lake.y, 0.8, (k) => {
+        cells++;
+        if (f.waterSurface[k] - f.height[k] > 0.0005) wet++;
+      });
+      expect(wet / cells, `lake at ${lake.x},${lake.y}`).toBeGreaterThan(0.97);
+    }
+  });
+  it('has banks, not a cliff, where the land round it is higher', () => {
+    for (const [x, y] of places) {
+      const f = settle([card('lake', x, y)]);
+      let step = 0;
+      around(f, x, y, 2.2, (k, d) => {
+        if (d < 0.7) return;
+        step = Math.max(step, Math.abs(f.height[k] - f.height[k + 1]), Math.abs(f.height[k] - f.height[k + f.w]));
+      });
+      // The whole lake is 0.03 deep: no one step at its edge is a third of that. (They were 0.03 to 0.05.)
+      expect(step, `lake at ${x},${y}`).toBeLessThan(0.01);
+    }
+  });
   it('holds water on a mountainside too', () => {
     const f = settle([card('mountain', 0.4, 0.5), card('lake', 0.52, 0.5)]);
     expect(open(f, 0.52, 0.5)).toBeGreaterThan(0.008);

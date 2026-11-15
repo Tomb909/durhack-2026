@@ -171,6 +171,10 @@ export const RULES = {
   lake: {
     depth: 0.03, // from the shore down to the middle of the bed
     shoreWobble: 0.3, // how far the shoreline strays from a plain oval
+    lip: 0.0015, // the shore stands this far above the water all the way round, but for one outlet
+    brim: 0.15, // how far out from the water's edge that lip runs (a share of the lake's radius)
+    outlet: 1.6, // half the outlet's width, in cells
+    bank: 0.9, // higher ground slopes down to the shore over this share of the radius, instead of standing as a cliff
   },
   /**
    * A RIVER card: a river that runs through the card. It rises on the highest ground
@@ -816,7 +820,10 @@ export class WorldSim {
     }
   }
 
-  /** LAKE: press a bowl into the ground at each card, level with the lowest ground round its rim, and fill it. */
+  /**
+   * LAKE: press a bowl into the ground at each card, level with the lowest ground round its rim,
+   * slope the higher ground round about down to its shore, and fill it.
+   */
   private digLakes(cards: LiveCard[], radiusMultipliers: Map<LiveCard, number>, sea: number): void {
     const { w, h, aspect, frame, rough, inside } = this;
     const height = frame.height;
@@ -830,27 +837,49 @@ export class WorldSim {
       const cx = Math.min(w - 4, Math.max(3, card.x * (w - 1)));
       const cy = Math.min(h - 4, Math.max(3, card.y * (h - 1)));
       // The shore sits at the lowest ground on the rim, so the bowl holds water all the way round.
+      // That lowest point is the lake's one outlet.
       let rim = Infinity;
+      let outlet = 0;
       for (let k = 0; k < 48; k++) {
         const a = (k / 48) * Math.PI * 2;
         const x = Math.min(w - 1, Math.max(0, Math.round(cx + Math.cos(a) * rx)));
         const y = Math.min(h - 1, Math.max(0, Math.round(cy + Math.sin(a) * ry)));
-        rim = Math.min(rim, height[y * w + x]);
+        if (height[y * w + x] < rim) rim = height[y * w + x], outlet = a;
       }
-      const x0 = Math.max(1, Math.floor(cx - rx)), x1 = Math.min(w - 2, Math.ceil(cx + rx));
-      const y0 = Math.max(1, Math.floor(cy - ry)), y1 = Math.min(h - 2, Math.ceil(cy + ry));
+      rim = Math.max(rim, sea + 0.004);
+      const gap = L.outlet / Math.min(rx, ry); // half the outlet's width, as an angle
+      // Out to where the banks end, with room for the shoreline's wobble.
+      const far = (1 + L.bank) * (1 + L.shoreWobble);
+      const x0 = Math.max(1, Math.floor(cx - rx * far)), x1 = Math.min(w - 2, Math.ceil(cx + rx * far));
+      const y0 = Math.max(1, Math.floor(cy - ry * far)), y1 = Math.min(h - 2, Math.ceil(cy + ry * far));
       for (let j = y0; j <= y1; j++) {
         for (let i = x0; i <= x1; i++) {
           const k = j * w + i;
           if (!inside[k]) continue;
           const d = Math.hypot((i - cx) / rx, (j - cy) / ry) * (1 + L.shoreWobble * rough[k]);
-          if (d >= 1) continue;
-          this.basin[k] = 1;
+          if (d >= 1 + L.bank) continue;
           // Leave the very edge of the world alone: it is where water runs off.
-          const border = smoothstep(0, 4, Math.min(i, j, w - 1 - i, h - 1 - j));
-          const bowl = 1 - d * d;
-          const target = Math.max(sea + 0.004, rim - L.depth * bowl * (0.6 + 0.4 * bowl));
-          if (height[k] > target) height[k] -= (height[k] - target) * card.strength * border;
+          const change = card.strength * smoothstep(0, 4, Math.min(i, j, w - 1 - i, h - 1 - j));
+          if (d < 1) {
+            this.basin[k] = 1;
+            const bowl = 1 - d * d;
+            const target = Math.max(sea + 0.004, rim - L.depth * bowl * (0.6 + 0.4 * bowl));
+            if (height[k] > target) height[k] -= (height[k] - target) * change;
+            continue;
+          }
+          // Round the water: a low lip so that it leaves by the outlet alone (water finding several
+          // ways out at one level would each drain only a part of the lake)...
+          let turn = Math.abs(Math.atan2((j - cy) / ry, (i - cx) / rx) - outlet) % (2 * Math.PI);
+          if (turn > Math.PI) turn = 2 * Math.PI - turn;
+          const brim = rim + L.lip;
+          if (turn < gap) {
+            if (d < 1 + L.brim) height[k] += (rim - height[k]) * change;
+            continue;
+          }
+          const lipped = 1 - smoothstep(1 + L.brim, 1 + 2 * L.brim, d);
+          if (height[k] < brim) height[k] += (brim - height[k]) * lipped * change;
+          // ...and where the land stands higher, a bank sloping down to the shore, not a cliff.
+          else height[k] -= (height[k] - brim) * (1 - smoothstep(1, 1 + L.bank, d)) * change;
         }
       }
       this.spring[Math.round(cy) * w + Math.round(cx)] += RULES.hydrology.lakeFull * 1.2 * card.strength;
