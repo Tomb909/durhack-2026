@@ -42,7 +42,8 @@ def test_match_is_forgiving_but_not_ambiguous():
     assert match("WATFR", VOCAB) == ("rain", 1)
     assert match("SUN", VOCAB) == ("sun", 0)
     assert match("LICE", VOCAB)[0] is None  # ICE or LIFE? refuse to guess
-    assert match("VOLCANO", VOCAB)[0] is None
+    assert match("CASTLE", VOCAB)[0] is None  # not a card, and not close to one
+    assert match("VOLCANO", VOCAB) == ("volcano", 0)  # a card since the lava cards (this line used to say it was not)
     assert normalise("w4ter!") == "WATERI"
     assert match("SETTLEMENT", VOCAB) == ("village", 0)
     assert match("SETTLEMNT", VOCAB) == ("village", 1)

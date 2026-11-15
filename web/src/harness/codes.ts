@@ -5,12 +5,15 @@
 //   forest+rain+sun          several cards (also: forest_rain_sun, "forest rain sun")
 //   rain*3+forest@0.8,0.6    a card at a table position: x left to right, y far to near, 0..1
 //   wind~90@0.5,0.5          a card rotated 90 degrees clockwise
-//   m+rai*2                  any unambiguous start of a card's id
+//   m+rai*2                  any unambiguous start of a built-in card's id
+//   haunted-house+rain       a card made from a typed word, by its full id
 //   empty                    no cards
 //
 // Card ids come from cards.json, so a new card can be used in codes straight away.
+// Cards made from typed words (cards/words.ts) work too, by their full id only: the
+// shorthand matches built-in cards alone, so adding MUD never makes `m+rai` ambiguous.
 // (Codes split on "_", so an id containing "_" cannot be written in one.)
-import { CARD_DEFS } from '../cards/defs';
+import { BUILT_IN_IDS, CARD_DEFS } from '../cards/defs';
 
 export interface Placement {
   id: string;
@@ -48,11 +51,16 @@ interface Group {
 }
 
 function resolveId(token: string): string {
-  const ids = CARD_DEFS.map((d) => d.id.toLowerCase());
-  if (ids.includes(token)) return CARD_DEFS[ids.indexOf(token)].id;
-  const starts = CARD_DEFS.filter((d) => d.id.toLowerCase().startsWith(token));
+  // Built-in cards first, by full id and then by any unambiguous start. Only then a made card, by
+  // its full id: a made card called `m` must not change what `m+wa` means.
+  const builtIn = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id));
+  const exact = builtIn.find((d) => d.id.toLowerCase() === token);
+  if (exact) return exact.id;
+  const starts = builtIn.filter((d) => d.id.toLowerCase().startsWith(token));
   if (starts.length === 1) return starts[0].id;
-  const known = CARD_DEFS.map((d) => d.id).join(', ');
+  const made = CARD_DEFS.find((d) => !BUILT_IN_IDS.has(d.id) && d.id.toLowerCase() === token);
+  if (made && !starts.length) return made.id;
+  const known = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id)).map((d) => d.id).join(', ');
   throw new Error(starts.length ? `"${token}" could be ${starts.map((d) => d.id).join(' or ')}` : `no card called "${token}" (cards: ${known})`);
 }
 
@@ -143,12 +151,20 @@ function scenario(code: string, layout: Layout, name?: string): Scenario {
 
 // --- ready-made sets ---------------------------------------------------------------
 
-/** The cards that do something by themselves. A modifier (BIG) only changes a card beside it, so it is left out of the ready-made sets: write it in a code (`big+mountain`) to see it. */
-const ids = () => CARD_DEFS.filter((d) => !d.modifier).map((d) => d.id);
+/**
+ * The built-in cards that do something by themselves. A modifier (BIG) only changes a card beside it,
+ * so it is left out of the ready-made sets: write it in a code (`big+mountain`) to see it. Cards made
+ * from typed words have their own set (`words`), so the others stay the same size and the same worlds.
+ */
+const ids = () => CARD_DEFS.filter((d) => !d.modifier && BUILT_IN_IDS.has(d.id)).map((d) => d.id);
+/** The cards mixed in every-combination sets. A compound card (VOLCANO) is already a mix, and each card here doubles the list. */
+const mixable = () => CARD_DEFS.filter((d) => !d.modifier && !d.compound && BUILT_IN_IDS.has(d.id)).map((d) => d.id);
+/** Cards made from typed words, in the order they were made. */
+const wordIds = () => CARD_DEFS.filter((d) => !BUILT_IN_IDS.has(d.id)).map((d) => d.id);
 
 /** Every way of choosing cards, one copy each: 2^n codes, fewest cards first. */
 function subsets(): string[] {
-  const all = ids();
+  const all = mixable();
   const out: string[][] = [];
   for (let mask = 0; mask < 1 << all.length; mask++) out.push(all.filter((_, i) => mask & (1 << i)));
   out.sort((a, b) => a.length - b.length);
@@ -156,7 +172,7 @@ function subsets(): string[] {
 }
 
 function pairs(): string[] {
-  const all = ids();
+  const all = mixable();
   const out: string[] = [];
   for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) out.push(`${all[i]}+${all[j]}`);
   return out;
@@ -172,6 +188,10 @@ const SHOWCASE: [code: string, name?: string][] = [
   ['village'], ['town'], ['city'], ['village+rain+forest'],
   ['village@0.2,0.5+town@0.5,0.45+city@0.8,0.5+rain@0.5,0.7', 'village_town_city'],
   ['big+mountain'],
+  ['ravine'], ['ravine*3'], ['ravine+rain'], ['ravine+rain*3'], ['mountain+ravine'], ['lava'], ['lava+mountain'], ['lava+ravine'], ['lava+rain'], ['lava+ice'],
+  ['volcano'], ['volcano+rain'], ['volcano+forest+rain'], ['volcano+ice'],
+  ['big+volcano'], ['volcano+mountain'], ['volcano+rain*3'], ['volcano@0.45,0.5+ravine@0.62,0.5', 'volcano_by_ravine'],
+  ['volcano@0.3,0.45+volcano@0.7,0.55', 'two_volcanoes'],
 ];
 
 export const SETS: Record<string, () => [code: string, name?: string][]> = {
@@ -181,6 +201,10 @@ export const SETS: Record<string, () => [code: string, name?: string][]> = {
   subsets: () => subsets().map((c): [string] => [c]),
   copies: () => ids().flatMap((id) => [1, 2, 3].map((n): [string] => [n > 1 ? `${id}*${n}` : id])),
   all: () => [...SETS.subsets(), ...SETS.copies(), ...SHOWCASE],
+  /** Every card made from a typed word, alone. */
+  words: () => wordIds().map((id): [string] => [id]),
+  /** Every card made from a typed word beside rain, a mountain, and forest with rain: does it find its place? */
+  'words-mixed': () => wordIds().flatMap((id): [string][] => [[`${id}+rain*3`], [`${id}+mountain`], [`${id}+forest+rain`]]),
 };
 
 export interface ScenarioRequest {

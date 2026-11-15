@@ -2,8 +2,16 @@
 // in the vertex shader according to the vegetation texture at its site, so
 // forests spread and retreat smoothly with no work on the CPU.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { GLSL_COMMON, type SharedUniforms } from './common';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLSL_BIOME, GLSL_COMMON, MAX_BIOMES, type SharedUniforms } from './common';
+import { SPARE, Sites, together, type Culled } from './sites';
+
+/** A tree stands where the plant cover beats its own threshold: its random number times this. (Shader and CPU test share it.) */
+const GROW_SPREAD = 0.72;
+const glsl = (v: number) => v.toFixed(4);
+
+/** Parts share corners: each is worked out once by the GPU, not once per triangle that touches it. */
+const weld = (parts: THREE.BufferGeometry[]) => mergeVertices(mergeGeometries(parts), 1e-5);
 
 function paint(geometry: THREE.BufferGeometry, colour: [number, number, number], leaf: number): THREE.BufferGeometry {
   const g = geometry.index ? geometry.toNonIndexed() : geometry;
@@ -25,7 +33,7 @@ const TRUNK: [number, number, number] = [0.30, 0.20, 0.12];
 
 function conifer(): THREE.BufferGeometry {
   const leaf: [number, number, number] = [0.10, 0.30, 0.19];
-  return mergeGeometries([
+  return weld([
     paint(new THREE.CylinderGeometry(0.035, 0.05, 0.25, 5).translate(0, 0.125, 0), TRUNK, 0),
     paint(new THREE.ConeGeometry(0.23, 0.40, 6).translate(0, 0.40, 0), leaf, 1),
     paint(new THREE.ConeGeometry(0.18, 0.34, 6).translate(0, 0.60, 0), leaf, 1),
@@ -35,7 +43,7 @@ function conifer(): THREE.BufferGeometry {
 
 function broadleaf(): THREE.BufferGeometry {
   const leaf: [number, number, number] = [0.22, 0.47, 0.17];
-  return mergeGeometries([
+  return weld([
     paint(new THREE.CylinderGeometry(0.04, 0.06, 0.32, 5).translate(0, 0.16, 0), TRUNK, 0),
     paint(new THREE.IcosahedronGeometry(0.27, 0).scale(1, 0.88, 1).translate(0, 0.52, 0), leaf, 1),
     paint(new THREE.IcosahedronGeometry(0.18, 0).translate(0.15, 0.42, 0.06), leaf, 1),
@@ -45,7 +53,7 @@ function broadleaf(): THREE.BufferGeometry {
 
 function jungle(): THREE.BufferGeometry {
   const leaf: [number, number, number] = [0.08, 0.40, 0.16];
-  return mergeGeometries([
+  return weld([
     paint(new THREE.CylinderGeometry(0.028, 0.045, 0.75, 5).translate(0, 0.375, 0), TRUNK, 0),
     paint(new THREE.IcosahedronGeometry(0.30, 0).scale(1.25, 0.34, 1.25).translate(0, 0.80, 0), leaf, 1),
     paint(new THREE.IcosahedronGeometry(0.20, 0).scale(1.2, 0.4, 1.2).translate(0.10, 0.92, 0.05), leaf, 1),
@@ -55,6 +63,7 @@ function jungle(): THREE.BufferGeometry {
 
 const vertex = /* glsl */ `
 ${GLSL_COMMON}
+${GLSL_BIOME}
 attribute vec2 aSite;
 attribute vec4 aRand;
 attribute vec3 color;
@@ -72,8 +81,17 @@ void main() {
   float temperature = a.g;
   float fits = smoothstep(uRange.x - uRange.z, uRange.x, temperature) * (1.0 - smoothstep(uRange.y, uRange.y + uRange.z, temperature));
   float dry = 1.0 - smoothstep(0.0, 0.0015, b.r - a.r);
-  float threshold = aRand.x * 0.72;
+  float threshold = aRand.x * ${glsl(GROW_SPREAD)}; // the CPU test in makeForest uses the same number
   float grow = smoothstep(threshold, threshold + 0.20, a.a * fits) * dry;
+  // Biomes: some have no trees of the world's kind, and some colour the leaves.
+  vec3 leaf = color;
+  for (int i = 0; i < ${MAX_BIOMES}; i++) {
+    if (i >= uBiomeCount) break;
+    float w = biomeAt(i, aSite, tableXz(aSite));
+    if (w <= 0.0) continue;
+    grow *= 1.0 - smoothstep(0.0, 0.4, w) * (1.0 - uBiomeExtra[i].y);
+    leaf = mix(leaf, uBiomePlants[i].rgb, w * uBiomePlants[i].a * aLeaf);
+  }
   float size = uSize * (0.62 + 0.62 * aRand.y) * (0.78 + 0.45 * a.b) * grow;
 
   // Woodcutters: once the felled amount here passes this tree's turn, it topples,
@@ -101,7 +119,7 @@ void main() {
 
   vec2 xz = tableXz(aSite);
   vec3 world = vec3(xz.x, a.r * HSCALE - 0.01, xz.y) + p;
-  vColor = color * (0.82 + 0.36 * aRand.w);
+  vColor = leaf * (0.82 + 0.36 * aRand.w);
   vWorld = world;
   vTemperature = temperature;
   vRain = b.b;
@@ -138,7 +156,7 @@ void main() {
 function makeForest(
   shared: SharedUniforms, base: THREE.BufferGeometry, columns: number, rows: number, seed: number,
   range: [number, number, number], size: number,
-): THREE.Mesh {
+): Sites {
   const count = columns * rows;
   const sites = new Float32Array(count * 2);
   const rand = new Float32Array(count * 4);
@@ -159,6 +177,7 @@ function makeForest(
   geometry.setAttribute('position', base.getAttribute('position'));
   geometry.setAttribute('color', base.getAttribute('color'));
   geometry.setAttribute('aLeaf', base.getAttribute('aLeaf'));
+  geometry.setIndex(base.getIndex());
   geometry.setAttribute('aSite', new THREE.InstancedBufferAttribute(sites, 2));
   geometry.setAttribute('aRand', new THREE.InstancedBufferAttribute(rand, 4));
   geometry.instanceCount = count;
@@ -169,14 +188,23 @@ function makeForest(
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
-  return mesh;
+  // Worth drawing only where plants beat this tree's threshold and the temperature is inside
+  // its kind's band (the same two tests as `grow` and `fits` in the shader, with room to spare).
+  const [coldest, hottest, fade] = range;
+  return new Sites(mesh, (world, x, y, r, at) =>
+    world.most('vegetation', x, y) > r[at] * GROW_SPREAD - SPARE &&
+    world.most('temperature', x, y) > coldest - fade - SPARE &&
+    world.least('temperature', x, y) < hottest + fade + SPARE);
 }
 
-export function makeTrees(shared: SharedUniforms): THREE.Group {
-  const group = new THREE.Group();
+export function makeTrees(shared: SharedUniforms): THREE.Object3D & Culled {
   // Each kind lives in a band of temperature; the bands overlap so forests mix at their edges.
-  group.add(makeForest(shared, conifer(), 70, 50, 11, [-0.42, -0.02, 0.12], 0.46));
-  group.add(makeForest(shared, broadleaf(), 66, 47, 23, [-0.12, 0.34, 0.12], 0.44));
-  group.add(makeForest(shared, jungle(), 70, 50, 37, [0.26, 2.0, 0.12], 0.50));
-  return group;
+  const forests = [
+    makeForest(shared, conifer(), 70, 50, 11, [-0.42, -0.02, 0.12], 0.46),
+    makeForest(shared, broadleaf(), 66, 47, 23, [-0.12, 0.34, 0.12], 0.44),
+    makeForest(shared, jungle(), 70, 50, 37, [0.26, 2.0, 0.12], 0.50),
+  ];
+  const group = new THREE.Group();
+  for (const forest of forests) group.add(forest.mesh);
+  return together(group, forests);
 }

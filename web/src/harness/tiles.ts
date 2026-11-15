@@ -2,9 +2,10 @@
 // (/harness.html) and the Combinations view in the app, so both always show
 // the same thing. One 3D renderer serves every tile: the shaders compile once.
 import { WorldRenderer } from '../render/scene';
+import { placeProps } from '../sim/props';
 import { GH, GW, WorldSim } from '../sim/world';
 import type { Placement } from './codes';
-import { drawCardMarks, drawMap } from './map';
+import { biomesOf, drawCardMarks, drawMap, drawObjectMarks } from './map';
 import { liveCards, measure, type Metrics } from './metrics';
 
 /** 3d: the world as the app shows it. map: flat and top-down, no GPU. both: 3D with a small map in the corner. */
@@ -71,7 +72,8 @@ export class TileRenderer {
     // A fresh key per tile: the renderer keeps a pillar per card key, coloured when first made.
     const live = liveCards(cards, `tile${this.drawn++}`);
     const frame = this.sim.settleNow(live);
-    const metrics = measure(frame);
+    const objects = placeProps(frame, live);
+    const metrics = measure(frame, live, objects);
     const simMs = performance.now() - t0;
 
     t0 = performance.now();
@@ -84,7 +86,7 @@ export class TileRenderer {
       g.drawImage(gl, x, y, o.width, o.height);
     }
     if (o.view !== '3d') {
-      drawMap(frame, this.map);
+      drawMap(frame, this.map, biomesOf(cards));
       // Alone: the whole tile. With 3D: a small inset in the corner.
       const w = o.view === 'map' ? o.width : Math.round(o.width * 0.3);
       const h = o.view === 'map' ? o.height : Math.round((w * GH) / GW);
@@ -98,6 +100,7 @@ export class TileRenderer {
         g.lineWidth = 1;
         g.strokeRect(mx - 0.5, my - 0.5, w + 1, h + 1);
       }
+      drawObjectMarks(g, objects, mx, my, w, h);
       drawCardMarks(g, cards, mx, my, w, h);
     }
     return { metrics, simMs, drawMs: performance.now() - t0 };

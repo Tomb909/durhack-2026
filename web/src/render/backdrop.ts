@@ -122,7 +122,10 @@ export function makeBackdrop(shared: SharedUniforms): THREE.Group {
       fragmentShader: domeFragment,
     }),
   );
-  dome.renderOrder = -10;
+  // Drawn after everything solid, so the sky is only worked out where it shows: the world
+  // covers half the screen, and the sky's drifting mist is not cheap. (See-through things
+  // such as water and rain are always drawn after the solid ones, so they still go over it.)
+  dome.renderOrder = 100;
   group.add(dome);
 
   const count = 700;

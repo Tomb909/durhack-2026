@@ -1,6 +1,8 @@
 // Deck of Worlds: cards in, world out.
 //   cards (camera + simulated)  ->  CardStore (smoothing)  ->  WorldSim (rules)  ->  WorldRenderer (picture)
+import { onCardsChanged } from './cards/defs';
 import { CardStore } from './cards/store';
+import { loadStoredCards } from './cards/words';
 import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { bindCameraInput, MOVE_KEYS, moveWithKeys } from './render/camera';
@@ -9,7 +11,7 @@ import { audio } from './audio/engine';
 import { VillageLife } from './audio/life';
 import { world } from './render/common';
 import { WorldRenderer } from './render/scene';
-import { RECTANGLE_ONLY, SHAPE_PRESETS, WorldSim, shapesDiffer, type WorldShape } from './sim/world';
+import { RECTANGLE_ONLY, SHAPE_PRESETS, WorldSim, shapesDiffer, usableShape, type WorldShape } from './sim/world';
 import { Combinations } from './ui/combos';
 import { CardCheck, Guide } from './ui/overlays';
 import { TablePanel } from './ui/table';
@@ -33,6 +35,7 @@ const REBUILD_EVERY_MS = 1500;
 
 /** Ask for the world to take a new shape. Applied in the main loop, at most every 1.5 s. */
 function wantShape(next: WorldShape): void {
+  if (!usableShape(next)) return; // keep the shape we have
   if (shapesDiffer(next, pendingShape ?? shape)) pendingShape = next;
   else if (pendingShape && !shapesDiffer(next, shape)) pendingShape = null;
 }
@@ -141,6 +144,20 @@ const viewReset = document.getElementById('view-reset') as HTMLElement;
 viewReset.addEventListener('click', () => view.rig.reset());
 let cameraHintShown = false;
 
+// The red Reset button: after a warning, clear the simulated cards and start the world from empty.
+const resetConfirm = document.getElementById('reset-confirm') as HTMLDialogElement;
+document.getElementById('world-reset')!.addEventListener('click', () => {
+  resetConfirm.returnValue = 'cancel';
+  resetConfirm.showModal();
+});
+resetConfirm.addEventListener('close', () => {
+  if (resetConfirm.returnValue !== 'reset') return;
+  store.setSim([]);
+  sim = new WorldSim(shape);
+  view.rig.reset();
+  toast('World reset');
+});
+
 // W A S D walk the view while held (Shift to go faster). Held keys are tracked here and applied every frame.
 const moveKeys = new Set<string>();
 let moveFast = false;
@@ -171,12 +188,18 @@ function setCards(code: string, layout: Layout = 'cluster'): string {
 }
 // Asking for either is developing: bring out the card tray (normally behind Tab).
 if (params.has('cards') || params.has('instant')) tablePanel.hidden = false;
+// Cards made from typed words: kept in this browser and on the server. Loaded before the
+// address is read, so ?cards= can name them too.
+const stored = loadStoredCards().catch(() => 0);
+onCardsChanged(() => store.refreshDefs());
 if (params.has('cards')) {
-  try {
-    setCards(params.get('cards')!, params.get('layout') === 'spread' ? 'spread' : 'cluster');
-  } catch (error) {
-    toast(`Cards in the address: ${(error as Error).message}`, 8);
-  }
+  void stored.then(() => {
+    try {
+      setCards(params.get('cards')!, params.get('layout') === 'spread' ? 'spread' : 'cluster');
+    } catch (error) {
+      toast(`Cards in the address: ${(error as Error).message}`, 8);
+    }
+  });
 }
 
 // --- every combination, side by side (the button, V, or ?combos in the address) -----
@@ -197,7 +220,7 @@ let quality = 1;
 window.addEventListener('keydown', (e) => {
   moveFast = e.shiftKey;
   // ⌘, Ctrl and Alt belong to the browser. (A Mac also never reports a key let go while ⌘ is down.)
-  if (e.ctrlKey || e.metaKey || e.altKey || combos.isOpen) return void moveKeys.clear();
+  if (e.ctrlKey || e.metaKey || e.altKey || combos.isOpen || resetConfirm.open) return void moveKeys.clear();
   if (isMoveKey(e.key.toLowerCase())) return void moveKeys.add(e.key.toLowerCase());
   if (e.key === 'Tab') {
     // Developer option: the table map and the tray of simulated cards.
@@ -315,7 +338,20 @@ window.addEventListener('keydown', startSound);
 // --- main loop ----------------------------------------------------------------------
 
 let last = performance.now();
+let frameErrors = 0;
 function tick(now: number): void {
+  // Ask for the next frame first: whatever goes wrong below, the picture keeps moving.
+  // (An error that escaped here used to end the loop for good: a frozen world until reload.)
+  requestAnimationFrame(tick);
+  try {
+    drawFrame(now);
+  } catch (error) {
+    // Say so once, then now and again: an error on every frame must not bury the console.
+    if (frameErrors++ % 600 === 0) console.error('Deck of Worlds: a frame failed', error);
+  }
+}
+
+function drawFrame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   applyShape(now);
@@ -336,7 +372,6 @@ function tick(now: number): void {
   if (combos.isOpen) view.advance(dt);
   else if (still !== null) view.renderAt(frame, store.cards, still);
   else view.render(frame, store.cards, dt);
-  requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
 

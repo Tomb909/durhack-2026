@@ -110,7 +110,7 @@ void main() {
   cover *= smoothstep(0.004, 0.014, h - uSea) * (1.0 - b.g);
   cover *= (1.0 - smoothstep(0.04, 0.25, c.g)) * (1.0 - 0.8 * smoothstep(0.3, 0.9, c.r));
   // None on paved streets and squares, little up on the heath and scree, and none on a boulder.
-  vec4 ue = fieldE(aSite);
+  vec4 ue = fieldG(aSite);
   cover *= 1.0 - max(ue.b, smoothstep(0.25, 0.7, c.r) * smoothstep(0.15, 0.6, max(ue.r, ue.g)));
   cover *= 1.0 - 0.7 * smoothstep(0.14, 0.3, h);
   cover *= 1.0 - step(0.2, boulders(tableXz(aSite), 0.07 + 0.26 * hillside(h)).x);
@@ -146,7 +146,7 @@ void main() {
 
   // Wind: slow waves roll across the meadow; a WIND card lays the grass over its way.
   float gust = vnoise(xz * 0.9 - uTime * vec2(0.55, 0.2));
-  vec2 wind = fieldD(aSite).ba;
+  vec2 wind = fieldF(aSite).rg;
   vec2 bend = vec2(0.30, 0.12) * (gust - 0.4)
             + 0.07 * vec2(sin(uTime * 2.3 + aRand.w * 6.2832), cos(uTime * 1.9 + aRand.z * 6.2832))
             + wind * (0.55 + 0.25 * sin(uTime * 5.0 + aRand.w * 6.2832 + gust * 5.0));

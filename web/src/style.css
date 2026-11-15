@@ -19,13 +19,23 @@ body.bare #ui > :not(#toast) { display: none; }
 #status.warn .dot { background: #f5a524; box-shadow: 0 0 10px #f5a524; }
 
 #table-panel { position: absolute; left: 18px; bottom: 18px; width: min(300px, 26vw); padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); backdrop-filter: blur(10px); }
-#tray { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; margin-bottom: 9px; }
+#tray { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; margin-bottom: 9px; max-height: 152px; overflow-y: auto; }
 .tray-card { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 4px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); cursor: grab; touch-action: none; font-size: 9px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); }
 .tray-card:hover { background: rgba(255, 255, 255, 0.12); color: var(--text); }
 .tray-card .icon { font-size: 20px; line-height: 1.15; }
 .tray-card .word { max-width: 100%; padding: 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 7.5px; letter-spacing: 0; }
 .tray-card.event { border-color: rgba(255, 120, 90, 0.35); background: rgba(255, 110, 80, 0.08); }
 .tray-card.event:hover { background: rgba(255, 110, 80, 0.18); }
+.tray-card.guess { border-style: dashed; }
+#tray-add { display: flex; gap: 6px; margin-bottom: 7px; }
+#tray-add input { flex: 1; min-width: 0; padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.28); color: var(--text); font: inherit; font-size: 12px; }
+#tray-add input::placeholder { color: var(--muted); }
+#tray-add button { padding: 6px 11px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+#tray-add button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+#tray-add :disabled, #tray-add input:read-only { opacity: 0.55; cursor: progress; }
+#tray-status { margin: 0 0 8px; font-size: 11px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
+#tray-status:empty { display: none; }
+#tray-status.guess { color: #e6c27a; }
 #table { position: relative; width: 100%; aspect-ratio: 420 / 297; overflow: visible; }
 #table .border { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 #table .border polygon { fill: #e9e6dd; stroke: #15171c; stroke-width: 4px; stroke-linejoin: round; filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.35)); }
@@ -95,7 +105,18 @@ body.bare #ui > :not(#toast) { display: none; }
 :root { --focus: #9ecbff; }
 #combos-open { position: absolute; right: 18px; top: 16px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); }
 #combos-open:hover { background: rgba(40, 50, 74, 0.8); }
-#view-reset { position: absolute; right: 172px; top: 16px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); }
+#world-reset { position: absolute; right: 172px; top: 16px; padding: 8px 14px; border-radius: 99px; border: 1px solid #f87171; background: #c62828; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+#world-reset:hover { background: #e53935; }
+#world-reset:focus-visible, #reset-confirm button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#reset-confirm { width: min(400px, 90vw); padding: 20px 22px; border-radius: 16px; border: 1px solid var(--line); background: rgba(16, 20, 31, 0.98); color: var(--text); pointer-events: auto; }
+#reset-confirm::backdrop { background: rgba(4, 6, 12, 0.62); backdrop-filter: blur(6px); }
+#reset-confirm h2 { margin: 0 0 8px; font-size: 20px; }
+#reset-confirm p { margin: 0 0 18px; color: var(--muted); }
+#reset-confirm form { display: flex; justify-content: flex-end; gap: 10px; }
+#reset-confirm button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer; }
+#reset-confirm button.danger { border-color: #f87171; background: #c62828; color: #fff; }
+#reset-confirm button.danger:hover { background: #e53935; }
+#view-reset { position: absolute; right: 256px; top: 16px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); }
 #view-reset:hover { background: rgba(40, 50, 74, 0.8); }
 #view-reset[hidden] { display: none; }
 #view-reset:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -138,7 +159,7 @@ body.bare #ui > :not(#toast) { display: none; }
 .combos-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #0b0f18; transform: translateX(12px); transition: transform 0.15s ease-out; }
 .combos-copies { display: flex; align-items: center; border-left: 1px solid color-mix(in srgb, var(--c, #fff) 45%, transparent); }
 .combos-copies button { width: 22px; align-self: stretch; padding: 0; font-size: 15px; font-weight: 700; line-height: 1; }
-.combos-copies button:last-child { padding-right: 3px; width: 25px; }
+.combos-copies [data-do="more"] { padding-right: 3px; width: 25px; }
 .combos-copies button:disabled { color: #68738a; cursor: default; }
 .combos-copies output { min-width: 19px; text-align: center; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .combos-card.off { border-color: var(--line); background: none; }
@@ -185,4 +206,30 @@ body.bare #ui > :not(#toast) { display: none; }
 .combos-code { margin: 14px 0 0; color: var(--muted); font-size: 12.5px; }
 .combos-code code { display: block; margin-top: 4px; padding: 6px 8px; border-radius: 6px; background: var(--well); border: 1px solid var(--line); color: #cfe1ff; font-size: 12.5px; word-break: break-all; user-select: all; }
 @media (max-width: 900px) { .combos-detail-main { grid-template-columns: 1fr; } }
+
+/* Cards made from typed words (cards/words.ts) */
+.combos-wordrow { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.combos-add { display: flex; align-items: center; gap: 8px; }
+.combos-add label { font-weight: 700; font-size: 13px; }
+.combos-add input { width: 260px; max-width: 52vw; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--well); color: var(--text); font: inherit; }
+.combos-add input::placeholder { color: #6f7a90; }
+.combos-pending { display: flex; flex-wrap: wrap; gap: 6px; }
+.combo-chip.busy { border-style: dashed; color: var(--muted); animation: combos-busy 1.2s ease-in-out infinite alternate; }
+@keyframes combos-busy { from { opacity: 0.45; } to { opacity: 1; } }
+.combos-word-status { margin: 0; flex: 1; min-width: 200px; color: #c3cde0; font-size: 13px; }
+.combos-tag { margin-left: 2px; padding: 0 5px; border-radius: 99px; background: rgba(255, 255, 255, 0.14); font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.combos-card.guess { border-style: dashed; }
+.combos-card.guess .combos-tag { background: none; border: 1px dashed currentColor; }
+.combos-copies .combos-only { width: auto; padding: 0 8px; font-size: 11px; font-weight: 700; color: #b3bdd0; border-left: 1px solid color-mix(in srgb, var(--c, #fff) 45%, transparent); }
+.combos-copies .combos-only[aria-pressed="true"] { background: #eef2f8; color: #0b0f18; }
+.combos-made { display: flex; align-items: stretch; border-left: 1px solid color-mix(in srgb, var(--c, #fff) 45%, transparent); }
+.combos-made button { padding: 0 8px; font-size: 11.5px; font-weight: 700; }
+.combos-made button:hover, .combos-only:hover { background: rgba(255, 255, 255, 0.12); }
+.combo-chip.guess { border-style: dashed; }
+.combos-word { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--c, var(--line)); background: color-mix(in srgb, var(--c, #fff) 10%, var(--well)); }
+.combos-word h3 { margin: 0 0 6px; font-size: 14px; letter-spacing: 0.04em; }
+.combos-word p { margin: 0 0 6px; color: #dbe3f1; font-size: 13px; line-height: 1.4; }
+.combos-word ul { margin: 0; padding-left: 16px; color: #a9b4c8; font-size: 12.5px; line-height: 1.45; }
+.combos-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 3px; background: var(--s); vertical-align: -1px; }
+@media (prefers-reduced-motion: reduce) { .combo-chip.busy { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .combo canvas, .combos-switch, .combos-switch::after { transition: none; } }

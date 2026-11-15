@@ -3,10 +3,18 @@
 // wherever the world says it is wet: rain if mild or hot, snow if cold.
 import { castsCloudShade } from './post';
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RULES } from '../sim/world';
 import { GLSL_COMMON, type SharedUniforms } from './common';
+import { SPARE, type Culled, type WorldReach } from './sites';
+
+/** Rain and snow fall only where precipitation is at least this; clouds gather where it passes CLOUDS. (Shaders and CPU share these.) */
+const FALLS = 0.02;
+const CLOUDS = 0.4;
+const glsl = (v: number) => v.toFixed(4);
 
 const CLOUD_HEIGHT = 2.3; // above the ground, scene units
+const FREEZING = RULES.freezing; // what uFreezing is set to (see common.ts)
 
 function seeds(count: number, seed: number): Float32Array {
   const data = new Float32Array(count * 4);
@@ -35,7 +43,7 @@ void main() {
   vec2 site = aSeed.xy;
   float speed = mix(1.5 + aSeed.w * 0.6, 0.22 + aSeed.w * 0.12, uSnow);
   float life = fract(uTime * speed + aSeed.z * 7.0);
-  vec2 wind = fieldD(site).ba;
+  vec2 wind = fieldF(site).rg;
   vec2 windUv = vec2(wind.x, wind.y * WORLD_W / WORLD_D);
   // Both rain and snow travel downwind; snow has a stronger sideways drift.
   site += windUv * mix(0.20, 0.30, uSnow) * life;
@@ -45,7 +53,7 @@ void main() {
   float cold = smoothstep(uFreezing + 0.08, uFreezing - 0.08, a.g);
   float kind = mix(1.0 - cold, cold, uSnow);
   // More precipitation = more of the particles switched on.
-  float on = step(aSeed.w, b.b * 1.05) * step(0.02, b.b) * kind;
+  float on = step(aSeed.w, b.b * 1.05) * step(${glsl(FALLS)}, b.b) * kind;
   float ground = max(a.r, b.r) * HSCALE;
   float y = ground + ${CLOUD_HEIGHT.toFixed(2)} * (1.0 - life);
   vec2 xz = tableXz(site);
@@ -102,14 +110,14 @@ varying float vRain;
 varying float vShade;
 void main() {
   vec2 site = aSeed.xy;
-  vec2 wind = fieldD(site).ba;
+  vec2 wind = fieldF(site).rg;
   vec2 windUv = vec2(wind.x, wind.y * WORLD_W / WORLD_D);
   site += windUv * sin(uTime * 0.08 + aSeed.w * 6.2832) * 0.035;
   site += 0.012 * vec2(sin(uTime * 0.11 + aSeed.z * 30.0), cos(uTime * 0.09 + aSeed.w * 30.0));
   vec4 a = fieldA(site);
   vec4 b = fieldB(site);
   float rain = b.b;
-  float grow = smoothstep(0.40 + aSeed.w * 0.45, 0.62 + aSeed.w * 0.45, rain);
+  float grow = smoothstep(${glsl(CLOUDS)} + aSeed.w * 0.45, 0.62 + aSeed.w * 0.45, rain);
   float size = (0.45 + 0.45 * aSeed.z) * grow;
   float angle = aSeed.w * 6.2832;
   float c = cos(angle), s = sin(angle);
@@ -150,7 +158,8 @@ function cloudShape(): THREE.BufferGeometry {
   ]);
   merged.deleteAttribute('uv');
   merged.deleteAttribute('normal');
-  return merged;
+  // Lumps share corners: each is worked out once by the GPU, not once per triangle that touches it.
+  return mergeVertices(merged, 1e-5);
 }
 
 function makeClouds(shared: SharedUniforms, columns: number, rows: number): THREE.Mesh {
@@ -166,6 +175,7 @@ function makeClouds(shared: SharedUniforms, columns: number, rows: number): THRE
   const base = cloudShape();
   const geometry = new THREE.InstancedBufferGeometry();
   geometry.setAttribute('position', base.getAttribute('position'));
+  geometry.setIndex(base.getIndex());
   geometry.setAttribute('aSeed', new THREE.InstancedBufferAttribute(data, 4));
   geometry.instanceCount = count;
   const material = new THREE.ShaderMaterial({
@@ -177,12 +187,22 @@ function makeClouds(shared: SharedUniforms, columns: number, rows: number): THRE
   return mesh;
 }
 
-export function makeWeather(shared: SharedUniforms): THREE.Group {
+export function makeWeather(shared: SharedUniforms): THREE.Object3D & Culled {
   const group = new THREE.Group();
   const clouds = makeClouds(shared, 11, 8);
   castsCloudShade(clouds);
-  group.add(clouds);
-  group.add(makeFall(shared, 3500, false, 5));
-  group.add(makeFall(shared, 2600, true, 9));
-  return group;
+  const rain = makeFall(shared, 3500, false, 5);
+  const snow = makeFall(shared, 2600, true, 9);
+  group.add(clouds, rain, snow);
+  return Object.assign(group, {
+    /** A dry world has no weather to draw at all; rain and snow each need their own side of freezing somewhere. */
+    cull(world: WorldReach, everything: boolean) {
+      const wettest = world.top('precipitation');
+      const falling = everything || wettest >= FALLS - SPARE;
+      clouds.visible = everything || wettest > CLOUDS - SPARE;
+      // Rain where it is warmer than just under freezing, snow where it is colder than just over (the `cold` blend in the shader).
+      rain.visible = falling && (everything || world.top('temperature') > FREEZING - 0.08 - SPARE);
+      snow.visible = falling && (everything || world.bottom('temperature') < FREEZING + 0.08 + SPARE);
+    },
+  });
 }

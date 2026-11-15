@@ -1,15 +1,21 @@
 // Shared constants, uniforms and GLSL used by every part of the renderer.
 //
-// The renderer's whole view of the world is five textures (see fields.ts):
+// The renderer's whole view of the world is seven textures (see fields.ts):
 //   uFieldA = height, temperature, wetness, vegetation
 //   uFieldB = waterSurface, river, precipitation, inside mask (0.5 on the outline)
-//   uFieldC = homes, farms, fishing, wind-blown snow
-//   uFieldD = cleared (felled forest, permanent), logging, wind-x, wind-z
-//   uFieldE = town, city, plaza (the square in the middle of a town or city), unused
+//   uFieldC = homes, farms, fishing, lavaHeat (1 molten .. 0 set to rock)
+//   uFieldD = cleared (felled forest, permanent), logging, lavaSurface, lava (how much covers the ground)
+//   uFieldE = ash (lava spread wide: burnt ground), lava glow (molten lava spread a little),
+//             molten lava spread a medium way (scoria, crater rim), any lava spread a medium way (basalt)
+//   uFieldF = wind-x, wind-z, wind-blown snow, (spare)
+//             (Lava and wind were each written to take C.a, D.b and D.a; wind moved here.)
+//   uFieldG = town, city, plaza (the square in the middle of a town or city), unused
 // plus the sea level. Rewrite anything in render/ freely: nothing else in the
 // app depends on it.
 import * as THREE from 'three';
 import { A3_ASPECT, GW, RULES, gridHeight } from '../sim/world';
+import { MAX_VENTS } from './vents';
+export { MAX_VENTS };
 
 /** World size in scene units. X = table left to right, Z = far to near, Y = up. */
 export const WORLD_W = 10;
@@ -41,11 +47,15 @@ export interface SharedUniforms {
   uFieldC: THREE.IUniform<THREE.Texture | null>;
   uFieldD: THREE.IUniform<THREE.Texture | null>;
   uFieldE: THREE.IUniform<THREE.Texture | null>;
+  uFieldF: THREE.IUniform<THREE.Texture | null>;
+  uFieldG: THREE.IUniform<THREE.Texture | null>;
   uTexel: THREE.IUniform<THREE.Vector2>;
   uGrid: THREE.IUniform<THREE.Vector2>;
   /** World width and depth in scene units. */
   uWorld: THREE.IUniform<THREE.Vector2>;
   uSea: THREE.IUniform<number>;
+  /** The highest ground in the world, in scene units (shadow rays stop once clear of it). */
+  uPeak: THREE.IUniform<number>;
   uTime: THREE.IUniform<number>;
   /** Height of the picture in pixels. */
   uViewHeight: THREE.IUniform<number>;
@@ -57,6 +67,19 @@ export interface SharedUniforms {
   uPulse: THREE.IUniform<THREE.Vector4[]>;
   uPulseColor: THREE.IUniform<THREE.Color[]>;
   uPulseCount: THREE.IUniform<number>;
+  /** Per card with a biome: table u, v, radius (share of width), strength. */
+  uBiome: THREE.IUniform<THREE.Vector4[]>;
+  uBiomeGround: THREE.IUniform<THREE.Color[]>;
+  uBiomeRock: THREE.IUniform<THREE.Color[]>;
+  /** Colour, and 1 when the biome has its own (0: the world's greens, or water). */
+  uBiomePlants: THREE.IUniform<THREE.Vector4[]>;
+  uBiomeLiquid: THREE.IUniform<THREE.Vector4[]>;
+  /** x: how far the liquid is lit from within (0..1). y: 1 when the world's own trees grow here. */
+  uBiomeExtra: THREE.IUniform<THREE.Vector4[]>;
+  uBiomeCount: THREE.IUniform<number>;
+  /** Where smoke rises (see vents.ts): table u, table v, strength, unused. */
+  uVent: THREE.IUniform<THREE.Vector4[]>;
+  uVentCount: THREE.IUniform<number>;
   /** Depth of everything that casts a shadow, seen from the sun (see scene.ts). */
   uShadowMap: THREE.IUniform<THREE.Texture | null>;
   /** How much cloud lies between each point and the sun (0..1), seen from the sun. */
@@ -66,6 +89,8 @@ export interface SharedUniforms {
 }
 
 export const MAX_PULSES = 16;
+/** Cards with a biome (their own ground, plants, rock and liquid), at most this many at once. */
+export const MAX_BIOMES = 8;
 
 export function makeSharedUniforms(): SharedUniforms {
   return {
@@ -74,10 +99,13 @@ export function makeSharedUniforms(): SharedUniforms {
     uFieldC: { value: null },
     uFieldD: { value: null },
     uFieldE: { value: null },
+    uFieldF: { value: null },
+    uFieldG: { value: null },
     uTexel: { value: new THREE.Vector2(1 / GW, 1 / gridHeight(world.aspect)) },
     uGrid: { value: new THREE.Vector2(GW, gridHeight(world.aspect)) },
     uWorld: { value: new THREE.Vector2(world.w, world.d) },
     uSea: { value: RULES.seaBase },
+    uPeak: { value: 1e9 },
     uTime: { value: 0 },
     uViewHeight: { value: 1080 },
     uSunDir: { value: SUN_DIR.clone() },
@@ -86,6 +114,15 @@ export function makeSharedUniforms(): SharedUniforms {
     uPulse: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Vector4(0, 0, 99, 0)) },
     uPulseColor: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Color(1, 1, 1)) },
     uPulseCount: { value: 0 },
+    uBiome: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uBiomeGround: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Color(1, 1, 1)) },
+    uBiomeRock: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Color(1, 1, 1)) },
+    uBiomePlants: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uBiomeLiquid: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uBiomeExtra: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Vector4(0, 1, 0, 0)) },
+    uBiomeCount: { value: 0 },
+    uVent: { value: Array.from({ length: MAX_VENTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uVentCount: { value: 0 },
     uShadowMap: { value: null },
     uCloudMap: { value: null },
     uSunMatrix: { value: new THREE.Matrix4() },
@@ -99,9 +136,12 @@ uniform sampler2D uFieldB;
 uniform sampler2D uFieldC;
 uniform sampler2D uFieldD;
 uniform sampler2D uFieldE;
+uniform sampler2D uFieldF;
+uniform sampler2D uFieldG;
 uniform vec2 uTexel;
 uniform vec2 uGrid;
 uniform float uSea;
+uniform float uPeak;
 uniform float uTime;
 uniform vec3 uSunDir;
 uniform float uFreezing;
@@ -126,6 +166,10 @@ vec4 fieldB(vec2 uv) { return texture2D(uFieldB, fieldUv(uv)); }
 vec4 fieldC(vec2 uv) { return texture2D(uFieldC, fieldUv(uv)); }
 vec4 fieldD(vec2 uv) { return texture2D(uFieldD, fieldUv(uv)); }
 vec4 fieldE(vec2 uv) { return texture2D(uFieldE, fieldUv(uv)); }
+// Wind (rg: x and z, each -1..1) and wind-blown snow (b).
+vec4 fieldF(vec2 uv) { return texture2D(uFieldF, fieldUv(uv)); }
+// Town, city and plaza (the square in the middle of a town or city).
+vec4 fieldG(vec2 uv) { return texture2D(uFieldG, fieldUv(uv)); }
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -223,6 +267,28 @@ float cloudShade(vec3 p) {
 float sunlight(vec3 p, vec3 n) {
   vec3 q = p + n * 0.02;
   return reliefShadow(q) * castShadow(q) * cloudShade(q);
+}
+`;
+
+/**
+ * GLSL for biomes (include after GLSL_COMMON): a card's own ground, plants, rock and liquid, held
+ * inside its radius. The land, the water and the trees each ask `biomeAt` how far a biome holds
+ * where they are and lean their colours that far, so a region changes material as one.
+ */
+export const GLSL_BIOME = /* glsl */ `
+uniform vec4 uBiome[${MAX_BIOMES}];
+uniform vec3 uBiomeGround[${MAX_BIOMES}];
+uniform vec3 uBiomeRock[${MAX_BIOMES}];
+uniform vec4 uBiomePlants[${MAX_BIOMES}];
+uniform vec4 uBiomeLiquid[${MAX_BIOMES}];
+uniform vec4 uBiomeExtra[${MAX_BIOMES}];
+uniform int uBiomeCount;
+// How far biome i holds at a place (table uv, scene xz): its strength inside, 0 outside, with a ragged edge.
+float biomeAt(int i, vec2 uv, vec2 xz) {
+  vec4 g = uBiome[i];
+  float r = length((uv - g.xy) * vec2(WORLD_W, WORLD_D)) / (g.z * WORLD_W);
+  if (r > 1.2) return 0.0;
+  return g.w * (1.0 - smoothstep(0.82, 1.0, r + (fbm2(xz * 1.7 + float(i) * 13.0) - 0.5) * 0.3));
 }
 `;
 

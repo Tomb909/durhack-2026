@@ -19,6 +19,33 @@ function titleCase(word: string): string {
   return word.charAt(0) + word.slice(1).toLowerCase();
 }
 
+/**
+ * Copies of the same card that sit close together, as groups (each shares one label).
+ * A card that lands between two groups joins them into one. `skip` cards get no label of their own.
+ */
+export function groupCopies(cards: LiveCard[], skip: ReadonlySet<LiveCard>, aspect: number): LiveCard[][] {
+  const groups: LiveCard[][] = [];
+  for (const card of cards) {
+    if (skip.has(card)) continue;
+    let home: LiveCard[] | undefined;
+    for (const group of groups) {
+      // A group emptied by an earlier join has no first card to compare with.
+      if (!group.length || group[0].def !== card.def) continue;
+      if (group.some((other) => Math.hypot(other.x - card.x, (other.y - card.y) / aspect) < GROUP_RADIUS)) {
+        if (home) {
+          home.push(...group);
+          group.length = 0;
+        } else {
+          home = group;
+        }
+      }
+    }
+    if (home) home.push(card);
+    else groups.push([card]);
+  }
+  return groups.filter((group) => group.length > 0);
+}
+
 function tabletopDirection(angle: number): string {
   const directions = ['right', 'near-right', 'near', 'near-left', 'left', 'far-left', 'far', 'far-right'];
   return directions[Math.round((((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % directions.length];
@@ -107,30 +134,12 @@ export class Beacons {
     }
 
     // --- group nearby copies of the same card; attached modifiers share the target label
-    const groups: LiveCard[][] = [];
-    for (const card of cards) {
-      if (attachedModifiers.has(card)) continue;
-      let home: LiveCard[] | undefined;
-      for (const group of groups) {
-        if (group[0].def !== card.def) continue;
-        if (group.some((other) => Math.hypot(other.x - card.x, (other.y - card.y) / world.aspect) < GROUP_RADIUS)) {
-          if (home) {
-            home.push(...group);
-            group.length = 0;
-          } else {
-            home = group;
-          }
-        }
-      }
-      if (home) home.push(card);
-      else groups.push([card]);
-    }
+    const groups = groupCopies(cards, attachedModifiers, world.aspect);
 
     // --- one label per group
     const live = new Set<string>();
     const placed: Label[] = [];
     const entries = groups
-      .filter((group) => group.length > 0)
       .map((group) => ({ group, key: `${group[0].def.id}:${group.map((c) => c.key).sort()[0]}` }))
       .sort((a, b) => (a.key < b.key ? -1 : 1));
     for (const { group, key } of entries) {
@@ -168,7 +177,20 @@ export class Beacons {
         const el = document.createElement('div');
         el.className = 'world-label';
         el.style.setProperty('--c', def.color);
-        el.innerHTML = `<span class="i">${def.icon}</span><span class="w"></span>${def.id === 'wind' ? '<span class="world-wind-arrow" aria-hidden="true">➤</span>' : ''}`;
+        // Built as elements, not markup: a card's icon and word may come from a typed word.
+        const icon = document.createElement('span');
+        icon.className = 'i';
+        icon.textContent = def.icon;
+        const word = document.createElement('span');
+        word.className = 'w';
+        el.append(icon, word);
+        if (def.id === 'wind') {
+          const arrow = document.createElement('span');
+          arrow.className = 'world-wind-arrow';
+          arrow.setAttribute('aria-hidden', 'true');
+          arrow.textContent = '➤';
+          el.append(arrow);
+        }
         this.layer.appendChild(el);
         label = { el, text: '', width: 0, height: 0, lift: 0, x: 0, y: 0 };
         this.labels.set(key, label);

@@ -1,6 +1,9 @@
 // The land: a grid mesh pushed up by the height texture and coloured by climate.
 import * as THREE from 'three';
-import { GLSL_COMMON, world, type SharedUniforms } from './common';
+import { GLSL_BIOME, GLSL_COMMON, world, type SharedUniforms } from './common';
+import { RULES } from '../sim/world';
+import { MAX_BIOMES } from './common';
+import { GLSL_LAVA } from './lava';
 
 const vertex = /* glsl */ `
 ${GLSL_COMMON}
@@ -20,8 +23,11 @@ void main() {
 
 const fragment = /* glsl */ `
 ${GLSL_COMMON}
+${GLSL_BIOME}
+${GLSL_LAVA}
 uniform sampler2D uPaletteBare;
 uniform sampler2D uPaletteGreen;
+uniform float uSeaBase;
 uniform vec4 uPulse[16];
 uniform vec3 uPulseColor[16];
 uniform int uPulseCount;
@@ -72,11 +78,26 @@ void main() {
   vec2 climate = vec2(clamp(temperature * 0.5 + 0.5 + (grain - 0.5) * 0.06, 0.02, 0.98), clamp(wet + (grain - 0.5) * 0.10, 0.02, 0.98));
   vec3 bare = texture2D(uPaletteBare, climate).rgb;
   vec3 green = texture2D(uPaletteGreen, climate).rgb;
+  // Biomes: inside a card's region the land is made of that card's materials. The climate still
+  // decides where plants grow and where it is steep or wet; the biome says what colour that is.
+  float biome = 0.0;
+  vec3 biomeRock = vec3(0.0);
+  vec3 bedTint = vec3(0.30, 0.55, 0.62); // what the liquid does to the look of the bed under it
+  for (int i = 0; i < ${MAX_BIOMES}; i++) {
+    if (i >= uBiomeCount) break;
+    float w = biomeAt(i, vUv, vWorld.xz);
+    if (w <= 0.0) continue;
+    bare = mix(bare, uBiomeGround[i], w);
+    green = mix(green, uBiomePlants[i].rgb, w * uBiomePlants[i].a);
+    biomeRock = mix(biomeRock, uBiomeRock[i], biome + w > 0.0 ? w / (biome + w - biome * w) : 0.0);
+    bedTint = mix(bedTint, clamp(uBiomeLiquid[i].rgb * 1.6 + 0.05, 0.0, 1.0), w * uBiomeLiquid[i].a);
+    biome = biome + w - biome * w;
+  }
   vec3 col = mix(bare, green, smoothstep(0.04, 0.55, plants));
   col *= 0.90 + 0.20 * fine;
   // Mottling so bare ground is not a flat wash; wind ripples where it is hot and dry.
   col *= 0.86 + 0.28 * fbm2(vWorld.xz * 2.3 + 40.0);
-  float desert = smoothstep(0.25, 0.55, temperature) * (1.0 - smoothstep(0.12, 0.3, wet)) * (1.0 - plants);
+  float desert = smoothstep(0.25, 0.55, temperature) * (1.0 - smoothstep(0.12, 0.3, wet)) * (1.0 - plants) * (1.0 - biome);
   float ripple = sin((vWorld.x * 0.8 + vWorld.z + 0.35 * fbm2(vWorld.xz * 1.5)) * 38.0);
   col *= 1.0 + 0.07 * desert * ripple;
   // A meadow is never one green: broad drifts of sun-dried grass and of lusher, darker growth.
@@ -122,7 +143,7 @@ void main() {
   float trodden = smoothstep(0.25, 0.95, c.r) * worn;
   col = mix(col, vec3(0.17, 0.125, 0.075) * (0.9 + 0.2 * fine), 0.8 * trodden * (1.0 - smoothstep(0.004, 0.02, depth)));
   // Streets: packed earth between a town's houses, cobbles in a city and on the square.
-  vec4 ue = fieldE(vUv);
+  vec4 ue = fieldG(vUv);
   float urban = max(ue.r, ue.g);
   float cobble = hash21(floor(vWorld.xz * 42.0));
   vec3 paving = mix(vec3(0.40, 0.35, 0.28), vec3(0.47, 0.46, 0.44), max(ue.g, ue.b)) * (0.82 + 0.34 * cobble);
@@ -133,6 +154,24 @@ void main() {
   stone.x *= (1.0 - smoothstep(0.0, 0.004, depth)) * (1.0 - smoothstep(0.05, 0.3, max(c.r, c.g))) * (1.0 - paved);
   col = mix(col, mix(vec3(0.36, 0.34, 0.32), vec3(0.56, 0.53, 0.48), fine) * (0.9 + 0.2 * hash21(floor(vWorld.xz * 3.2))), stone.x);
   n = normalize(n + vec3(stone.y, 0.0, stone.z) * stone.x * 1.2);
+
+  // Lava, and the volcanic ground around it: pale ash far out, dark grey-brown nearer, black basalt
+  // beside the lava and high on the cone, with a hint of red-brown scoria where molten rock lights it.
+  float lava = fieldD(vUv).a;
+  float lavaHeat = c.a;
+  float lavaCover = smoothstep(0.04, 0.34, lava + (grain - 0.5) * 0.12);
+  vec4 nearLava = fieldE(vUv); // x: ash (lava spread wide), y: glow (molten lava spread a little), z: molten, w: any lava, both a medium way
+  float burnt = smoothstep(0.004, 0.035, nearLava.x + (grain - 0.5) * 0.008);
+  float flecks = 0.75 + 0.5 * fine;
+  vec3 volcanic = vec3(0.19, 0.165, 0.135) * (0.85 + 0.3 * grain);                                    // ash apron, near #8C8478 once lit
+  volcanic = mix(volcanic, vec3(0.102, 0.084, 0.072) * flecks, smoothstep(0.015, 0.09, nearLava.x));  // dark grey-brown #5A524C
+  float blackness = max(smoothstep(0.08, 0.38, nearLava.w + (grain - 0.5) * 0.06), smoothstep(0.02, 0.07, nearLava.x + (grain - 0.5) * 0.015));
+  volcanic = mix(volcanic, vec3(0.027, 0.023, 0.022) * flecks, blackness);                             // basalt #2E2A29
+  float scoria = smoothstep(0.05, 0.40, nearLava.z + (fine - 0.5) * 0.06) * (0.55 + 0.45 * slope);
+  volcanic = mix(volcanic, mix(vec3(0.047, 0.032, 0.030), vec3(0.147, 0.069, 0.048), smoothstep(0.1, 0.8, nearLava.y)) * flecks * 1.3, scoria * 0.8);
+  // (A biome keeps most of its own ground beside its lava: netherrack, not ash.)
+  col = mix(col, volcanic, burnt * 0.82 * (1.0 - 0.75 * biome));
+  col = mix(col, lavaRock(vWorld.xz), lavaCover);
 
   // Snow where it is cold and wet enough: crisp, patchy edge.
   float snow = smoothstep(uFreezing + 0.10, uFreezing - 0.10, temperature + (grain - 0.5) * 0.16)
@@ -147,22 +186,26 @@ void main() {
   // Low on the mountain only the steep faces are bare; higher up, less of a slope is needed
   // before the rock shows through. Creases hold soil a little longer than the knuckles.
   float exposed = slope + (grain - 0.5) * 0.14 + 0.10 * (crag - 0.5) * lifted;
+  rock = mix(rock, biomeRock * (0.8 + 0.4 * fine), biome);
   float rocky = smoothstep(mix(0.40, 0.20, high), mix(0.66, 0.42, high), exposed);
-  col = mix(col, rock, rocky * (1.0 - 0.75 * plants));
+  col = mix(col, mix(rock, volcanic * (0.9 + 0.3 * fine), burnt), rocky * (1.0 - 0.75 * plants) * (1.0 - lavaCover));
   // Frost where it is frozen but too dry for snow: pale, blue, cracked like a dry lake of ice.
-  float frost = smoothstep(uFreezing + 0.10, uFreezing - 0.16, temperature + (grain - 0.5) * 0.16) * (1.0 - snow);
+  float frost = smoothstep(uFreezing + 0.10, uFreezing - 0.16, temperature + (grain - 0.5) * 0.16) * (1.0 - snow) * (1.0 - lavaCover);
   float crack = smoothstep(0.035, 0.0, abs(fbm2(vWorld.xz * 3.1 + 7.0) - 0.5)) + smoothstep(0.03, 0.0, abs(fbm2(vWorld.xz * 7.3 + 19.0) - 0.5));
   vec3 frostCol = vec3(0.70, 0.80, 0.90) * (0.92 + 0.16 * fine) * (1.0 - 0.22 * min(1.0, crack));
   col = mix(col, frostCol, frost * 0.8 * (1.0 - 0.7 * rocky) * (1.0 - 0.6 * plants));
-  col = mix(col, vec3(0.66, 0.71, 0.80), snow * (1.0 - 0.8 * smoothstep(0.45, 0.75, slope)));
+  col = mix(col, vec3(0.66, 0.71, 0.80), snow * (1.0 - 0.8 * smoothstep(0.45, 0.75, slope)) * (1.0 - lavaCover * lavaHeat) * (1.0 - smoothstep(0.008, 0.04, nearLava.x)));
 
   // Beach just above the sea (not where frozen).
-  float shore = (1.0 - smoothstep(0.0, 0.010, h - uSea)) * step(uSea, h);
-  col = mix(col, vec3(0.86, 0.78, 0.56), shore * 0.75 * (1.0 - snow) * (1.0 - rocky));
+  // (No sand in a dug hole the sea has not reached: only ground the sea could lap at.)
+  float shore = (1.0 - smoothstep(0.0, 0.010, h - uSea)) * step(uSea, h) * step(uSeaBase + 0.012, h);
+  col = mix(col, vec3(0.86, 0.78, 0.56), shore * 0.75 * (1.0 - snow) * (1.0 - rocky) * (1.0 - biome));
   // Damp banks beside rivers; bed under water.
   col *= 1.0 - 0.30 * river;
   float under = smoothstep(0.0, 0.035, depth);
-  col = mix(col, col * vec3(0.30, 0.55, 0.62), under);
+  col = mix(col, col * bedTint, under);
+  // Less daylight reaches the bottom of a hole.
+  col *= 1.0 - 0.5 * smoothstep(0.0, 0.2, uSeaBase - h);
 
   // Light: warm sun with soft shadows, cool sky fill, overcast under rain.
   float shadow = sunlight(vWorld, n);
@@ -178,6 +221,19 @@ void main() {
   lit += snow * shadow * pow(max(dot(reflect(-uSunDir, n), normalize(cameraPosition - vWorld)), 0.0), 30.0) * 0.25;
   // Hot places glow warm, cold places cool.
   lit *= mix(vec3(0.90, 0.97, 1.08), vec3(1.08, 1.0, 0.90), smoothstep(-0.7, 0.7, temperature));
+  // Molten rock is its own light, and throws an orange glow on what is next to it, most of all on
+  // the walls that face it (the inside of a crater or a ravine). Shadow does not stop it.
+  float molten = lavaCover * smoothstep(0.0, 0.6, lavaHeat) * (1.0 - under);
+  float glow = smoothstep(0.0, 0.6, nearLava.y);
+  if (glow > 0.003) {
+    vec2 toward = vec2(fieldE(vUv + vec2(uTexel.x * 1.5, 0.0)).g - nearLava.y, fieldE(vUv + vec2(0.0, uTexel.y * 1.5)).g - nearLava.y);
+    float facing = clamp(dot(n.xz, toward) / (length(toward) + 1e-5) * 2.5, 0.0, 1.0) * smoothstep(0.0005, 0.004, length(toward));
+    float wall = smoothstep(0.05, 0.5, slope);
+    vec3 glowTint = mix(vec3(1.0, 0.26, 0.04), vec3(1.0, 0.45, 0.10), glow);
+    lit += glowTint * (col * 2.8 + 0.10) * glow * (1.2 + 2.2 * facing * wall + 0.8 * facing) * (1.0 - molten);
+  }
+  lit += lavaCracks(vWorld.xz, lavaHeat) * lavaCover * (1.0 - molten) * (1.0 - under);
+  lit = mix(lit, lavaGlow(vWorld.xz, lavaDownhill(vUv), lavaHeat, lava), molten);
   // A ring of the card's colour sweeps out from where a card has just landed.
   for (int i = 0; i < 16; i++) {
     if (i >= uPulseCount) break;
@@ -197,7 +253,7 @@ export function makeTerrain(
   const geometry = new THREE.PlaneGeometry(world.w, world.d, (gw - 1) * 2, (gh - 1) * 2);
   geometry.rotateX(-Math.PI / 2);
   const material = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uPaletteBare: { value: palettes.bare }, uPaletteGreen: { value: palettes.green } },
+    uniforms: { ...shared, uPaletteBare: { value: palettes.bare }, uPaletteGreen: { value: palettes.green }, uSeaBase: { value: RULES.seaBase } },
     vertexShader: vertex,
     fragmentShader: fragment,
   });

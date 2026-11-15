@@ -1,7 +1,8 @@
 // A flat, top-down picture of a world, one pixel per grid cell. No 3D, no GPU:
 // it shows exactly what the rules decided, with nothing hidden behind clouds.
 import { cardDef } from '../cards/defs';
-import { RULES, type WorldFrame } from '../sim/world';
+import type { PlacedObject } from '../sim/props';
+import { RULES, underSea, type WorldFrame } from '../sim/world';
 import type { Placement } from './codes';
 
 type RGB = [number, number, number];
@@ -21,14 +22,43 @@ const RAIN: RGB = [40, 60, 120];
 const FARM: RGB = [206, 190, 92];
 const HOME: RGB = [222, 96, 48];
 const BOAT: RGB = [250, 240, 214];
+const LAVA: RGB = [255, 104, 20];
+const BASALT: RGB = [44, 38, 42];
 
 export const MAP_LEGEND: [label: string, colour: RGB][] = [
-  ['sea', SEA_DEEP], ['river/lake', FRESH], ['forest', FOREST], ['desert', SAND], ['snow/ice', SNOW], ['rock', ROCK], ['farmland', FARM], ['villages', HOME], ['rain (dots)', RAIN],
+  ['sea', SEA_DEEP], ['river/lake', FRESH], ['forest', FOREST], ['desert', SAND], ['snow/ice', SNOW], ['rock', ROCK], ['farmland', FARM], ['villages', HOME], ['lava', LAVA], ['cooled lava', BASALT], ['rain (dots)', RAIN],
+  ['objects (squares)', [255, 255, 255]],
+  // A card's biome shows as its own colours for land, plants and liquid inside its radius.
 ];
 
-/** Draw the world into a canvas the size of the grid (scale it up when copying). */
-export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | OffscreenCanvas): void {
-  const { w, h, height, temperature, wetness, vegetation, waterSurface, river, precipitation, homes, farms, fishing, seaLevel } = frame;
+const hexRgb = (hex: string): RGB => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+
+/** The biomes of the cards on a world, ready for `drawMap`: where each holds and what it is made of. */
+export function biomesOf(cards: Placement[]): MapBiome[] {
+  const out: MapBiome[] = [];
+  for (const card of cards) {
+    const b = cardDef(card.id)?.biome;
+    if (!b) continue;
+    out.push({
+      x: card.x, y: card.y, radius: b.radius, strength: b.strength, ground: hexRgb(b.ground),
+      plants: b.plants ? hexRgb(b.plants) : null, liquid: b.liquid ? hexRgb(b.liquid.color) : null,
+    });
+  }
+  return out;
+}
+
+export interface MapBiome {
+  x: number; y: number; radius: number; strength: number;
+  ground: RGB; plants: RGB | null; liquid: RGB | null;
+}
+
+/**
+ * Draw the world into a canvas the size of the grid (scale it up when copying). With `biomes`
+ * (see biomesOf) the land and the liquid inside each take that card's colours, as in the 3D view,
+ * but with a plain round edge.
+ */
+export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | OffscreenCanvas, biomes: MapBiome[] = []): void {
+  const { w, h, height, temperature, wetness, vegetation, waterSurface, river, precipitation, homes, farms, fishing, lava, lavaHeat, seaLevel } = frame;
   canvas.width = w;
   canvas.height = h;
   const g = canvas.getContext('2d') as CanvasRenderingContext2D;
@@ -39,13 +69,29 @@ export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | Offscreen
       const ground = height[k];
       const t = temperature[k];
       const cold = ramp(RULES.freezing + 0.08, RULES.freezing - 0.08, t);
+      // What the land, the plants and the liquid are made of here.
+      let bare: RGB | null = null;
+      let forest = FOREST;
+      let liquid: RGB | null = null;
+      let held = 0;
+      for (const b of biomes) {
+        const r = Math.hypot(i / (w - 1) - b.x, (j / (h - 1) - b.y) / frame.aspect) / b.radius;
+        const hold = b.strength * ramp(1, 0.82, r);
+        if (hold <= 0) continue;
+        bare = lerp(bare ?? b.ground, b.ground, hold);
+        if (b.plants) forest = lerp(forest, b.plants, hold);
+        if (b.liquid) liquid = lerp(liquid ?? b.liquid, b.liquid, hold);
+        held = Math.max(held, hold);
+      }
       let c: RGB;
-      if (ground < seaLevel) {
+      if (underSea(frame, k)) {
         c = lerp(lerp(SEA_SHALLOW, SEA_DEEP, ramp(0, 0.06, seaLevel - ground)), SEA_ICE, cold);
+        if (liquid) c = lerp(c, liquid, held);
       } else {
         c = lerp(GROUND, SAND, ramp(0.2, 0.05, wetness[k]) * ramp(0.1, 0.5, t));
         c = lerp(c, ROCK, ramp(0.12, 0.3, ground));
-        c = lerp(c, FOREST, Math.min(1, vegetation[k]) * 0.9);
+        if (bare) c = lerp(c, bare, held);
+        c = lerp(c, forest, Math.min(1, vegetation[k]) * 0.9);
         c = lerp(c, FARM, Math.min(1, farms[k]) * 0.85);
         c = lerp(c, SNOW, cold * ramp(0.2, 0.45, wetness[k] + ramp(0.15, 0.4, ground)));
         // Light from the far left, so mountains read as mountains.
@@ -53,8 +99,10 @@ export function drawMap(frame: WorldFrame, canvas: HTMLCanvasElement | Offscreen
         const shade = 1 - Math.max(-0.35, Math.min(0.35, slope * 9));
         c = [c[0] * shade, c[1] * shade, c[2] * shade];
         const water = Math.max(ramp(0.0005, 0.003, waterSurface[k] - ground), ramp(0.25, 0.7, river[k]));
-        c = lerp(c, lerp(FRESH, SEA_ICE, cold), water);
+        c = lerp(c, lerp(liquid ? lerp(FRESH, liquid, held) : FRESH, SEA_ICE, cold), water);
       }
+      // Lava: bright where molten, near black where it has set (seen through the water it set under).
+      if (lava[k] > 0.02) c = lerp(c, lerp(BASALT, LAVA, lavaHeat[k]), Math.min(1, lava[k] * 1.6) * (underSea(frame, k) ? 0.6 : 1));
       // People: houses as a scatter of roof-coloured cells, fishing boats as pale specks on the water.
       if (homes[k] > 0.25 && (i * 7 + j * 3) % 5 < 2) c = lerp(c, HOME, 0.9);
       if (fishing[k] > 0.3 && (i * 5 + j * 11) % 23 === 0) c = BOAT;
@@ -82,5 +130,17 @@ export function drawCardMarks(g: CanvasRenderingContext2D, cards: Placement[], x
     g.lineWidth = Math.max(1, r / 3);
     g.strokeStyle = '#000000';
     g.stroke();
+  }
+}
+
+/** Mark where word cards' objects stand: a small square in the card's colour, outlined. */
+export function drawObjectMarks(g: CanvasRenderingContext2D, objects: readonly PlacedObject[], x: number, y: number, width: number, height: number): void {
+  for (const o of objects) {
+    const s = Math.max(3, o.size * width * 0.9);
+    g.fillStyle = o.def.color;
+    g.strokeStyle = o.afloat ? '#ffffff' : '#000000';
+    g.lineWidth = Math.max(1, s / 5);
+    g.fillRect(x + o.x * width - s / 2, y + o.y * height - s / 2, s, s);
+    g.strokeRect(x + o.x * width - s / 2, y + o.y * height - s / 2, s, s);
   }
 }

@@ -12,6 +12,7 @@ dependencies = [
     "rapidfuzz>=3.9",
     "cryptography>=43",
     "segno>=1.6",
+    "google-genai>=3.3.0",
 ]
 
 [project.scripts]

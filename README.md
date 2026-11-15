@@ -2,7 +2,7 @@
 
 Handwritten word cards on a table, watched by a phone, reshape a 3D world on a laptop. Turn WIND to steer rain, spread FOREST+RAIN into a tree line, blow snow off mountains, raise blizzards with ICE, and move boats, merchants, smoke and dust. DurHack 2026.
 
-Put **MOUNTAIN** in a corner and mountains rise there. Add **RAIN** and it rains, and rivers gather where the rain runs off. **LAKE** digs a basin at the card and fills it. **RIVER** runs a river through the card: it rises on the highest ground around (a mountain, if there is one), comes down through the card and carries on to the edge of the world. **VILLAGE**, **TOWN** and **CITY** are three sizes of settlement: cottages and farms, then tall town houses round a church, then a packed stone city round a castle. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **FOREST** grows trees only where it is warm and wet enough. The empty world is open grassland, and every card shows on its own too: FOREST alone is scrub and scattered trees, ICE alone frosts the ground. The world comes from how the cards combine.
+Put **MOUNTAIN** in a corner and mountains rise there. Add **RAIN** and it rains, and rivers gather where the rain runs off. **LAKE** digs a basin at the card and fills it. **RIVER** runs a river through the card: it rises on the highest ground around (a mountain, if there is one), comes down through the card and carries on to the edge of the world. **VILLAGE**, **TOWN** and **CITY** are three sizes of settlement: cottages and farms, then tall town houses round a church, then a packed stone city round a castle. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **FOREST** grows trees only where it is warm and wet enough. **RAVINE** cracks the ground open, **LAVA** wells up and runs downhill into it, and a **VOLCANO** raises a smoking cone with lava spilling from its crater. The empty world is open grassland, and every card shows on its own too: FOREST alone is scrub and scattered trees, ICE alone frosts the ground. The world comes from how the cards combine.
 
 ## Run it
 
@@ -56,7 +56,7 @@ Nothing needs the internet once it is running.
 | T | Developer option, currently switched off (the play area is locked to a rectangle): step through play-area shapes when no camera is connected |
 | I | Instant: no fading or easing, the world jumps to its final state |
 | H | Hide the panels |
-| Q | Picture quality |
+| Q | Picture quality: the sharpest it may be (see Staying smooth) |
 
 ### Moving the camera
 
@@ -77,11 +77,13 @@ A developer option, hidden by default: press **Tab** to show the table map and a
 
 Place **BIG** near the card it modifies, on any side, with their centers no more than 30% of the table width apart. The nearest card is modified, and the table map marks it with **+BIG**. BIG increases that card's local area of influence by 1.5×; on MOUNTAIN, it also makes the height effect 1.5× stronger. Multiple BIG cards stack. BIG makes a LAKE wider.
 
+**RAVINE** is the opposite of MOUNTAIN: it cuts a fissure through the ground, following a fault line that runs through the card, so cards laid along a line draw one long rift and a card on a mountain cuts a canyon through it. A ravine goes below sea level but stays dry until water reaches it: rain running in makes a lake, and a risen sea pours in once it touches the edge. **LAVA** wells up at the card, runs downhill, thins out and stops, and pools level in any hollow it meets (a ravine, a crater). It burns off plants, nobody builds on it, and it sets to black rock under water or where ICE makes it cold. **VOLCANO** raises a stratovolcano: concave flanks scored with gullies, a sunken crater behind a sharp, notched rim, a molten lake in the crater and lava streams spilling from the notches down several flanks. Smoke rises from the crater (from any pool of molten lava, in fact). Two volcanoes on one spot grow into one taller cone, BIG makes it bigger all over, and on a mountain it keeps its crater.
+
 ## Making cards and the sheet
 
 - **Sheet:** A3 (or two A4s taped flat). Draw one closed rectangle with a thick black marker, a finger-width in from the edge.
 - **Cards:** one word per scrap of plain white paper, BLOCK CAPITALS, thick black marker, letters 1.5–2.5 cm tall and close together, blank margin all round. WIND also has a clear arrow beneath it.
-- **Words:** BIG, MOUNTAIN, RAIN, LAKE, RIVER, SUN, ICE, FOREST, VILLAGE, TOWN, CITY, WIND. Make several of each. (Older cards still read: WATER as RAIN, and PEOPLE or SETTLEMENT as VILLAGE.)
+- **Words:** BIG, MOUNTAIN, RAIN, LAKE, RIVER, SUN, ICE, FOREST, VILLAGE, TOWN, CITY, WIND, RAVINE, LAVA, VOLCANO. Make several of each. (Older cards still read: WATER as RAIN, LIFE as FOREST, and PEOPLE or SETTLEMENT as VILLAGE. CANYON, CHASM or FISSURE reads as RAVINE; MAGMA as LAVA.)
 - **WIND:** draw a clear arrow under the word, with its point facing right when WIND reads upright. Rotate the card to point the wind across the table. Wind drives rain and clouds, carries FOREST seeds (with RAIN, LAKE or RIVER nearby) and moisture into a narrow tree line, scours snow from mountains, and turns nearby ICE into a blizzard. It also bends trees and villagers, pushes boats and merchants, blows chimney smoke, and lifts dust over hot, dry ground.
 - **Copies** go side by side, never stacked. Turning cards does nothing except for WIND, whose arrow sets its direction.
 
@@ -104,11 +106,12 @@ phone (camera page) ── JPEG frames over HTTPS ──► server/deck  (Python
 web/src/cards (smoothing) ─► web/src/sim (world rules, no graphics) ─► web/src/render (Three.js picture)
 ```
 
-- `web/src/cards/cards.json` defines each card's word, icon and ordinary field effects. WIND's direction comes from its tracked orientation and is handled as a directional field in the world; `web/src/render/wind.ts` draws the moving gust, dust and snow particles.
+- `web/src/cards/cards.json` defines the cards as data: a word, an icon, and what it pushes on (height, temperature, wetness, life, settlement, lava, sea level). A new card is a new entry. A height effect can be negative (a cut), keep to a fault line (`crack`: RAVINE) or be a volcano's cone (`cone`: crater, notches, gullies and lava vents, all set on the card). WIND's direction comes from its tracked orientation and is handled as a directional field in the world; `web/src/render/wind.ts` draws the moving gust, dust and snow particles.
 - `web/src/sim/world.ts` holds every rule and every tunable number (`RULES`). Nothing in it knows about graphics.
-- `web/src/render/` only draws. It receives the world as two textures and can be restyled freely; `palette.ts` holds the climate colours.
+- `web/src/render/` only draws. It receives the world as a few textures and can be restyled freely; `palette.ts` holds the climate colours, `lava.ts` the look of lava, and `plume.ts` the smoke and embers over molten pools.
 - The sky follows the world. `web/src/render/mood.ts` reads four numbers off the world (how hot, cold, wet and alive it is) and `backdrop.ts` paints from them: amber dusk over a hot world, teal and aurora over a frozen one, grey overcast in the rain, green and fireflies where things grow.
 - `server/deck/vision/` is the tracking: `playarea.py`, `detect.py`, `reader.py`, `tracker.py`.
+- `server/deck/words.py` turns a typed word into a card with the model; `web/src/cards/words.ts` is the page's half (see Any word becomes a card).
 
 ### Developing
 
@@ -117,7 +120,7 @@ web/src/cards (smoothing) ─► web/src/sim (world rules, no graphics) ─► w
 | `npm --prefix web run dev` | World page with hot reload at <http://localhost:5173> (talks to the server on 8000) |
 | `npm --prefix web test` | World-rule tests |
 | `npm --prefix web run harness` | Every card combination as numbers, and as a picture sheet with `--shots` (see below) |
-| `uv run pytest` | Tracking tests on synthetic frames |
+| `uv run pytest` | Tracking tests on synthetic frames, and the word-card server with the model stubbed |
 | `uv run deck --source synth` | Fake camera with moving cards, no phone needed |
 | `uv run deck --record recordings/run1` | Save about 3 camera frames a second |
 | `uv run python tools/replay_report.py recordings/run1` | Replay saved frames through tracking |
@@ -139,6 +142,66 @@ Cards can also come from the address, already settled, with no dragging and no w
 
 In the browser console, `deck.set('mountain+ice')` swaps the cards at once.
 
+### Staying smooth
+
+The picture looks after its own frame rate, and two rules keep it that way as cards are added.
+
+**It gives up sharpness before it gives up smoothness.** When frames stay slow for about a second, the world is drawn with fewer pixels (softer, otherwise the same); when there has been time to spare for a while, they come back. **Q** sets the sharpest it may be. `deck.view.autoQuality = false` in the console turns this off, and `deck.view.pixelRatio` says what it is drawing at now. The harness and the Combinations view always draw at their full, fixed size.
+
+**Only what can be showing is drawn.** Trees, houses, people, sheep, boats and smoke each stand at thousands of fixed sites, and the GPU works out every one from the world's textures. Before a changed world is drawn, the sites with nothing to show are left out (`web/src/render/sites.ts`): an empty world draws none of them. `deck.view.sitesDrawn` gives the count. Anything new that stands at sites should do the same:
+
+- Build it with `Sites` and give it a test that says whether a site *could* be showing. The test must be safe rather than exact: it may keep a site the shader then hides, never drop one the shader would show. Ask `world.most(field, x, y, wander)` for the largest value near the site and compare it with the same threshold the shader uses; keep that threshold as one constant shared by both (see the top of `people.ts`).
+- `deck.view.cull = false` draws every site again. The picture must not change by a single pixel: if it does, a test is too strict.
+- Weld shapes with `mergeVertices` after merging them, so corners shared by several triangles are worked out once.
+- A whole layer that has nothing to show is not handed to the GPU at all: the lava surface only while some lava lies deep enough to show, the smoke only while there is a vent (`render` in `scene.ts`). The lava's halo and its vents are worked out again only when the lava itself has moved (`fields.ts`).
+
+The rules of the world (`web/src/sim/`) keep two shortcuts worth knowing when adding to them: the climb inland that decides where water (and lava) drains is only repeated when the ground or the sea has changed (`Hydrology.compute`), and a card's round patch of influence is worked out from one row and one column, not cell by cell (`addCopies`). `npm --prefix web run harness -- --set all --diff` shows at once whether a change meant to be a pure speed-up moved any world.
+
+### Any word becomes a card
+
+A prototype: type any word or phrase in the Combinations view and it becomes a working card, combined with every other card, with no reload.
+
+**Try it.** Open the Combinations view (**V**), type `castle`, `haunted house`, `jazz`, `swamp` or `火山` in **Add a word** and press Enter. A chip says the word is being read; a few seconds later it is a card with a switch, copies and **only**, and the tiles show it alone and with every card that is on. **only** (on any card) shows just the combinations that include that card; adding a word turns it on for that word, because the view stops at 64 tiles. Open a tile large to see how the word was read, what the card does and how long it took. **Show in the live world** works, and the card is in the card panel (**Tab**).
+
+The same box is under the card tray on the world page (**Tab**): type a word there and its card joins the tray and lands on the table.
+
+For the model, the server needs a Gemini key (from <https://aistudio.google.com/apikey>). Put it in `~/.config/deck-of-worlds/keys.env` as `GEMINI_API_KEY=...`, then `uv run deck`. The file is read when the server starts, from any terminal, worktree or session; it lives outside the repository, so the key cannot be committed. One `NAME=value` per line; a value set in the terminal wins over the file. The server's first lines say which model will read new words, or that it found no key.
+
+The same file (or the terminal) takes three settings, none needing a code change: `DECK_WORD_MODEL` names another model (default `gemini-3.5-flash-lite`, the fastest; `gemini-4-hydrogen` takes 7 to 14 s a word), `DECK_WORD_EFFORT` sets a thinking level (unset by default, which is the model's own and the fastest; `low`, `medium`, `high`, and `minimal` on models that take it), and `DECK_WORD_HEDGE` is how many seconds to wait before asking a second time alongside a late answer (default 4; 0 never does). With no server, no key or no network the word still becomes a card at once: a guess, drawn with a dashed border, with **Try again**. When the model cannot be asked, the reason is shown and logged (the key was refused, over quota, a model name it does not know).
+
+**How it works.** A card is data, never code. A generated card is a `CardDef` like those in `cards.json`, and may do any mix of four things (all optional, see `web/src/cards/defs.ts`):
+
+| Part | What it is |
+|---|---|
+| `effects` | Pushes on the world's fields (including `lava`), as the built-in cards do, and may push the other way (CANYON, DESERT, BLIGHT). At most six. An effect is a round patch that fades out over about three times its radius, or, with a `shape`, a landform that ends at its radius: `mound`, `flat` (mesa, basin), `ridges`, `spires`, `dunes`, `terraces`, `rim` (crater). On a field other than height a shape is that field with a hard, uneven edge, so a place keeps its climate to itself. |
+| `biome` | What the land inside `radius` is made of: `ground`, and optionally `plants` (plant cover and the leaves of the world's trees), `rock` (steep faces), `liquid` (a colour and a `glow`, for whatever lakes, rivers and sea stand there) and `trees: false`. The rules still decide where there are hills, plants and water; the biome only says what they look like. So THE NETHER's sea is lava and a SWAMP's lakes are green, with no rule written for either. Up to eight biomes are drawn at once. |
+| `atmosphere` | `tint` and `strength` lean the whole picture's colour, `light` darkens (night) or brightens it; blended across cards and capped so the sky's own mood still shows. `particles` (`rise`, `fall`, `drift`, `swirl`) hang in the air by the card. |
+| `prop` | An object built from 1 to 24 primitives (`box`, `cylinder`, `cone`, `pyramid`, `prism`, `sphere`) in a unit cube, with a `scale`, a `count`, a `habitat` (`land`, `water`, `shore`, `air`, `anywhere`), a gentle `motion` and `glow`. Drawn like the trees and houses: flat colours, faceted light. |
+
+Where a word's card comes from, stopping at the first that answers: a built-in card by word or alias; a card already made (stored on the server, or kept in this browser); the model (one call through `POST /api/word`, stored in `.deck/words.json` on success); a near match a letter or two away (`volcanoe` → VOLCANO, a guess); the abstract fallback (a guess). Guesses are never stored on the server, so trying again later can replace them. **✕** removes a made card from this browser; its stored copy stays on the server, so typing the word again is instant.
+
+The **abstract fallback** runs in the page and knows nothing about meaning, so it uses the sound and look of the word (the bouba/kiki effect): spiky letters (k, t, z, x, i, v…) give shards, cones and hot bright colours; round letters (b, o, m, u, l…) give stacked spheres in cool pale colours; length sets height, vowels how open it is, and a hash of the word the hue. Same word, same card.
+
+Every card, from any source, passes through one gate, `cleanCard` in `web/src/cards/words.ts`: every number is clamped, every list limited, colours must be `#rrggbb`, unknown shapes and fields are dropped, and text loses its markup characters. The id comes from the word (`haunted house` → `haunted-house`; a word with no Latin letters gets `w-` and a hash), so a made card can never replace a built-in one. Where objects stand is worked out in `web/src/sim/props.ts` from the world and the cards alone: a boat floats on the nearest open water within reach, or sits beached at the card when there is none; land objects never stand in water; shore objects keep to the waterline; nothing stands outside the play area.
+
+The server side is `server/deck/words.py`: the prompt, the JSON schema the answer must fit, the call to Gemini (the `google-genai` SDK's `generate_content`, asked again at once when the model is overloaded), the store, and one shared call when two requests ask for the same word. `GET /api/words` lists the stored cards. A stored card has the shape of an entry in `cards.json`, so a good one can be promoted by pasting it there.
+
+**Places.** A word for a place (a planet, a biome, a world from a story) is made from landforms, a climate with an edge, a biome and the air; the prompt has THE NETHER, MARS SURFACE and SWAMP worked through. Before shapes and biomes a place could only nudge the world's own Earth climate with round patches: THE NETHER came back as "hot, dry, dead, low", the low part was a bell-shaped pit most of the world wide, and two WATER cards turned 96% of the world into blue sea (14% without it). With them the same word is a shallow basin of netherrack with a lava lake and spires round it, the sea stays where it was, and a sea that does reach it is drawn as lava. A card stored before this still works (its `ground` colour is read as a biome with only a ground), but keeps its old effects: use **Read again** beside its switch in the Combinations view (one model call) to have it made the new way. The server reads the prompt when it starts, so restart it after changing `words.py`.
+
+**Limits.** The camera does not make cards yet: an unknown handwritten word still shows "?". Objects are simple shapes and loop gently; nothing walks. A biome changes what things are made of, not how they behave: a lava-coloured sea does not burn the forest beside it (the `lava` field does), and houses, farms and snow keep their own colours inside a biome. Tint and light are one grade over the whole picture, so two cards with strong, different tints average out. The model is asked once per new word, so a new word takes as long as one call; a word seen before is instant.
+
+**Measuring it.** `uv run python tools/word_probe.py` resolves about 20 words of different kinds through a running server (`--url` for another port) and writes the seconds each took, what kind of card came back and its reading to `.deck/probe.json`, then prints the harness command that draws them. Every new word is one model call, which costs money.
+
+Measured on 14 November 2026 through the real API, about 80 asks in all, with the prompt and schema as they are:
+
+| How it is asked | A healthy answer | When the model is overloaded (about 3 asks in 10) |
+|---|---|---|
+| `gemini-3.5-flash-lite`, `generate_content` (the default) | 1.6 to 2.6 s | Says so at once (503); asked again straight away |
+| `gemini-3.5-flash-lite`, Interactions API | 1.6 to 4 s | Holds the ask for 33 s or more, whatever the settings |
+| `gemini-4-hydrogen`, Interactions API | 7 to 14 s | The same hold |
+
+As the server now asks (the default model, overloaded asks repeated at once, a late one asked again alongside): 11 new words took 1.9 to 5.7 s each, 2.9 s in the middle; a twelfth was refused for the key's rate limit, which the free tier reaches quickly because repeated asks count too. Objects, places, moods, phrases and words in other scripts (`祭り`) all came back as usable cards. The probe above has not been run as a whole, and nobody has yet judged by eye which kinds of word read well.
+
 ### Harness: every combination, at once
 
 The same cards always settle to the same world, so there is no need to place cards and wait. The harness jumps each world straight to its settled state (about 10 ms) and draws it at one frozen moment. There are three ways in: a view inside the app for looking, a command for numbers, and a picture sheet for files.
@@ -147,12 +210,14 @@ The same cards always settle to the same world, so there is no need to place car
 
 Press the **Combinations** button at the top right of the world page, or **V**. It works on the built page (`uv run deck`) and the dev page alike; `/?combos` in the address opens it straight away. **Esc** closes it.
 
-Every combination of the cards appears as a tile, with what is on the table and the main numbers underneath (share of the map that is sea, rain, forest and so on). One row of controls along the top:
+Every combination of the cards appears as a tile, with what is on the table and the main numbers underneath (share of the map that is sea, rain, forest and so on, and how many objects stand). With many cards only the first 64 are shown, fewest cards first. One row of controls along the top:
 
 | Control | Does |
 |---|---|
-| **A switch per card** | Switch a card off to leave it out, on to bring it back. The view shows every combination of the cards that are on: six cards is 64 worlds, five is 32. A modifier card such as BIG starts switched off, because it only changes the card beside it. The number beside the title is how many are showing. |
+| **A switch per card** | Switch a card off to leave it out, on to bring it back. The view shows every combination of the cards that are on, and each card switched on doubles the list: eight cards is 256 worlds, five is 32. A modifier card such as BIG starts switched off, because it only changes the card beside it; so does a compound card such as VOLCANO, which is already a mix of simpler cards. The number beside the title is how many are showing. |
 | **− ×1 +** beside a card | How many copies of that card, wherever it appears, from 1 to 3. Three Waters flood the lowlands; three Mountains make a far taller range. |
+| **only** beside a card | Show only the combinations that include this card (with several marked, those that include all of them). |
+| **Add a word** | Make a card from any word or phrase (see Any word becomes a card). Made cards say where they came from (**AI**, or a dashed **guess** with **Try again**) and have **✕** to remove them. |
 | **3D / Map / Both** | The world as the app draws it, flat from above (nothing hidden behind clouds), or 3D with the map in the corner. |
 | **S / M / L** | Tile size: small to see many at once, large to look closely. |
 
@@ -168,7 +233,7 @@ No browser, under a second for every combination:
 npm --prefix web run harness -- --set subsets
 ```
 
-One line per world: sea level, highest peak, and the share of the map that is flooded, river or lake, raining, snowing, forest, frozen, desert, plus a fingerprint of the whole world. To see what a rule change did, save the numbers before and compare after:
+One line per world: sea level, highest peak, the share of the map that is flooded, river or lake, raining, snowing, forest, frozen, desert, villages, farmland and lava, how many objects stand (from made cards), plus a fingerprint of the whole world. To see what a rule change did, save the numbers before and compare after:
 
 ```bash
 npm --prefix web run harness -- --set all --baseline
@@ -191,7 +256,8 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | Option (command line / address) | Meaning |
 |---|---|
 | `"rain*3" "forest+sun"` / `c=rain*3;forest+sun` | Your own combination codes, one world each. `name=code` names one. |
-| `--set` / `set=` | `showcase` (default), `singles`, `pairs`, `subsets` (every mix of the cards, 64 with six cards), `copies` (each card ×1 to ×3), `all`. Comma separated. |
+| `--set` / `set=` | `showcase` (default), `singles`, `pairs`, `subsets` (every mix of the plain cards, 8,192 with thirteen), `copies` (each card ×1 to ×3), `all`, `words` (every card made from a word, alone), `words-mixed` (each made card beside rain, a mountain, and forest with rain). Comma separated. The other sets use the built-in cards only, so they stay the same worlds. |
+| `--guess` / `guess=` | Make the abstract fallback card for these words (comma separated), so codes can use them: `--guess kiki,bouba kiki bouba`. |
 | `--layout` / `layout=` | Where cards without a position go: `cluster` (together, default) or `spread` (each kind apart) |
 | `--view` / `view=` | `3d`, `map` (flat top-down, no GPU needed), `both` (3D with a map inset) |
 | `--tile` / `tile=` | Tile width in pixels (default 400). `--tile 1200 --cols 1` for a close look at a few worlds. |
@@ -199,13 +265,19 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 | `--az`, `--el` / `az=`, `el=` | Look from this many degrees round the world, and this many above the table (default 0 and 37). `--zoom 0.45 --el 14 --az 35` shows the whole depth of the world from the side. |
 | `--no-beacons`, `--png`, `--tiles` / `beacons=0`, `fmt=png`, `tiles=1` | Hide the card pillars, lossless files, one file per world as well |
 
-Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for a position, `~degrees` for clockwise rotation, and any unambiguous start of an id (`m+wate*2`). For example, `wind~90@0.5,0.5` points WIND down the table. Ids come from `cards.json`, so a new card works in codes and in every set straight away. Chrome is found automatically; set `CHROME_PATH` if it is somewhere unusual, or use `--serve` to open the sheet in a browser yourself.
+Combination codes: card ids joined by `+` (or `_`), `*3` for copies, `@x,y` for a position, `~degrees` for clockwise rotation, and any unambiguous start of a built-in card's id (`m+rai*2`). For example, `wind~90@0.5,0.5` points WIND down the table. Ids come from `cards.json`, so a new card works in codes and in every set straight away. Cards made from words work by their full id (`haunted-house+water*3`): the shorthand matches built-in cards only, so making MUD never makes `m` ambiguous. The command line and the sheet read the stored cards from `.deck/words.json` themselves (the dev server serves them read-only at `/__harness/words`), so they need no Python server; `DECK_WORDS_FILE=path` points them at another store. Chrome is found automatically; set `CHROME_PATH` if it is somewhere unusual, or use `--serve` to open the sheet in a browser yourself.
 
 #### Keeping the harness current
 
 - **A simple new card** in `cards.json` gets its own switch in the Combinations view, joins every set, and works in codes. Cards with directional or other special behavior also need logic in the simulation or renderer.
 - **A new thing the world can have** (a new array on the world's frame in `sim/world.ts`): add it to `measure()` in `web/src/harness/metrics.ts` so the fingerprint covers it, give it a number there if it is worth comparing (`METRIC_KEYS` and `METRIC_LABELS`), and a colour in `web/src/harness/map.ts`.
+- **Cards made from words** need nothing either: they get a switch in the Combinations view, work in codes by full id, and are in the `words` set. Their objects are counted (`objects`) and marked on the flat map as small squares in the card's colour (white outline: afloat); worlds without objects keep the fingerprint they always had. To draw one without the model, use `--guess`.
+- **Biomes** (`biome` on a card) are for drawing only, so they are in the 3D tiles and coloured on the flat map (`biomesOf` and `drawMap` in `web/src/harness/map.ts`, with a plain round edge), but not in the numbers or the fingerprint. **Landforms** (an effect with `shape`) change the world itself, so they are. A new shape goes in `LAND_SHAPES` (`web/src/cards/defs.ts`), `addShape` (`web/src/sim/world.ts`), `LAND_SHAPES` and the prompt in `server/deck/words.py`, and the "end at their radius" test in `web/src/sim/world.test.ts`.
+- **A new field on a card** (in `CardDef`, `web/src/cards/defs.ts`): give it a check in `cleanCard` (`web/src/cards/words.ts`), the schema and prompt in `server/deck/words.py`, and a line in the large view's word panel (`doings()` in `web/src/ui/combos.ts`).
 - **A modifier card** (one with `modifier` in `cards.json`, like BIG) is left out of the ready-made sets and starts switched off in the Combinations view. Write it in a code to see it: `big+mountain`.
+- **A compound card** (one with `compound` in `cards.json`, like VOLCANO: several simpler cards in one) is left out of `subsets` and `pairs`, which double with every card, and starts switched off in the Combinations view. It is still in `singles`, `copies` and the showcase, and works in codes: `volcano+water`.
+- **Card ids that start alike** need more letters in a code: `l` could be life or lava, so write `li` or `la`.
 - **Things that build up over time** are not in the harness, which shows each world the moment it settles. Woodcutters' felled forest (`cleared`) is the one so far.
+- **Something worked out only for drawing** (the ash and glow around lava made in `render/fields.ts`, and the smoke vents found by `render/vents.ts`) is not part of the world, so it is in the 3D tiles but not in the numbers, the fingerprint or the flat map.
 - **A change to how the app draws** shows up in the tiles by itself: they use the app's own renderer. Anything drawn as a page element rather than in the 3D picture (the card labels, for one) does not appear in tiles.
-- `npm --prefix web test` checks that the settled world depends on the cards alone and that the animated world ends up there. If a rule change breaks that, the harness would stop matching the app.
+- `npm --prefix web test` checks that the settled world depends on the cards alone and that the animated world ends up there, for built-in cards and for made cards with effects, landforms, a biome and objects. It settles every combination, so it takes longer with each plain card added. If a rule change breaks that, the harness would stop matching the app.

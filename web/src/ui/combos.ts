@@ -7,9 +7,13 @@
 // Each world is settled at once and drawn at one frozen moment (see harness/),
 // so the same choices always show the same pictures. The cards come from
 // cards.json: a new card gets its own switch here with no extra work.
-import { CARD_DEFS, cardDef } from '../cards/defs';
+//
+// "Add a word" makes a card from any typed word or phrase (cards/words.ts) and
+// switches "Only with" on for it, so its combinations are the ones shown.
+import { BUILT_IN_IDS, CARD_DEFS, cardDef, onCardsChanged, type CardDef } from '../cards/defs';
+import { isGuess, normaliseWord, removeWord, resolveWord, type Resolved } from '../cards/words';
 import { parseCode, type Layout, type Placement, type Scenario } from '../harness/codes';
-import { combinations, copiesOf, defaultFilter, MOST_COPIES, type ComboFilter } from '../harness/filter';
+import { combinations, copiesOf, countCombinations, defaultFilter, MOST_COPIES, type ComboFilter } from '../harness/filter';
 import { METRIC_KEYS, METRIC_LABELS, type Metrics } from '../harness/metrics';
 import { tileHeight, TileRenderer, type View } from '../harness/tiles';
 
@@ -39,12 +43,14 @@ const esc = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const titleCase = (word: string) => word.charAt(0) + word.slice(1).toLowerCase();
 
 function loadPrefs(): Prefs {
-  // A modifier card (BIG) only changes the card beside it: it starts switched off, so the
-  // first thing you see is every combination of the cards that act by themselves.
-  const prefs: Prefs = { ...defaultFilter(), off: CARD_DEFS.filter((d) => d.modifier).map((d) => d.id), view: '3d', size: 'm' };
+  // A modifier card (BIG) only changes the card beside it, and a compound card (VOLCANO) is
+  // already a mix of simpler ones: both start switched off, so the first thing you see is
+  // every combination of the plain cards. Each card switched on doubles the list.
+  const prefs: Prefs = { ...defaultFilter(), off: CARD_DEFS.filter((d) => d.modifier || d.compound).map((d) => d.id), view: '3d', size: 'm' };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) ?? '{}') as Partial<Prefs>;
     if (Array.isArray(saved.off)) prefs.off = saved.off.filter((id) => typeof id === 'string');
+    if (Array.isArray(saved.only)) prefs.only = saved.only.filter((id) => typeof id === 'string');
     if (saved.copies && typeof saved.copies === 'object') {
       for (const [id, n] of Object.entries(saved.copies)) if (Number.isInteger(n)) prefs.copies[id] = n;
     }
@@ -69,7 +75,7 @@ function chips(scenario: Scenario): string {
   return items
     .map(([id, count]) => {
       const def = cardDef(id)!;
-      return `<span class="combo-chip" style="--c:${esc(def.color)}"><span aria-hidden="true">${esc(def.icon)}</span>${esc(def.word)}${count > 1 ? ` ×${count}` : ''}</span>`;
+      return `<span class="combo-chip${def.origin === 'fallback' ? ' guess' : ''}" style="--c:${esc(def.color)}"><span aria-hidden="true">${esc(def.icon)}</span>${esc(def.word)}${count > 1 ? ` ×${count}` : ''}</span>`;
     })
     .join('');
 }
@@ -79,10 +85,50 @@ function spoken(scenario: Scenario): string {
   return items.length ? items.join(', ') : 'Empty table';
 }
 
-/** The numbers worth a glance: shares of the map that are not zero. */
+/** The numbers worth a glance: shares of the map that are not zero, and objects placed. */
 function summary(metrics: Metrics): string {
   const parts = METRIC_KEYS.filter((k) => METRIC_LABELS[k].share && metrics[k] > 0).map((k) => `${METRIC_LABELS[k].label} ${metrics[k]}%`);
+  if (metrics.objects > 0) parts.push(`${metrics.objects} object${metrics.objects === 1 ? '' : 's'}`);
   return parts.join(' · ') || 'Bare, dry land';
+}
+
+const signed = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100) / 100}`;
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+
+/** What a card made from a word does, in plain words, as list items (already escaped). */
+function doings(def: CardDef): string[] {
+  const out: string[] = [];
+  if (def.effects.length) {
+    // A shape ends at its radius ("to 30%"); a round patch fades out well beyond it ("reach 30%").
+    const where = (e: CardDef['effects'][number]) => e.global ? '' : e.shape ? ` (${e.shape}, to ${Math.round((e.radius ?? 0.2) * 100)}%)` : ` (reach ${Math.round((e.radius ?? 0.2) * 100)}%)`;
+    out.push(`Pushes ${def.effects.map((e) => `${e.field === 'seaLevel' ? 'sea level' : e.field} ${signed(e.amount)}${where(e)}`).join(', ')}`);
+  }
+  const biome = def.biome;
+  if (biome) {
+    const swatch = (label: string, colour: string) => `<span class="combos-swatch" style="--s:${esc(colour)}"></span>${label}`;
+    const bits = [swatch('ground', biome.ground)];
+    if (biome.plants) bits.push(swatch('plants', biome.plants));
+    if (biome.rock) bits.push(swatch('rock', biome.rock));
+    if (biome.liquid) bits.push(swatch(biome.liquid.glow > 0.5 ? 'glowing liquid' : 'liquid', biome.liquid.color));
+    if (!biome.trees) bits.push('no trees');
+    out.push(`Biome to ${Math.round(biome.radius * 100)}%: ${bits.join(', ')}`);
+  }
+  const air = def.atmosphere;
+  if (air) {
+    const bits: string[] = [];
+    if (air.strength > 0) bits.push(`<span class="combos-swatch" style="--s:${esc(air.tint)}"></span>tint ${Math.round(air.strength * 100)}%`);
+    if (air.light < 0) bits.push(air.light <= -0.7 ? 'night' : 'darker');
+    if (air.light > 0) bits.push('brighter');
+    if (air.particles) bits.push(`${air.particles.glow ? 'glowing ' : ''}particles that ${air.particles.motion}`);
+    if (bits.length) out.push(`Air: ${bits.join(', ')}`);
+  }
+  const prop = def.prop;
+  if (prop) {
+    const where = { land: 'on land', water: 'on water', shore: 'by the shore', air: 'in the air', anywhere: 'anywhere' }[prop.habitat];
+    const many = { one: 'one', few: 'a few', many: 'many' }[prop.count];
+    out.push(`Object: ${many}, ${prop.scale}, ${where}, ${prop.parts.length} part${prop.parts.length === 1 ? '' : 's'}${prop.glow ? ', glowing' : ''}`);
+  }
+  return out;
 }
 
 interface Tile {
@@ -113,6 +159,14 @@ export class Combinations {
   private pumping = false;
   private detailIndex = -1;
   private returnFocus: HTMLElement | null = null;
+  private wordForm: HTMLFormElement;
+  private wordInput: HTMLInputElement;
+  private wordStatus: HTMLElement;
+  private pendingList: HTMLElement;
+  /** Words being read right now. */
+  private pending = new Set<string>();
+  /** Total of all combinations for the current choices (only the first MOST are shown). */
+  private total = 0;
 
   /**
    * @param behind  parts of the page to switch off while the view is open
@@ -133,6 +187,15 @@ export class Combinations {
         <div class="combos-cards" role="group" aria-label="Cards to combine"></div>
         <div class="combos-options"></div>
         <button type="button" class="combos-btn combos-x" data-do="close" aria-label="Close" title="Close (Esc)"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" /></svg></button>
+        <div class="combos-wordrow">
+          <form class="combos-add" autocomplete="off">
+            <label for="combos-word">Add a word</label>
+            <input id="combos-word" name="word" type="text" maxlength="60" spellcheck="false" placeholder="castle, haunted house, jazz…" aria-describedby="combos-word-status">
+            <button type="submit" class="combos-btn">Add</button>
+          </form>
+          <span class="combos-pending" aria-hidden="true"></span>
+          <p id="combos-word-status" class="combos-word-status" role="status" aria-live="polite"></p>
+        </div>
       </header>
       <div class="combos-body">
         <ul class="combos-grid"></ul>
@@ -146,6 +209,23 @@ export class Combinations {
     this.grid = root.querySelector('.combos-grid')!;
     this.count = root.querySelector('.combos-count')!;
     this.detail = root.querySelector('.combos-detail')!;
+    this.wordForm = root.querySelector('.combos-add')!;
+    this.wordInput = root.querySelector('#combos-word')!;
+    this.wordStatus = root.querySelector('.combos-word-status')!;
+    this.pendingList = root.querySelector('.combos-pending')!;
+    this.wordForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = this.wordInput.value;
+      this.wordInput.value = '';
+      void this.addWord(text);
+    });
+    // A card made, read again or removed (here or anywhere): new switches, fresh pictures.
+    onCardsChanged(() => {
+      if (!this.isOpen) return;
+      this.cache.clear();
+      this.buildControls();
+      this.refresh();
+    });
 
     root.addEventListener('click', (e) => this.click(e));
     root.addEventListener('change', (e) => this.change(e));
@@ -187,16 +267,41 @@ export class Combinations {
 
   private buildControls(): void {
     const p = this.prefs;
-    // One switch per card, with its number of copies beside it.
-    this.cards.innerHTML = CARD_DEFS.map((def) => `
-      <span class="combos-card" data-card="${esc(def.id)}" style="--c:${esc(def.color)}">
-        <button type="button" class="combos-toggle" data-do="card" role="switch"><span class="combos-switch" aria-hidden="true"></span><span class="combos-icon" aria-hidden="true">${esc(def.icon)}</span>${esc(def.word)}</button>
-        <span class="combos-copies" role="group" aria-label="Copies of ${esc(titleCase(def.word))}">
-          <button type="button" data-do="fewer" aria-label="Fewer copies of ${esc(titleCase(def.word))}" title="One copy fewer">−</button>
+    // Rebuilding the switches must not lose the hand: note what had focus, and put it back after.
+    const had = document.activeElement instanceof HTMLElement && this.cards.contains(document.activeElement)
+      ? { card: document.activeElement.closest<HTMLElement>('.combos-card')?.dataset.card, does: document.activeElement.dataset.do }
+      : null;
+    // One switch per card, with its number of copies and "only with" beside it. Cards made from
+    // words say where they came from; any of them can be read again by the model, or removed.
+    this.cards.innerHTML = CARD_DEFS.map((def) => {
+      const name = esc(titleCase(def.word));
+      const made = !BUILT_IN_IDS.has(def.id);
+      const guess = made && isGuess(def);
+      const tag = made
+        ? `<span class="combos-tag" title="${guess ? 'A guess from the sound of the word: the model could not be asked' : 'Read by the model'}">${guess ? 'guess' : 'AI'}</span>`
+        : '';
+      const madeButtons = made
+        ? (guess
+          ? `<button type="button" data-do="retry" aria-label="Try ${name} again with the model" title="Try again with the model">Try again</button>`
+          : `<button type="button" data-do="retry" aria-label="Have the model read ${name} again" title="Ask the model again and replace this card (one model call)">Read again</button>`) +
+          `<button type="button" data-do="remove" aria-label="Remove ${name}" title="Remove this card">✕</button>`
+        : '';
+      return `
+      <span class="combos-card${made ? ' made' : ''}${guess ? ' guess' : ''}" data-card="${esc(def.id)}" style="--c:${esc(def.color)}">
+        <button type="button" class="combos-toggle" data-do="card" role="switch"><span class="combos-switch" aria-hidden="true"></span><span class="combos-icon" aria-hidden="true">${esc(def.icon)}</span>${esc(def.word)}${tag}</button>
+        <span class="combos-copies" role="group" aria-label="Copies of ${name}">
+          <button type="button" data-do="fewer" aria-label="Fewer copies of ${name}" title="One copy fewer">−</button>
           <output></output>
-          <button type="button" data-do="more" aria-label="More copies of ${esc(titleCase(def.word))}" title="One copy more">+</button>
-        </span>
-      </span>`).join('');
+          <button type="button" data-do="more" aria-label="More copies of ${name}" title="One copy more">+</button>
+          <button type="button" class="combos-only" data-do="only" aria-label="Only combinations with ${name}" title="Only show combinations that include ${name}">only</button>
+        </span>${madeButtons ? `<span class="combos-made">${madeButtons}</span>` : ''}
+      </span>`;
+    }).join('');
+    if (had?.card) {
+      const back = this.cards.querySelector<HTMLElement>(`.combos-card[data-card="${CSS.escape(had.card)}"] [data-do="${CSS.escape(had.does ?? 'card')}"]`)
+        ?? this.cards.querySelector<HTMLElement>(`.combos-card[data-card="${CSS.escape(had.card)}"] [data-do="card"]`);
+      (back ?? this.wordInput).focus();
+    }
     this.options.innerHTML =
       this.choice('view', 'Picture', (['3d', 'map', 'both'] as View[]).map((v): [string, string, string] => [v, VIEW_LABEL[v], VIEW_NAME[v]]), p.view) +
       this.choice('size', 'Tile size', (['s', 'm', 'l'] as Size[]).map((s): [string, string, string] => [s, SIZES[s].label, SIZES[s].name]), p.size);
@@ -219,7 +324,57 @@ export class Combinations {
       (count.querySelector('output') as HTMLElement).textContent = `×${copies}`;
       (count.querySelector('[data-do="fewer"]') as HTMLButtonElement).disabled = copies <= 1;
       (count.querySelector('[data-do="more"]') as HTMLButtonElement).disabled = copies >= MOST_COPIES;
+      (count.querySelector('[data-do="only"]') as HTMLElement).setAttribute('aria-pressed', String((this.prefs.only ?? []).includes(id)));
     }
+  }
+
+  // --- adding a word ---------------------------------------------------------------
+
+  /** Make a card from a typed word (or read a guess again), then show its combinations. */
+  private async addWord(text: string, fresh = false): Promise<void> {
+    const word = normaliseWord(text);
+    if (!word) {
+      this.wordStatus.textContent = 'Type a word or a short phrase first.';
+      return;
+    }
+    if (this.pending.has(word)) return;
+    this.pending.add(word);
+    this.showPending();
+    this.wordStatus.textContent = `Reading ${word}…`;
+    let result: Resolved;
+    try {
+      result = await resolveWord(word, { fresh });
+    } catch (error) {
+      this.wordStatus.textContent = `Could not add ${word}: ${(error as Error).message}`;
+      return;
+    } finally {
+      this.pending.delete(word);
+      this.showPending();
+    }
+    const { def, source, why, ms } = result;
+    this.wordStatus.textContent =
+      source === 'built-in' ? `${def.word} is a built-in card.`
+      : source === 'stored' ? `${def.word}: made before, so straight away.`
+      : source === 'model' ? `${def.word}: read in ${seconds(ms)}. ${def.reading ?? ''}`
+      : source === 'near' ? `Read ${word} as ${def.word}, a guess (${why}).`
+      : `${def.word}: a guess from the sound of the word, because ${why}. Try again later.`;
+    // Bring the card in and show only the combinations that include it, so it does not drown.
+    const p = this.prefs;
+    p.off = p.off.filter((id) => id !== def.id);
+    if (!def.modifier) p.only = [def.id];
+    this.save();
+    if (!this.isOpen) return;
+    this.syncCards();
+    this.refresh();
+  }
+
+  private showPending(): void {
+    this.pendingList.replaceChildren(...[...this.pending].map((word) => {
+      const chip = document.createElement('span');
+      chip.className = 'combo-chip busy';
+      chip.textContent = `${word}…`;
+      return chip;
+    }));
   }
 
   private change(e: Event): void {
@@ -256,6 +411,28 @@ export class Combinations {
         this.save();
         this.syncCards();
         this.refresh();
+        break;
+      case 'only':
+        if (!card) break;
+        p.only = (p.only ?? []).includes(card) ? (p.only ?? []).filter((id) => id !== card) : [...(p.only ?? []), card];
+        // "Only with" a card that is switched off would show nothing: switch it on.
+        p.off = p.off.filter((id) => id !== card);
+        this.save();
+        this.syncCards();
+        this.refresh();
+        break;
+      case 'retry': {
+        const def = card ? cardDef(card) : undefined;
+        if (def) void this.addWord(def.word, true);
+        break;
+      }
+      case 'remove':
+        if (!card) break;
+        p.only = (p.only ?? []).filter((id) => id !== card);
+        this.save();
+        this.wordInput.focus(); // the button pressed is about to go
+        this.wordStatus.textContent = `${titleCase(cardDef(card)?.word ?? card)} removed.`;
+        removeWord(card);
         break;
       case 'fewer':
       case 'more': {
@@ -349,10 +526,11 @@ export class Combinations {
   private refresh(): void {
     this.closeDetail(false); // a changed choice goes back to the whole set
     const p = this.prefs;
-    const all = combinations(p);
-    this.shown = all.slice(0, MOST);
-    this.count.textContent = all.length > MOST ? `First ${MOST} of ${all.length}: switch a card off to see fewer` : `${all.length}`;
-    this.count.title = all.length === 1 ? '1 combination' : `${all.length} combinations`;
+    this.total = countCombinations(p);
+    this.shown = combinations(p, undefined, MOST);
+    const total = this.total;
+    this.count.textContent = total > MOST ? `First ${MOST} of ${total.toLocaleString()}: switch a card off, or use "only", to see fewer` : `${total}`;
+    this.count.title = total === 1 ? '1 combination' : `${total} combinations`;
 
     const width = SIZES[p.size].draw;
     // Keep only pictures that match the current choices, so memory stays level.
@@ -390,8 +568,9 @@ export class Combinations {
       canvas.setAttribute('aria-hidden', 'true');
       tile = { canvas, metrics: null };
       this.cache.set(key, tile);
-      this.queue.push({ key, cards: this.placed(s) });
     }
+    // Not drawn yet (new, or its place in the queue was lost when the list was rebuilt): queue it.
+    if (!tile.metrics && !this.queue.some((job) => job.key === key)) this.queue.push({ key, cards: this.placed(s) });
     li.dataset.key = key;
     const open = li.querySelector('.combo-open') as HTMLElement;
     open.querySelector('canvas')?.remove();
@@ -471,6 +650,7 @@ export class Combinations {
       <div class="combos-detail-main">
         <div class="combos-picture"></div>
         <aside>
+          ${this.wordsPanel(s)}
           <dl class="combos-numbers">${numbers}</dl>
           <p class="combos-code">Code <code>${esc(s.code)}</code></p>
         </aside>
@@ -480,6 +660,20 @@ export class Combinations {
     this.detail.hidden = false;
     // Keep the hand where it was: stepping or spacing with a button leaves focus on that button.
     ((this.detail.querySelector(`[data-do="${focus}"]`) ?? this.detail.querySelector('[data-do="back"]')) as HTMLElement).focus();
+  }
+
+  /** For cards made from words: how each was read, what it does, and how long it took. */
+  private wordsPanel(s: Scenario): string {
+    return contents(s)
+      .map(([id]) => cardDef(id)!)
+      .filter((def) => !BUILT_IN_IDS.has(def.id))
+      .map((def) => {
+        const made = isGuess(def) ? `A guess, made in the page${def.ms ? ` after ${seconds(def.ms)}` : ''}` : `Read by the model${def.ms ? ` in ${seconds(def.ms)}` : ''}`;
+        const items = [...doings(def), esc(made)].map((line) => `<li>${line}</li>`).join('');
+        return `<section class="combos-word" style="--c:${esc(def.color)}"><h3><span aria-hidden="true">${esc(def.icon)}</span> ${esc(def.word)}</h3>` +
+          `<p>${esc(def.reading || 'No reading.')}</p><ul>${items}</ul></section>`;
+      })
+      .join('');
   }
 
   private step(by: number): void {

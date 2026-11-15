@@ -56,6 +56,8 @@ export class CardStore {
   moving = false;
   /** True: no gliding or fading. Cards are where they are told to be, at once. */
   instant = false;
+  /** Set when a card's definition changed under it (a word read again): the world must look again. */
+  private dirty = false;
 
   private find(key: string): LiveCard | undefined {
     return this.cards.find((c) => c.key === key);
@@ -73,7 +75,7 @@ export class CardStore {
 
   addSim(cardId: string, x: number, y: number): string | null {
     const def = cardDef(cardId);
-    if (!def) return null;
+    if (!def || !Number.isFinite(x) || !Number.isFinite(y)) return null;
     const key = `sim:${this.nextSim++}`;
     this.add(key, def, 'sim', x, y);
     return key;
@@ -81,7 +83,7 @@ export class CardStore {
 
   moveSim(key: string, x: number, y: number): void {
     const card = this.find(key);
-    if (card && card.source === 'sim') {
+    if (card && card.source === 'sim' && Number.isFinite(x) && Number.isFinite(y)) {
       card.tx = Math.min(1, Math.max(0, x));
       card.ty = Math.min(1, Math.max(0, y));
     }
@@ -113,12 +115,13 @@ export class CardStore {
     const seen = new Set<string>();
     for (const t of tracked) {
       const def = cardDef(t.card);
-      if (!def) continue;
+      // A position that is not a number would spread through every field of the world.
+      if (!def || !Number.isFinite(t.x) || !Number.isFinite(t.y)) continue;
       const key = `cam:${t.id}`;
       seen.add(key);
       let card = this.find(key);
       if (!card || card.def !== def) {
-        if (card) card.present = false, (card.key += ':old');
+        if (card) card.present = false, (card.key += `:old${this.nextSim++}`); // its own key: two old cards must not share one
         card = this.add(key, def, 'camera', t.x, t.y);
       }
       card.present = true;
@@ -151,10 +154,24 @@ export class CardStore {
     for (const card of this.cards) if (card.key.endsWith(':adopted')) card.present = false;
   }
 
+  /**
+   * Card definitions changed (a word card made, read again or removed): point every
+   * card at its current definition, take away cards whose definition is gone.
+   */
+  refreshDefs(): void {
+    for (const card of this.cards) {
+      const def = cardDef(card.def.id);
+      if (!def) card.present = false;
+      else card.def = def;
+    }
+    this.dirty = true;
+  }
+
   // --- per-frame smoothing --------------------------------------------------------
 
   update(dt: number): void {
     dt = Math.min(dt, 0.1);
+    const decay = Math.exp(-SPRING * dt);
     let moving = false;
     for (const card of this.cards) {
       card.age += dt;
@@ -169,13 +186,17 @@ export class CardStore {
         if (card.present) card.age = Math.max(card.age, 99); // no arrival pulse
         continue;
       }
-      // Critically damped spring towards the target position.
-      const ax = SPRING * SPRING * (card.tx - card.x) - 2 * SPRING * card.vx;
-      const ay = SPRING * SPRING * (card.ty - card.y) - 2 * SPRING * card.vy;
-      card.vx += ax * dt;
-      card.vy += ay * dt;
-      card.x += card.vx * dt;
-      card.y += card.vy * dt;
+      // Critically damped spring towards the target position, solved exactly for this step.
+      // (Stepping it by simple addition overshoots further every frame once frames take longer
+      // than about 75 ms: cards fly off the table just when the machine is struggling.)
+      const ex = card.x - card.tx;
+      const ey = card.y - card.ty;
+      const jx = card.vx + SPRING * ex;
+      const jy = card.vy + SPRING * ey;
+      card.x = card.tx + (ex + jx * dt) * decay;
+      card.y = card.ty + (ey + jy * dt) * decay;
+      card.vx = (card.vx - SPRING * jx * dt) * decay;
+      card.vy = (card.vy - SPRING * jy * dt) * decay;
       const angleDelta = Math.atan2(Math.sin(card.targetAngle - card.angle), Math.cos(card.targetAngle - card.angle));
       card.angle += angleDelta * (1 - Math.exp(-SPRING * dt));
       if (Math.abs(angleDelta) > 1e-4) moving = true;
@@ -195,6 +216,7 @@ export class CardStore {
     const kept = this.cards.filter((c) => c.present || c.fade > 0);
     if (kept.length !== this.cards.length) moving = true;
     this.cards = kept;
-    this.moving = moving;
+    this.moving = moving || this.dirty;
+    this.dirty = false;
   }
 }

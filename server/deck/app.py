@@ -20,6 +20,7 @@ from aiohttp import WSMsgType, web
 from .certs import CertManager
 from .netinfo import local_ipv4s
 from .vision.pipeline import Vision, VisionWorker
+from .words import WordService, WordStore
 
 ROOT = Path(__file__).resolve().parents[2]
 STATIC = Path(__file__).resolve().parent / "static"
@@ -62,6 +63,9 @@ class Server:
         self._snap_count = 0
         self._noted: set[tuple[str, str]] = set()
         self.inner_https_port = args.https_port + 1
+        # Typed words made into cards by the model, stored in .deck/words.json.
+        self.words = WordService(WordStore(DATA / "words.json"))
+        print(self.words.describe(), flush=True)
 
     # --- plumbing -------------------------------------------------------------
 
@@ -389,6 +393,7 @@ class Server:
         app.router.add_post("/api/{name:flip|relock}", self.api_command)
         app.router.add_get("/ca.crt", self.ca_cert)
         app.router.add_get("/assets/{name}", self.asset)
+        self.words.add_routes(app)
         return app
 
     async def run(self) -> None:

@@ -21,8 +21,24 @@
 
       <button id="view-reset" type="button" title="Back to the usual view (double-click the world, or press 0)" hidden>Reset view</button>
 
+      <button id="world-reset" type="button" title="Clear the cards and start the world again">Reset</button>
+      <dialog id="reset-confirm" aria-labelledby="reset-title">
+        <h2 id="reset-title">Reset the world?</h2>
+        <p>This removes every simulated card and starts the world again from empty. It cannot be undone.</p>
+        <form method="dialog">
+          <button type="submit" value="cancel" autofocus>Cancel</button>
+          <button type="submit" value="reset" class="danger">Reset world</button>
+        </form>
+      </dialog>
+
       <section id="table-panel" aria-label="Table map and simulated cards" hidden>
         <div id="tray" aria-label="Drag a card onto the table or the world"></div>
+        <!-- Any other word: typed here, it becomes a card in the tray and lands on the table. -->
+        <form id="tray-add" autocomplete="off">
+          <input id="tray-word" type="text" maxlength="40" spellcheck="false" enterkeyhint="done" placeholder="Add any word…" aria-label="Add any word as a card">
+          <button type="submit" title="Make a card from this word and put it on the table">Add</button>
+        </form>
+        <p id="tray-status" role="status" aria-live="polite"></p>
         <div id="table">
           <span class="edge far">far side</span>
           <span class="edge near">your side</span>
