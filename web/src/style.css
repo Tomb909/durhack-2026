@@ -38,7 +38,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 html, body { overscroll-behavior: none; } /* two fingers turn the world, never "go back a page" */
 #ui { position: fixed; inset: 0; pointer-events: none; user-select: none; }
 #ui > * { pointer-events: auto; }
-body.bare #ui > :not(#toast) { display: none; }
+body.bare #ui > :not(#toast):not(#reading) { display: none; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
@@ -250,3 +250,39 @@ kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; border: 1px solid
 .combos-word ul { margin: 0; padding-left: 16px; color: var(--muted); font-size: 14px; }
 .combos-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 4px; background: var(--s); vertical-align: -1px; }
 @media (prefers-reduced-motion: reduce) { .combo-chip.busy { animation: none; } .combo canvas, .combos-switch, .combos-switch::after, #toast { transition: none; } }
+
+/* The reading board (ui/reading.ts): a word the AI is reading, then what it made. */
+#reading { position: absolute; left: 50%; top: 58px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; width: min(520px, calc(100vw - 32px)); }
+.reading-row { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 16px 12px 12px; background: var(--panel); border: 1px solid var(--line-strong); border-left: 4px solid var(--focus); border-radius: var(--r-panel); box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55); opacity: 0; transform: translateY(-10px) scale(0.97); transition: opacity 0.3s, transform 0.3s, border-color 0.3s; }
+.reading-row.in { opacity: 1; transform: none; }
+.reading-row.done { border-left-color: var(--ok); }
+.reading-row.guess { border-left-color: var(--warn); }
+.reading-scrap { flex: none; font: 400 22px/1 var(--marker); text-transform: uppercase; white-space: nowrap; max-width: 46%; overflow: hidden; text-overflow: ellipsis; padding: 10px 12px 8px; background: var(--paper); color: var(--ink); border: 2px solid var(--c, var(--ink)); border-radius: 1px; transform: rotate(-2deg); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45); }
+.reading-row.busy .reading-scrap { border: 2px dashed var(--focus); animation: reading-wobble 1.6s ease-in-out infinite; }
+.reading-text { flex: 1; min-width: 0; }
+.reading-head { display: flex; align-items: baseline; gap: 10px; }
+.reading-title { font-weight: 600; font-size: 17px; color: var(--text); }
+.reading-row.busy .reading-title { color: var(--focus); }
+.reading-row.busy .reading-title::before { content: "✦ "; display: inline-block; animation: reading-spark 1.2s ease-in-out infinite; }
+.reading-row.busy .reading-title::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: reading-dots 1.2s steps(4) infinite; }
+.reading-clock { margin-left: auto; font: 500 13px var(--mono); color: var(--muted); }
+.reading-detail { margin-top: 2px; color: var(--muted); font-size: 14px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.reading-row.done .reading-detail { color: var(--text); }
+.reading-bar { height: 3px; margin-top: 8px; background: var(--well); overflow: hidden; border-radius: 2px; }
+.reading-row.busy .reading-bar::after { content: ""; display: block; width: 35%; height: 100%; background: var(--focus); animation: reading-sweep 1.3s ease-in-out infinite; }
+.reading-row:not(.busy) .reading-bar { display: none; }
+@keyframes reading-wobble { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(1.5deg) translateY(-2px); } }
+@keyframes reading-spark { 0%, 100% { opacity: 0.4; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.15); } }
+@keyframes reading-dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+@keyframes reading-sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+
+/* In the world: a scrap still being read, where it lies on the table. */
+.world-label.reading { flex-direction: column; align-items: center; gap: 3px; border: 2px dashed var(--focus); }
+.world-label.reading .w { display: inline-block; animation: reading-wobble 1.6s ease-in-out infinite; }
+.world-label.reading .r { font: 600 11px/1 var(--ui); text-transform: none; color: #6b5212; letter-spacing: 0.02em; }
+.world-label.reading::after { background: var(--focus); }
+@media (prefers-reduced-motion: reduce) {
+  .reading-row { transition: opacity 0.3s; transform: none; }
+  .reading-row.busy .reading-scrap, .world-label.reading .w, .reading-row.busy .reading-title::before { animation: none; }
+  .reading-row.busy .reading-bar::after { animation-duration: 3s; }
+}

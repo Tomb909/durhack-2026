@@ -9,6 +9,7 @@ import { WORD_CARDS } from '../flags';
 import { ARROW_SVG } from './glyphs';
 import type { Candidate } from '../net/link';
 import { DEFAULT_SHAPE, type WorldShape } from '../sim/world';
+import { readingBoard } from './reading';
 
 type Point = { x: number; y: number };
 
@@ -145,7 +146,7 @@ export class TablePanel {
       status.className = '';
       status.textContent = `Reading ${text.toUpperCase()}…`;
       try {
-        const { def, source, why, ms } = await resolveWord(text);
+        const { def, source, why, ms } = await readingBoard().track(text, resolveWord(text));
         const seconds = `${(ms / 1000).toFixed(1)} s`;
         status.textContent =
           source === 'built-in' ? `${def.word} is a built-in card.`

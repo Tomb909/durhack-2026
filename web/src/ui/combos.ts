@@ -18,6 +18,7 @@ import { combinations, copiesOf, countCombinations, defaultFilter, MOST_COPIES, 
 import { METRIC_KEYS, METRIC_LABELS, type Metrics } from '../harness/metrics';
 import { tileHeight, TileRenderer, type View } from '../harness/tiles';
 import { CROSS_SVG } from './glyphs';
+import { readingBoard } from './reading';
 
 type Size = 's' | 'm' | 'l';
 
@@ -345,7 +346,7 @@ export class Combinations {
     this.wordStatus.textContent = `Reading ${word}…`;
     let result: Resolved;
     try {
-      result = await resolveWord(word, { fresh });
+      result = await readingBoard().track(word, resolveWord(word, { fresh }));
     } catch (error) {
       this.wordStatus.textContent = `Could not add ${word}: ${(error as Error).message}`;
       return;

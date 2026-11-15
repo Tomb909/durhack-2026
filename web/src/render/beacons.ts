@@ -69,8 +69,22 @@ interface Label {
   y: number;
 }
 
+/** A scrap on the table whose word the model is still reading (no card yet). */
+export interface ReadingScrap {
+  key: string;
+  word: string;
+  x: number;
+  y: number;
+}
+
+const READING_COLOR = 0xf2c14e;
+
 export class Beacons {
   readonly group = new THREE.Group();
+  /** Scraps still being read: each gets a pulsing marker and a "reading" label where it lies. */
+  reading: ReadingScrap[] = [];
+  private readingMarks = new Map<string, Mark>();
+  private readingLabels = new Map<string, Label>();
   private marks = new Map<string, Mark>();
   private labels = new Map<string, Label>();
   private beamGeometry = new THREE.CylinderGeometry(0.035, 0.035, 1, 8, 1, true).translate(0, 0.5, 0);
@@ -101,6 +115,81 @@ export class Beacons {
     return { beam, ring };
   }
 
+  private makeReadingMark(): Mark {
+    const glow = {
+      color: READING_COLOR, transparent: true, blending: THREE.AdditiveBlending,
+      depthWrite: false, side: THREE.DoubleSide,
+    };
+    const beam = new THREE.Mesh(this.beamGeometry, new THREE.MeshBasicMaterial(glow));
+    beam.renderOrder = 10;
+    const ring = new THREE.Mesh(this.ringGeometry, new THREE.MeshBasicMaterial({ ...glow, depthTest: false }));
+    ring.renderOrder = 11;
+    this.group.add(beam, ring);
+    return { beam, ring };
+  }
+
+  /** The scraps still being read: a bright, rippling marker and a dashed label saying so. */
+  private updateReading(frame: WorldFrame, time: number, camera: THREE.Camera, width: number, height: number): void {
+    const live = new Set<string>();
+    for (const scrap of this.reading) {
+      live.add(scrap.key);
+      let mark = this.readingMarks.get(scrap.key);
+      if (!mark) {
+        mark = this.makeReadingMark();
+        this.readingMarks.set(scrap.key, mark);
+      }
+      const g = Math.max(sampleField(frame.height, frame.w, frame.h, scrap.x, scrap.y), sampleField(frame.waterSurface, frame.w, frame.h, scrap.x, scrap.y)) * HSCALE;
+      // Lower than a card's label: it stays close to the scrap, and clear of the reading board at the top.
+      const top = g + 1.1;
+      const x = (scrap.x - 0.5) * world.w;
+      const z = (scrap.y - 0.5) * world.d;
+      // A ring that keeps spreading outward, like a ripple: something is happening here.
+      const phase = (time * 0.9) % 1;
+      mark.ring.position.set(x, g + 0.03, z);
+      mark.ring.scale.set(0.6 + phase * 1.8, 1, 0.6 + phase * 1.8);
+      (mark.ring.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - phase);
+      mark.beam.position.set(x, g, z);
+      mark.beam.scale.set(1.6, Math.max(0.01, top - g), 1.6);
+      (mark.beam.material as THREE.MeshBasicMaterial).opacity = 0.35 + 0.2 * Math.sin(time * 6);
+
+      let label = this.readingLabels.get(scrap.key);
+      if (!label) {
+        const el = document.createElement('div');
+        el.className = 'world-label reading';
+        const word = document.createElement('span');
+        word.className = 'w';
+        const note = document.createElement('span');
+        note.className = 'r';
+        note.textContent = 'AI reading…';
+        el.append(word, note);
+        this.layer.appendChild(el);
+        label = { el, text: '', width: 0, height: 0, lift: 0, x: 0, y: 0 };
+        this.readingLabels.set(scrap.key, label);
+      }
+      const text = scrap.word.toUpperCase() || '?';
+      if (label.text !== text) {
+        label.text = text;
+        (label.el.querySelector('.w') as HTMLElement).textContent = text;
+      }
+      this.point.set(x, top, z).project(camera);
+      const sx = (this.point.x * 0.5 + 0.5) * width;
+      const sy = (-this.point.y * 0.5 + 0.5) * height;
+      label.el.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px) translate(-50%, -100%)`;
+    }
+    for (const [key, mark] of this.readingMarks) {
+      if (live.has(key)) continue;
+      this.group.remove(mark.beam, mark.ring);
+      (mark.beam.material as THREE.Material).dispose();
+      (mark.ring.material as THREE.Material).dispose();
+      this.readingMarks.delete(key);
+    }
+    for (const [key, label] of this.readingLabels) {
+      if (live.has(key)) continue;
+      label.el.remove();
+      this.readingLabels.delete(key);
+    }
+  }
+
   setVisible(visible: boolean): void {
     this.group.visible = visible;
     this.layer.style.display = visible ? '' : 'none';
@@ -108,6 +197,7 @@ export class Beacons {
 
   /** Call every frame after the camera has been placed. */
   update(cards: LiveCard[], frame: WorldFrame, time: number, camera: THREE.Camera, width: number, height: number): void {
+    this.updateReading(frame, time, camera, width, height);
     const modifiersByTarget = modifierTargets(cards);
     const attachedModifiers = new Set([...modifiersByTarget.values()].flat());
 

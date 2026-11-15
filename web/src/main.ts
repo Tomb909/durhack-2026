@@ -16,6 +16,7 @@ import { WorldRenderer } from './render/scene';
 import { RECTANGLE_ONLY, SHAPE_PRESETS, WorldSim, shapesDiffer, usableShape, type WorldShape } from './sim/world';
 import { Combinations } from './ui/combos';
 import { CardCheck, Guide } from './ui/overlays';
+import { readingBoard } from './ui/reading';
 import { TablePanel } from './ui/table';
 
 const canvas = document.getElementById('world') as HTMLCanvasElement;
@@ -105,20 +106,16 @@ document.getElementById('connect-close')!.addEventListener('click', () => (conne
 // A handwritten word that is no built-in card: the model makes a card for it (cards/seen.ts).
 const seenWords = new SeenWords();
 seenWords.enabled = CAMERA_WORDS;
-seenWords.onReading = (word) => toast(`${word} is a new word: reading it…`, 12);
-seenWords.onMade = (word, { def, source, why }) =>
-  toast(
-    source === 'near' ? `Read ${word} as ${def.word}, a guess (${why}).`
-    : source === 'fallback' ? `${word}: a guess from its sound, because ${why}.`
-    : `${def.word}. ${def.reading ?? ''}`,
-    8,
-  );
+// Shown on the reading board (ui/reading.ts) and, in the world, where the scrap lies.
+seenWords.onReading = (word) => readingBoard().start(word);
+seenWords.onMade = (word, result) => readingBoard().finish(word, result);
 
 function cameraLost(): void {
   if (!cameraLive) return;
   cameraLive = false;
   const adopted = store.adoptTracked();
   table.setCandidates([]);
+  view.reading = [];
   // The card tray is normally hidden; bring it out so the demo can carry on by mouse.
   tablePanel.hidden = false;
   toast(adopted ? 'Camera lost. The cards stay put: drag them with the mouse.' : 'Camera lost. Drag cards from the tray.', 6);
@@ -140,6 +137,7 @@ link.onSnapshot = (snapshot) => {
     store.setTracked(cards);
     // A word whose card is still being made shows as "?" on the table map, like one still being read.
     table.setCandidates([...snapshot.candidates, ...reading.map((t) => ({ id: t.id, x: t.x, y: t.y, text: t.word ?? '', confidence: 1 }))]);
+    view.reading = seenWords.enabled ? reading.map((t) => ({ key: String(t.id), word: t.word ?? '', x: t.x, y: t.y })) : [];
     if (snapshot.playArea.found) setStatus('live', `Camera: play area found, ${cards.length} card${cards.length === 1 ? '' : 's'}`);
     else if (snapshot.playArea.locked) setStatus('warn', 'Camera: border hidden, holding position');
     else setStatus('warn', 'Camera: looking for the black border');

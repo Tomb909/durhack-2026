@@ -12,7 +12,7 @@ import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type W
 import { AirLayer, GradeShader } from './air';
 import { makeBackdrop } from './backdrop';
 import { makeGrass } from './grass';
-import { Beacons } from './beacons';
+import { Beacons, type ReadingScrap } from './beacons';
 import { CameraRig } from './camera';
 import { HSCALE, MAX_BIOMES, MAX_PULSES, SUN_DIR, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
@@ -166,6 +166,11 @@ export class WorldRenderer {
   private auto = true;
   /** False draws every tree, house and person site whether or not anything shows there (slow: only to check that leaving them out changes nothing). */
   cull = true;
+
+  /** Scraps on the table whose word is still being read (marked in the world). */
+  set reading(scraps: ReadingScrap[]) {
+    this.beacons.reading = scraps;
+  }
 
   constructor(private canvas: HTMLCanvasElement, labelLayer: HTMLElement) {
     this.beacons = new Beacons(labelLayer);
