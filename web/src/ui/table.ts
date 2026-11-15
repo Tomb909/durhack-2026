@@ -5,6 +5,7 @@ import { CARD_DEFS, onCardsChanged } from '../cards/defs';
 import { modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { CardStore, LiveCard } from '../cards/store';
 import { resolveWord } from '../cards/words';
+import { WORD_CARDS } from '../flags';
 import type { Candidate } from '../net/link';
 import { DEFAULT_SHAPE, type WorldShape } from '../sim/world';
 
@@ -103,6 +104,10 @@ export class TablePanel {
     const input = root.querySelector('#tray-word') as HTMLInputElement | null;
     const status = root.querySelector('#tray-status') as HTMLElement | null;
     if (!form || !input || !status) return;
+    if (!WORD_CARDS) {
+      form.hidden = status.hidden = true;
+      return;
+    }
     const button = form.querySelector('button') as HTMLButtonElement;
     // Typing a word must not steer the camera or open other panels: the page's keys stop here.
     // (Only key presses stop: a key let go must still reach the page, or a W held down while

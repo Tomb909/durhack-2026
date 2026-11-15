@@ -12,6 +12,7 @@
 // switches "Only with" on for it, so its combinations are the ones shown.
 import { BUILT_IN_IDS, CARD_DEFS, cardDef, onCardsChanged, type CardDef } from '../cards/defs';
 import { isGuess, normaliseWord, removeWord, resolveWord, type Resolved } from '../cards/words';
+import { WORD_CARDS } from '../flags';
 import { parseCode, type Layout, type Placement, type Scenario } from '../harness/codes';
 import { combinations, copiesOf, countCombinations, defaultFilter, MOST_COPIES, type ComboFilter } from '../harness/filter';
 import { METRIC_KEYS, METRIC_LABELS, type Metrics } from '../harness/metrics';
@@ -187,7 +188,7 @@ export class Combinations {
         <div class="combos-cards" role="group" aria-label="Cards to combine"></div>
         <div class="combos-options"></div>
         <button type="button" class="combos-btn combos-x" data-do="close" aria-label="Close" title="Close (Esc)"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" /></svg></button>
-        <div class="combos-wordrow">
+        <div class="combos-wordrow"${WORD_CARDS ? '' : ' hidden'}>
           <form class="combos-add" autocomplete="off">
             <label for="combos-word">Add a word</label>
             <input id="combos-word" name="word" type="text" maxlength="60" spellcheck="false" placeholder="castle, haunted house, jazz…" aria-describedby="combos-word-status">

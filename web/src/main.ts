@@ -3,6 +3,7 @@
 import { onCardsChanged } from './cards/defs';
 import { CardStore } from './cards/store';
 import { loadStoredCards } from './cards/words';
+import { WORD_CARDS } from './flags';
 import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { bindCameraInput, MOVE_KEYS, moveWithKeys } from './render/camera';
@@ -190,7 +191,7 @@ function setCards(code: string, layout: Layout = 'cluster'): string {
 if (params.has('cards') || params.has('instant')) tablePanel.hidden = false;
 // Cards made from typed words: kept in this browser and on the server. Loaded before the
 // address is read, so ?cards= can name them too.
-const stored = loadStoredCards().catch(() => 0);
+const stored = WORD_CARDS ? loadStoredCards().catch(() => 0) : Promise.resolve(0);
 onCardsChanged(() => store.refreshDefs());
 if (params.has('cards')) {
   void stored.then(() => {

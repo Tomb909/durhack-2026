@@ -28,6 +28,8 @@ body.bare #ui > :not(#toast) { display: none; }
 .tray-card.event:hover { background: rgba(255, 110, 80, 0.18); }
 .tray-card.guess { border-style: dashed; }
 #tray-add { display: flex; gap: 6px; margin-bottom: 7px; }
+/* Switched off with the WORD_CARDS flag (flags.ts). */
+#tray-add[hidden], .combos-wordrow[hidden] { display: none; }
 #tray-add input { flex: 1; min-width: 0; padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.28); color: var(--text); font: inherit; font-size: 12px; }
 #tray-add input::placeholder { color: var(--muted); }
 #tray-add button { padding: 6px 11px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); color: var(--text); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
