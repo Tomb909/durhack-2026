@@ -1,9 +1,10 @@
 // Deck of Worlds: cards in, world out.
 //   cards (camera + simulated)  ->  CardStore (smoothing)  ->  WorldSim (rules)  ->  WorldRenderer (picture)
 import { onCardsChanged } from './cards/defs';
+import { SeenWords } from './cards/seen';
 import { CardStore } from './cards/store';
 import { loadStoredCards } from './cards/words';
-import { WORD_CARDS } from './flags';
+import { CAMERA_WORDS, WORD_CARDS } from './flags';
 import { parseCode, tidyCode, type Layout } from './harness/codes';
 import { Link, type Snapshot } from './net/link';
 import { bindCameraInput, MOVE_KEYS, moveWithKeys } from './render/camera';
@@ -97,6 +98,18 @@ document.getElementById('connect-close')!.addEventListener('click', () => (conne
 
 // --- camera link ------------------------------------------------------------------
 
+// A handwritten word that is no built-in card: the model makes a card for it (cards/seen.ts).
+const seenWords = new SeenWords();
+seenWords.enabled = CAMERA_WORDS;
+seenWords.onReading = (word) => toast(`${word} is a new word: reading it…`, 12);
+seenWords.onMade = (word, { def, source, why }) =>
+  toast(
+    source === 'near' ? `Read ${word} as ${def.word}, a guess (${why}).`
+    : source === 'fallback' ? `${word}: a guess from its sound, because ${why}.`
+    : `${def.icon} ${def.word}. ${def.reading ?? ''}`,
+    8,
+  );
+
 function cameraLost(): void {
   if (!cameraLive) return;
   cameraLive = false;
@@ -119,9 +132,11 @@ link.onSnapshot = (snapshot) => {
     }
     // Keep the last shape when the border is hidden or the camera drops.
     if (snapshot.playArea.shape) wantShape(snapshot.playArea.shape);
-    store.setTracked(snapshot.cards);
-    table.setCandidates(snapshot.candidates);
-    if (snapshot.playArea.found) setStatus('live', `Camera · play area found · ${snapshot.cards.length} cards`);
+    const { cards, reading } = seenWords.apply(snapshot.cards);
+    store.setTracked(cards);
+    // A word whose card is still being made shows as "?" on the table map, like one still being read.
+    table.setCandidates([...snapshot.candidates, ...reading.map((t) => ({ id: t.id, x: t.x, y: t.y, text: t.word ?? '', confidence: 1 }))]);
+    if (snapshot.playArea.found) setStatus('live', `Camera · play area found · ${cards.length} cards`);
     else if (snapshot.playArea.locked) setStatus('warn', 'Camera · border hidden, holding position');
     else setStatus('warn', 'Camera · looking for the black border');
   } else {

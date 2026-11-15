@@ -109,7 +109,7 @@ export class CardCheck {
       tbody = this.body.querySelector('tbody')!;
     }
     const entries = [
-      ...snapshot.cards.map((c) => ({ id: c.id, cls: 'ok', label: `✓ ${c.card.toUpperCase()}`, note: c.visible ? 'in view' : 'covered, held in place' })),
+      ...snapshot.cards.map((c) => ({ id: c.id, cls: 'ok', label: `✓ ${(c.word ?? c.card).toUpperCase()}`, note: c.visible ? 'in view' : 'covered, held in place' })),
       ...snapshot.candidates.map((c) => ({ id: c.id, cls: 'no', label: '✗ not a card yet', note: `read as “${c.text || '…'}”` })),
     ];
     const seen = new Set<number>();

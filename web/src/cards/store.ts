@@ -11,6 +11,8 @@ export interface TrackedCard {
   /** Radians clockwise from the card's printed left-to-right direction. */
   angle?: number;
   visible: boolean;
+  /** A written word that is no built-in card: its card is made from this (see seen.ts). */
+  word?: string;
 }
 
 export interface LiveCard {

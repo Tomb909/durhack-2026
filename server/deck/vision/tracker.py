@@ -8,6 +8,9 @@ A confirmed card also stays put against the small frame-to-frame differences
 of a still camera: its position only changes when the ink has really moved,
 and a word whose letters are grouped differently for a moment (split in two,
 or not found as a word at all) is still the same card in the same place.
+
+A word that is no known card, read the same way several times over, becomes a
+card too: the page has the model make a card for it (see deck/words.py).
 """
 
 from __future__ import annotations
@@ -49,6 +52,12 @@ SAME_SHORT = 0.35  # ...or whose height does
 REGROUP_SECONDS = 1.5  # a different grouping must last this long, with the card's own ink gone, before the card takes it on
 INK_REMAINS = 0.5  # with no word found, this share of the card's ink still in place means it is still there
 INK_PAD_MM = 2.0
+# A word that matches no card is made into one, once it has been read the same way for a while.
+# (Text that changes from read to read is a hand in the way, or not writing at all.)
+WORD_MIN_LETTERS = 3
+WORD_CONFIDENCE = 0.8  # each of those reads must be at least this sure
+WORD_READS = 3  # this many reads in a row must agree...
+WORD_SECONDS = 0.8  # ...over at least this long
 
 
 @dataclass
@@ -76,6 +85,10 @@ class Track:
     turned: int = 0  # clockwise correction used to read the word, in degrees
     ink: float = 0.0  # ink area of the word, mm^2
     regroup_since: float | None = None  # when its ink started being grouped differently
+    word: str = ""  # for a card made from a word that is no known card: the word as written
+    run_text: str = ""  # the unknown text its latest reads agree on
+    run: int = 0  # how many reads in a row have given that text
+    run_since: float = 0.0
 
     def as_detection(self) -> Detection:
         return Detection(self.x, self.y, self.angle, self.long, self.short, 0.0)
@@ -86,6 +99,7 @@ class Tracker:
         self.tracks: list[Track] = []
         self._next_id = 1
         self.size: tuple[int, int] = (RECT_W, RECT_H)  # rectified image the positions are measured in
+        self.make_words = True  # False: a word that is no known card stays a candidate ("?")
 
     def reset(self) -> None:
         self.tracks.clear()
@@ -164,7 +178,9 @@ class Tracker:
                 track.last_read = now
                 track.text, track.confidence = reading.text, reading.confidence
                 if reading.card is None:
+                    self._count_unknown(track, reading, now)
                     continue
+                track.run = 0
                 track.votes[reading.card] += 1
                 sure = reading.edits == 0 and reading.confidence >= SURE_CONFIDENCE
                 if sure or track.votes[reading.card] >= VOTES_TO_CONFIRM:
@@ -185,15 +201,19 @@ class Tracker:
                 budget -= 1
                 track.last_verify = now
                 reading = read(track.as_detection())
-                if reading.card == track.card:
+                # A card made from a word is known by its text; it may turn out to be another such word.
+                claim, word = reading.card, ""
+                if claim is None and track.word and self._is_word(reading):
+                    claim, word = reading.text.lower(), reading.phrase or reading.text
+                if claim == track.card:
                     track.dissent.clear()
                     track.ref_long = track.long
                     track.turned = reading.turned
-                elif reading.card is not None and reading.edits == 0 and reading.confidence >= 0.8:
-                    track.dissent[reading.card] += 1
-                    if track.dissent[reading.card] >= DISSENT_TO_SWITCH:
+                elif word or (reading.card is not None and reading.edits == 0 and reading.confidence >= 0.8):
+                    track.dissent[claim] += 1
+                    if track.dissent[claim] >= DISSENT_TO_SWITCH:
                         # It really is a different card: retire the old identity, start a new one.
-                        track.card = reading.card
+                        track.card, track.word = claim, word
                         track.id = self._next_id
                         self._next_id += 1
                         track.dissent.clear()
@@ -269,6 +289,29 @@ class Tracker:
         cv2.fillConvexPoly(under, np.round(box - [x0, y0]).astype(np.int32), 255)
         found = np.count_nonzero(ink[y0:y1, x0:x1][under > 0]) / (PX_PER_MM * PX_PER_MM)
         return track.ink > 0 and found >= INK_REMAINS * track.ink
+
+    @staticmethod
+    def _is_word(reading: Reading) -> bool:
+        """Could this reading, which matched no card, be a word to make a card from?"""
+        return len(reading.text) >= WORD_MIN_LETTERS and reading.confidence >= WORD_CONFIDENCE
+
+    def _count_unknown(self, track: Track, reading: Reading, now: float) -> None:
+        """A read that matched no card. The same text several times over is a word of its own."""
+        if not self.make_words or not self._is_word(reading):
+            track.run = 0
+            return
+        if track.run == 0 or reading.text != track.run_text:
+            track.run_text, track.run, track.run_since = reading.text, 0, now
+        track.run += 1
+        if track.run < WORD_READS or now - track.run_since < WORD_SECONDS:
+            return
+        # A piece of a known card's word (its letters grouped in two for a moment) is not a new word.
+        if self._is_fragment_of_known(track, [t for t in self.tracks if t.card is not None]):
+            return
+        self._confirm(track, reading.text.lower())
+        track.word = reading.phrase or reading.text
+        track.turned = reading.turned
+        track.ref_long, track.last_verify = track.long, now
 
     def _confirm(self, track: Track, card: str) -> None:
         """Give a scrap its identity; if a hidden card of the same word exists, it has moved."""
@@ -349,6 +392,8 @@ class Tracker:
                 "y": round(t.y / h, 4),
                 "angle": round(float(np.deg2rad(t.angle + (180 if t.turned == 180 else 0))), 5),
                 "visible": t.visible,
+                # A word that is no known card: the page has a card made for it.
+                **({"word": t.word} if t.word else {}),
             }
             for t in self.tracks
             if t.card is not None

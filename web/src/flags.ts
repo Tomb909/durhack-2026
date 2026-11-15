@@ -6,3 +6,9 @@
  * good, make this `true`. The rules and the word server are untouched: only the page's way in is closed.
  */
 export const WORD_CARDS: boolean = new URLSearchParams(globalThis.location?.search ?? '').get('words') === '1';
+
+/**
+ * A handwritten word the camera reads that is no built-in card is made into a card, the same way
+ * as a typed word. On. To turn it off for one visit (such a word then stays "?"), add `?words=0`.
+ */
+export const CAMERA_WORDS: boolean = new URLSearchParams(globalThis.location?.search ?? '').get('words') !== '0';

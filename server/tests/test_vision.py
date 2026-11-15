@@ -437,3 +437,54 @@ def test_locking_with_a_hand_in_the_way_comes_right_when_it_leaves(border):
     assert now_size == size
     assert np.abs(now_corners - corners).max() < 4
     assert len(now_shape["outline"]) == len(shape["outline"])
+
+
+# --- a word that is no known card -------------------------------------------------------------
+
+
+def test_a_word_that_is_no_card_becomes_one_once_it_has_been_read_the_same_way(reader):
+    scraps = [Scrap("FOREST", 0.25, 0.3), Scrap("ROCKETSHIP", 0.65, 0.6)]
+    vision = Vision(reader)
+    t = run(vision, scraps, frames=5)
+    assert "rocketship" not in by_card(vision)  # half a second is not long enough
+    assert [c["text"] for c in vision.tracker.candidates()] == ["ROCKETSHIP"]
+    t = run(vision, scraps, frames=8, start=t)
+    cards = by_card(vision)
+    (made,) = cards["rocketship"]
+    assert made["word"] == "ROCKETSHIP" and abs(made["x"] - 0.65) < 0.03
+    assert "word" not in cards["forest"][0]  # a known card says nothing more than before
+    assert vision.tracker.candidates() == []
+    # It is a card like any other: a hand over it does not remove it.
+    run(vision, scraps, frames=15, start=t, hand=(0.65, 0.6))
+    assert by_card(vision)["rocketship"][0]["id"] == made["id"]
+
+
+def test_a_word_that_is_no_card_can_be_left_as_a_candidate(reader):
+    vision = Vision(reader)
+    vision.tracker.make_words = False
+    run(vision, [Scrap("ROCKETSHIP", 0.5, 0.5)], frames=15)
+    assert vision.tracker.cards() == [] and len(vision.tracker.candidates()) == 1
+
+
+def test_text_that_keeps_changing_or_is_unsure_is_not_a_word():
+    from deck.vision.detect import Detection
+    from deck.vision.reader import Reading
+
+    def track_after(readings):
+        tracker, seen = Tracker(), iter(readings)
+        for i in range(len(readings)):
+            tracker.update([Detection(300, 300, 0, 200, 50, 0.0)], None, i * 0.2, lambda det: next(seen))
+        return tracker.tracks[0]
+
+    unknown = lambda text, confidence=0.95: Reading(None, text, confidence, 99, 0, phrase=text)  # noqa: E731
+    assert track_after([unknown("CASTLE")] * 6).card == "castle"
+    assert track_after([unknown("CASTLE"), unknown("CASTLF")] * 5).card is None  # never the same twice
+    assert track_after([unknown("CASTLE", 0.5)] * 8).card is None  # not sure enough
+    assert track_after([unknown("OK")] * 8).card is None  # too short to be a word
+    spaced = track_after([Reading(None, "HAUNTEDHOUSE", 0.9, 99, 0, phrase="HAUNTED HOUSE")] * 6)
+    assert (spaced.card, spaced.word) == ("hauntedhouse", "HAUNTED HOUSE")
+    # Seen as a known card after all (it is looked at again every few seconds): it becomes that
+    # card, and is no longer a made word.
+    known = Reading("forest", "FOREST", 0.95, 0, 0)
+    healed = track_after([unknown("FORFSTXY")] * 5 + [known] * 60)
+    assert (healed.card, healed.word) == ("forest", "")

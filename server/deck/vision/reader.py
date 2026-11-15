@@ -42,6 +42,11 @@ def normalise(text: str) -> str:
     return re.sub(r"[^A-Z]", "", text.upper().translate(LOOKALIKES))
 
 
+def phrase(text: str) -> str:
+    """The text as written, keeping the gaps between words: `haunted house` is `HAUNTED HOUSE`."""
+    return re.sub(r"[^A-Z]+", " ", text.upper().translate(LOOKALIKES)).strip()
+
+
 def allowed_edits(word: str) -> int:
     if len(word) <= 2:
         return 0
@@ -59,6 +64,7 @@ class Reading:
     confidence: float  # OCR confidence 0..1
     edits: int  # edit distance to the matched word (0 = exact)
     turned: int  # rotation (degrees) that gave this reading
+    phrase: str = ""  # the text with the gaps between its words kept (a word that is no card is made into one from this)
 
     @property
     def quality(self) -> float:
@@ -158,7 +164,7 @@ class Reader:
                 view = cv2.rotate(crop, cv2.ROTATE_90_COUNTERCLOCKWISE)
             text, confidence = self.read_text(view)
             card, edits = match(text, self.vocabulary)
-            reading = Reading(card=card, text=normalise(text), confidence=confidence, edits=edits, turned=turned)
+            reading = Reading(card=card, text=normalise(text), confidence=confidence, edits=edits, turned=turned, phrase=phrase(text))
             if reading.quality > best.quality or (
                 best.card is None and reading.card is None and confidence > best.confidence
             ):
