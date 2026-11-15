@@ -24,6 +24,9 @@ export interface WorldShape {
 export const RECT_OUTLINE = [[0, 0], [1, 0], [1, 1], [0, 1]];
 export const DEFAULT_SHAPE: WorldShape = { aspect: A3_ASPECT, outline: RECT_OUTLINE };
 
+/** The play area is always a rectangle: the shape presets (T key) are switched off. Matches RECTANGLE_ONLY in playarea.py. */
+export const RECTANGLE_ONLY: boolean = true;
+
 /** Shapes to try without a camera (S key). */
 export const SHAPE_PRESETS: Record<'rect' | 'circle' | 'blob', WorldShape> = {
   rect: DEFAULT_SHAPE,
@@ -139,6 +142,12 @@ export const RULES = {
   plantWetGood: 0.5,
   plantColdLimit: -0.45,
   plantColdGood: -0.2,
+  /**
+   * Life with no help: grass and a few scattered trees on ordinary dry ground, and
+   * thin scrub in a desert. Kept below forest (0.4) and below what woodcutters work (0.25).
+   */
+  hardyCover: 0.24,
+  hardyInDesert: 0.5, // share of that cover left where the ground is bone dry
   /** People: where they will settle, farm and fish. */
   people: {
     homeStart: 0.45, // how strongly People must reach before houses appear
@@ -674,16 +683,19 @@ export class WorldSim {
     // --- 4b. lava: wells up where pushed, runs downhill, pools; water and cold set it to rock
     this.flowLava();
 
-    // --- 5. plants: only where Life reaches AND the climate suits AND it is not under water
+    // --- 5. plants: forest only where Life reaches AND the climate suits AND it is not
+    // under water. Where it is too dry for forest, Life still gives hardy grass and scrub,
+    // so a LIFE card on its own shows.
     for (let i = 0; i < n; i++) {
       // Cards may push life down as well as up (BLIGHT): keep the sum in range.
       const life = Math.max(0, Math.min(1, push.life[i]));
-      const suits =
-        smoothstep(RULES.plantWetMin, RULES.plantWetGood, wetness[i]) *
-        smoothstep(RULES.plantColdLimit, RULES.plantColdGood, temperature[i]);
+      const warmEnough = smoothstep(RULES.plantColdLimit, RULES.plantColdGood, temperature[i]);
+      const suits = smoothstep(RULES.plantWetMin, RULES.plantWetGood, wetness[i]) * warmEnough;
+      const hardy = RULES.hardyCover * warmEnough *
+        (RULES.hardyInDesert + (1 - RULES.hardyInDesert) * smoothstep(0.05, 0.2, wetness[i]));
       const submerged = smoothstep(0.0, 0.004, this.surfaceTarget[i] - height[i]);
       const burnt = smoothstep(0.02, 0.3, this.lavaTarget[i]);
-      vegetation[i] = this.inside[i] ? life * suits * (1 - submerged) * (1 - burnt) : 0;
+      vegetation[i] = this.inside[i] ? life * Math.max(suits, hardy) * (1 - submerged) * (1 - burnt) : 0;
     }
 
     // --- 6. people: houses on dry, gentle, liveable land; fields on flat fertile land; boats on open water

@@ -81,11 +81,16 @@ void main() {
   vec3 skyCol = mix(vec3(0.55, 0.72, 0.95), vec3(0.50, 0.55, 0.62), rain);
   col = mix(col, skyCol, (0.10 + 0.55 * fresnel) * (1.0 - 0.8 * glow));
 
-  float overcast = 1.0 - 0.38 * rain;
+  float overcast = 1.0 - 0.28 * rain;
+  float shade = sunlight(vWorld, vec3(0.0, 1.0, 0.0));
   float ndl = max(dot(n, uSunDir), 0.0);
-  col *= (0.55 + 0.75 * ndl * overcast);
-  float spec = pow(max(dot(reflect(-uSunDir, n), view), 0.0), 90.0);
-  col += vec3(1.0, 0.95, 0.85) * spec * 1.6 * overcast * (1.0 - frozen);
+  col *= (0.5 + 0.8 * ndl * overcast * (0.4 + 0.6 * shade));
+  // The sun's reflection: a hot core and a soft sheen around it.
+  float toward = max(dot(reflect(-uSunDir, n), view), 0.0);
+  float spec = pow(toward, 140.0) * 3.5 + pow(toward, 20.0) * 0.22;
+  // Glitter: tiny facets of the waves catching the sun, bright enough to bloom.
+  float sparkle = step(0.988, hash21(floor(vWorld.xz * 70.0) + floor(t * 6.0) * 1.73)) * pow(toward, 6.0);
+  col += SUN_LIGHT * (spec + sparkle * 5.0) * overcast * shade * (1.0 - frozen);
 
   // Foam where the water meets the land, breathing in and out.
   float lap = 0.0016 + 0.0009 * sin(t * 1.3 + p.x * 3.0 + p.y * 2.0);

@@ -2,7 +2,7 @@
 
 Handwritten word cards on a table, watched by a phone, reshape a 3D world on a laptop. Turn WIND to steer rain, spread LIFE+WATER into a tree line, blow snow off mountains, raise blizzards with ICE, and move boats, merchants, smoke and dust. DurHack 2026.
 
-Put **MOUNTAIN** in a corner and mountains rise there. Add **WATER** and it rains; add more and the sea floods the lowlands. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **LIFE** grows forest only where it is warm and wet enough. **RAVINE** cracks the ground open, **LAVA** wells up and runs downhill into it, and a **VOLCANO** raises a smoking cone with lava spilling from its crater. The world comes from how the cards combine.
+Put **MOUNTAIN** in a corner and mountains rise there. Add **WATER** and it rains; add more and the sea floods the lowlands. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **LIFE** grows forest only where it is warm and wet enough. **RAVINE** cracks the ground open, **LAVA** wells up and runs downhill into it, and a **VOLCANO** raises a smoking cone with lava spilling from its crater. Every card shows on its own too: LIFE alone is grass and scattered trees, ICE alone frosts the ground. The world comes from how the cards combine.
 
 ## Run it
 
@@ -53,7 +53,7 @@ Nothing needs the internet once it is running.
 | X | Remove all simulated cards |
 | W A S D | Move the view; hold Shift to go faster |
 | Arrows, + −, 0 | Turn the view, zoom, reset it (see Moving the camera) |
-| T | Developer option: step through play-area shapes (rectangle, circle, blob) when no camera is connected |
+| T | Developer option, currently switched off (the play area is locked to a rectangle): step through play-area shapes when no camera is connected |
 | I | Instant: no fading or easing, the world jumps to its final state |
 | H | Hide the panels |
 | Q | Picture quality: the sharpest it may be (see Staying smooth) |

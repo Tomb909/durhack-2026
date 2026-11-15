@@ -1,6 +1,7 @@
 // Rain, snow and clouds. Every particle has a fixed site on the map and reads
 // the precipitation and temperature textures there, so weather simply appears
 // wherever the world says it is wet: rain if mild or hot, snow if cold.
+import { castsCloudShade } from './post';
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RULES } from '../sim/world';
@@ -189,6 +190,7 @@ function makeClouds(shared: SharedUniforms, columns: number, rows: number): THRE
 export function makeWeather(shared: SharedUniforms): THREE.Object3D & Culled {
   const group = new THREE.Group();
   const clouds = makeClouds(shared, 11, 8);
+  castsCloudShade(clouds);
   const rain = makeFall(shared, 3500, false, 5);
   const snow = makeFall(shared, 2600, true, 9);
   group.add(clouds, rain, snow);

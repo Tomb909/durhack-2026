@@ -36,25 +36,6 @@ varying vec3 vWorld;
 
 float groundAt(vec2 uv) { vec4 a = fieldA(uv); return a.r; }
 
-// Soft shadows: walk toward the sun over the height texture.
-float sunShadow(vec3 p) {
-  float res = 1.0;
-  float t = 0.05;
-  for (int i = 0; i < 20; i++) {
-    vec3 q = p + uSunDir * t;
-    vec2 uv = tableUv(q.xz);
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
-    // Clear of the highest ground by enough that nothing further along can shade this
-    // point any more (the ray only climbs): stop walking. Same answer, far fewer steps
-    // over flat country.
-    if (9.0 * (q.y - uPeak) >= t) break;
-    float gap = q.y - groundAt(uv) * HSCALE;
-    res = min(res, 9.0 * gap / t);
-    if (res < 0.0) break;
-    t += 0.07 + t * 0.14;
-  }
-  return smoothstep(0.0, 1.0, res);
-}
 
 void main() {
   if (fieldB(vUv).a < 0.499) discard; // outside the play area
@@ -158,6 +139,11 @@ void main() {
   rock = mix(rock, biomeRock * (0.8 + 0.4 * fine), biome);
   float rocky = smoothstep(0.24, 0.50, slope + (grain - 0.5) * 0.10);
   col = mix(col, mix(rock, volcanic * (0.9 + 0.3 * fine), burnt), rocky * (1.0 - 0.75 * plants) * (1.0 - lavaCover));
+  // Frost where it is frozen but too dry for snow: pale, blue, cracked like a dry lake of ice.
+  float frost = smoothstep(uFreezing + 0.10, uFreezing - 0.16, temperature + (grain - 0.5) * 0.16) * (1.0 - snow) * (1.0 - lavaCover);
+  float crack = smoothstep(0.035, 0.0, abs(fbm2(vWorld.xz * 3.1 + 7.0) - 0.5)) + smoothstep(0.03, 0.0, abs(fbm2(vWorld.xz * 7.3 + 19.0) - 0.5));
+  vec3 frostCol = vec3(0.70, 0.80, 0.90) * (0.92 + 0.16 * fine) * (1.0 - 0.22 * min(1.0, crack));
+  col = mix(col, frostCol, frost * 0.8 * (1.0 - 0.7 * rocky) * (1.0 - 0.6 * plants));
   col = mix(col, vec3(0.66, 0.71, 0.80), snow * (1.0 - 0.8 * smoothstep(0.45, 0.75, slope)) * (1.0 - lavaCover * lavaHeat) * (1.0 - smoothstep(0.008, 0.04, nearLava.x)));
 
   // Beach just above the sea (not where frozen).
@@ -172,13 +158,14 @@ void main() {
   col *= 1.0 - 0.5 * smoothstep(0.0, 0.2, uSeaBase - h);
 
   // Light: warm sun with soft shadows, cool sky fill, overcast under rain.
-  float shadow = sunShadow(vWorld + n * 0.02);
+  float shadow = sunlight(vWorld, n);
   float ndl = max(dot(n, uSunDir), 0.0);
   float wrap = max(dot(n, uSunDir) * 0.5 + 0.5, 0.0);
-  float overcast = 1.0 - 0.38 * rain;
-  vec3 sun = vec3(1.0, 0.94, 0.84) * 1.55 * ndl * shadow * overcast;
-  vec3 sky = vec3(0.50, 0.62, 0.88) * (0.30 + 0.26 * n.y) * mix(1.0, 0.82, rain);
-  vec3 bounce = vec3(0.55, 0.45, 0.35) * 0.10 * wrap;
+  float overcast = 1.0 - 0.28 * rain;
+  vec3 sun = SUN_LIGHT * ndl * shadow * overcast;
+  // Sky light: strongest on faces that look up, a little less in shade (the sky is half hidden).
+  vec3 sky = SKY_LIGHT * (0.28 + 0.24 * n.y) * mix(1.0, 0.8, rain) * (0.85 + 0.15 * shadow);
+  vec3 bounce = BOUNCE_LIGHT * wrap;
   vec3 lit = col * (sun + sky + bounce);
   // Snow glints.
   lit += snow * shadow * pow(max(dot(reflect(-uSunDir, n), normalize(cameraPosition - vWorld)), 0.0), 30.0) * 0.25;

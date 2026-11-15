@@ -19,6 +19,10 @@ Once locked, the shape is fixed: the drawn border does not change while the
 game is played. Small movements (a nudged phone) are followed smoothly. A hand
 reaching in is recognised (the locked area with a piece missing) and ignored.
 Only a different border that stays put for a while replaces the locked one.
+
+RECTANGLE_ONLY (below) switches the any-shape behaviour off: only four-sided
+borders are taken as the play area. Other outlines are still found, but only
+so that a hand reaching in can be recognised.
 """
 
 from __future__ import annotations
@@ -49,6 +53,7 @@ COINCIDE = 0.9  # overlap with the locked area above which an outline is in the 
 SAME_SHAPE = 0.96  # overlap of two shapes, camera view removed, above which they are the same shape
 SHAPE_GRID = 128
 LOCK_FRAMES = 3
+RECTANGLE_ONLY = True  # the play area is always a rectangle; circles, blobs and the like are not taken
 UNIT_RECT = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
 
 
@@ -266,6 +271,11 @@ def _shape_overlap(a: np.ndarray, b: np.ndarray) -> float:
     return np.count_nonzero(masks[0] & masks[1]) / union if union else 0.0
 
 
+def _takeable(outline: Outline) -> bool:
+    """May this outline become the play area?"""
+    return outline.four_sided or not RECTANGLE_ONLY
+
+
 @dataclass
 class _Versus:
     """How a candidate outline sits against the locked play area, in the camera image."""
@@ -410,16 +420,21 @@ class PlayArea:
         if not outlines:
             self._streak = 0
             return
+        takeable = [o for o in outlines if _takeable(o)]
         if self.corners is None:
-            self._take(outlines[0])
-            self._streak = 1
+            if takeable:
+                self._take(takeable[0])
+                self._streak = 1
             return
         outlines = [self._aligned(o) for o in outlines]
         if self.locked:
             self._hold(outlines, now)
             return
+        if not takeable:
+            self._streak = 0
+            return
         # Not locked yet: wait until the same outline has been seen a few frames running.
-        outline = min(outlines, key=lambda o: self._distance(o.frame, self.corners))
+        outline = min(takeable, key=lambda o: self._distance(o.frame, self.corners))
         if self._distance(outline.frame, self.corners) < FOLLOW_DISTANCE:
             self._streak += 1
             if self._streak >= LOCK_FRAMES:
@@ -465,7 +480,7 @@ class PlayArea:
             return
 
         # Something different: the phone was re-propped, a new border was drawn, or this is a bad frame.
-        others = [o for o, v in judged if not v.bitten]
+        others = [o for o, v in judged if not v.bitten and _takeable(o)]
         if not others:
             return
         outline = others[0]  # innermost first, as when first locking: the drawn border, not the sheet around it

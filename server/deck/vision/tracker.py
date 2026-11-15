@@ -3,6 +3,11 @@
 A scrap's word is read only when it first appears. After that we just follow
 the ink. Cards hidden by a hand are held in place; a card is only removed when
 we can see clear paper where it used to be.
+
+A confirmed card also stays put against the small frame-to-frame differences
+of a still camera: its position only changes when the ink has really moved,
+and a word whose letters are grouped differently for a moment (split in two,
+or not found as a word at all) is still the same card in the same place.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Callable
 
+import cv2
 import numpy as np
 
 from . import PX_PER_MM, RECT_H, RECT_W
@@ -32,6 +38,17 @@ VERIFY_INTERVAL = 3.0  # re-read a known card this often, in case two scraps swa
 WIND_VERIFY_INTERVAL = 0.5  # also keep a rotated WIND card's arrow direction current
 VERIFY_SIZE_CHANGE = 0.35  # ...or at once if its word suddenly changes size
 DISSENT_TO_SWITCH = 2
+# A still camera gives every word a slightly different centre and tilt on each frame.
+STILL_MM = 1.5  # a confirmed card moves only when its word is seen further than this from where we hold it
+STILL_DEGREES = 4.0  # ...or tilted by more than this
+SQUARISH = 1.3  # long / short below this: the word's direction cannot be told from its outline
+# The same ink can be grouped differently from frame to frame (a wide gap between letters,
+# an arrow beside the word). A confirmed card keeps its place and size through that.
+SAME_LONG = 0.2  # a word whose length differs by more than this share is a different grouping...
+SAME_SHORT = 0.35  # ...or whose height does
+REGROUP_SECONDS = 1.5  # a different grouping must last this long, with the card's own ink gone, before the card takes it on
+INK_REMAINS = 0.5  # with no word found, this share of the card's ink still in place means it is still there
+INK_PAD_MM = 2.0
 
 
 @dataclass
@@ -57,6 +74,8 @@ class Track:
     last_verify: float = 0.0
     dissent: Counter = field(default_factory=Counter)
     turned: int = 0  # clockwise correction used to read the word, in degrees
+    ink: float = 0.0  # ink area of the word, mm^2
+    regroup_since: float | None = None  # when its ink started being grouped differently
 
     def as_detection(self) -> Detection:
         return Detection(self.x, self.y, self.angle, self.long, self.short, 0.0)
@@ -77,7 +96,9 @@ class Tracker:
         occluder: np.ndarray,
         now: float,
         read: Callable[[Detection], Reading] | None,
+        ink: np.ndarray | None = None,
     ) -> None:
+        """`ink`: the mask of ink pixels the detections came from (rectified image), if available."""
         gate = GATE_MM * PX_PER_MM
 
         # --- match detections to existing tracks, closest pairs first
@@ -103,14 +124,7 @@ class Tracker:
         for ti, track in enumerate(self.tracks):
             det = matched.get(ti)
             if det is not None:
-                blend = POSITION_BLEND if track.visible else 1.0
-                track.x += blend * (det.x - track.x)
-                track.y += blend * (det.y - track.y)
-                # The word's long axis has no inherent sign. Keep its axis continuous
-                # across the minAreaRect 180-degree wrap; OCR supplies the sign below.
-                angle_delta = (det.angle - track.angle + 90.0) % 180.0 - 90.0
-                track.angle += angle_delta
-                track.long, track.short = det.long, det.short
+                self._follow(track, det, now, ink)
                 track.last_seen = now
                 track.visible = True
                 track.clear_since = None
@@ -118,13 +132,19 @@ class Tracker:
             else:
                 track.visible = False
                 track.misses += 1
+                if track.card is not None and ink is not None and self._ink_remains(track, ink):
+                    # No word was made of it this frame, but its ink is all still there.
+                    track.last_seen = now
+                    track.visible = True
+                    track.clear_since = None
+                    track.misses = 0
 
         # --- new scraps
         for di, det in enumerate(detections):
             if di not in used_detections:
                 self.tracks.append(
                     Track(id=self._next_id, x=det.x, y=det.y, angle=det.angle, long=det.long,
-                          short=det.short, first_seen=now, last_seen=now)
+                          short=det.short, first_seen=now, last_seen=now, ink=det.ink)
                 )
                 self._next_id += 1
 
@@ -197,6 +217,58 @@ class Tracker:
             if now - track.clear_since < limit or track.misses < REMOVE_AFTER_MISSES:
                 survivors.append(track)
         self.tracks = survivors
+
+    @staticmethod
+    def _follow(track: Track, det: Detection, now: float, ink: np.ndarray | None) -> None:
+        """Move a scrap to where its word was just seen."""
+        # The word's long axis has no inherent sign. Keep its axis continuous
+        # across the minAreaRect 180-degree wrap; OCR supplies the sign.
+        turn = (det.angle - track.angle + 90.0) % 180.0 - 90.0
+        if track.card is None or not track.visible:
+            # Still being read, or back from under a hand: take it as seen.
+            blend = POSITION_BLEND if track.visible else 1.0
+            track.x += blend * (det.x - track.x)
+            track.y += blend * (det.y - track.y)
+            track.angle += turn
+            track.long, track.short, track.ink = det.long, det.short, det.ink
+            track.regroup_since = None
+            return
+        distance = float(np.hypot(det.x - track.x, det.y - track.y))
+        same_size = (
+            abs(det.long - track.long) <= SAME_LONG * track.long
+            and abs(det.short - track.short) <= SAME_SHORT * track.short + PX_PER_MM
+        )
+        if not same_size and distance < 0.75 * track.long:
+            # Part of the word, or the word joined to something beside it: the card has not moved.
+            if track.regroup_since is None:
+                track.regroup_since = now
+            if now - track.regroup_since < REGROUP_SECONDS or (ink is not None and Tracker._ink_remains(track, ink)):
+                return
+            track.x, track.y = det.x, det.y  # it has stayed like this: this is the word now
+            track.angle += turn
+        else:
+            if distance > STILL_MM * PX_PER_MM:
+                track.x += POSITION_BLEND * (det.x - track.x)
+                track.y += POSITION_BLEND * (det.y - track.y)
+            if abs(turn) > STILL_DEGREES and det.long >= SQUARISH * det.short:
+                track.angle += turn
+        track.regroup_since = None
+        track.long, track.short, track.ink = det.long, det.short, det.ink
+
+    @staticmethod
+    def _ink_remains(track: Track, ink: np.ndarray) -> bool:
+        """Is most of this card's ink still where the card is, though no word was found there?"""
+        pad = 2 * INK_PAD_MM * PX_PER_MM
+        box = cv2.boxPoints(((track.x, track.y), (track.long + pad, track.short + pad), track.angle))
+        h, w = ink.shape[:2]
+        x0, y0 = np.clip(np.floor(box.min(axis=0)).astype(int), 0, [w - 1, h - 1])
+        x1, y1 = np.clip(np.ceil(box.max(axis=0)).astype(int) + 1, 1, [w, h])
+        if x1 <= x0 or y1 <= y0:
+            return False
+        under = np.zeros((y1 - y0, x1 - x0), np.uint8)
+        cv2.fillConvexPoly(under, np.round(box - [x0, y0]).astype(np.int32), 255)
+        found = np.count_nonzero(ink[y0:y1, x0:x1][under > 0]) / (PX_PER_MM * PX_PER_MM)
+        return track.ink > 0 and found >= INK_REMAINS * track.ink
 
     def _confirm(self, track: Track, card: str) -> None:
         """Give a scrap its identity; if a hidden card of the same word exists, it has moved."""
