@@ -116,10 +116,25 @@ class Tracker:
         """`ink`: the mask of ink pixels the detections came from (rectified image), if available."""
         gate = GATE_MM * PX_PER_MM
 
+        # A piece of a card's word showing past a hand (the TAIN of MOUNTAIN) is that card's, and no
+        # other's: a shorter card close by (LAVA) would otherwise take it for itself, and the two
+        # cards' identities could end up swapped when the hand leaves. Only its own card, if it is
+        # in view, may follow it; under the hand the card is held where it was.
+        pieces: dict[int, set[int]] = {}
+        for di, det in enumerate(detections):
+            owners = {
+                ti for ti, track in enumerate(self.tracks)
+                if track.card is not None and self._is_piece_of(det, track) and self._hand_near(track, occluder)
+            }
+            if owners:
+                pieces[di] = owners
+
         # --- match detections to existing tracks, closest pairs first
         pairs = []
         for ti, track in enumerate(self.tracks):
             for di, det in enumerate(detections):
+                if di in pieces and (ti not in pieces[di] or not track.visible):
+                    continue
                 distance = float(np.hypot(track.x - det.x, track.y - det.y))
                 if distance <= gate:
                     # Prefer a word of the same length: stops two scraps that
@@ -156,7 +171,7 @@ class Tracker:
 
         # --- new scraps
         for di, det in enumerate(detections):
-            if di not in used_detections:
+            if di not in used_detections and di not in pieces:
                 self.tracks.append(
                     Track(id=self._next_id, x=det.x, y=det.y, angle=det.angle, long=det.long,
                           short=det.short, first_seen=now, last_seen=now, ink=det.ink)
@@ -294,6 +309,18 @@ class Tracker:
         cv2.fillConvexPoly(under, np.round(box - [x0, y0]).astype(np.int32), 255)
         found = np.count_nonzero(ink[y0:y1, x0:x1][under > 0]) / (PX_PER_MM * PX_PER_MM)
         return track.ink > 0 and found >= INK_REMAINS * track.ink
+
+    @staticmethod
+    def _is_piece_of(det: Detection, track: Track) -> bool:
+        """Is this word noticeably shorter than the card's, and centred within the card's word?"""
+        if det.long >= (1.0 - SAME_LONG) * track.long:
+            return False
+        theta = np.deg2rad(track.angle)
+        dx, dy = det.x - track.x, det.y - track.y
+        along = dx * np.cos(theta) + dy * np.sin(theta)
+        across = -dx * np.sin(theta) + dy * np.cos(theta)
+        pad = INK_PAD_MM * PX_PER_MM
+        return abs(along) <= track.long / 2 and abs(across) <= track.short / 2 + pad
 
     @staticmethod
     def _is_word(reading: Reading) -> bool:

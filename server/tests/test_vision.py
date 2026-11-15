@@ -527,3 +527,52 @@ def test_a_word_with_a_hand_over_its_first_letter_is_not_a_new_word():
     for i in range(70, 110):  # the hand leaves, and the whole word is seen again
         tracker.update([Detection(300, 300, 0, 200, 50, 0.0)], clear, i * 0.2, lambda det: farm)
         assert [(c["id"], c["word"]) for c in tracker.cards()] == [(made["id"], "FARM")]
+
+
+def test_a_hand_over_two_cards_close_together_does_not_swap_them():
+    """A hand over MOUNTAIN and LAVA lying close, uncovering TAIN first: still MOUNTAIN and LAVA after."""
+    import numpy as np
+
+    from deck.vision import PX_PER_MM as P
+    from deck.vision.detect import Detection
+    from deck.vision.reader import Reading
+
+    words = {  # centre x, y and length in mm; every word 15 mm tall
+        "MOUNTAIN": (100, 100, 80),
+        "TAIN": (120, 100, 40),  # the right half of MOUNTAIN, seen past the hand
+        "LAVA": (125, 125, 40),  # just below it
+    }
+    size = (800, 1200)
+
+    def seen(names):
+        return [Detection(x * P, y * P, 0.0, n * P, 15 * P, n * 15.0) for x, y, n in (words[w] for w in names)]
+
+    def ink(names):
+        mask = np.zeros(size, np.uint8)
+        for x, y, n in (words[w] for w in names):
+            mask[int((y - 7.5) * P):int((y + 7.5) * P), int((x - n / 2) * P):int((x + n / 2) * P)] = 255
+        return mask
+
+    def hand(x0, x1):
+        mask = np.zeros(size, np.uint8)
+        mask[:, int(x0 * P):int(x1 * P)] = 255
+        return mask
+
+    def read(det):
+        name = min(words, key=lambda w: abs(words[w][0] * P - det.x) + abs(words[w][1] * P - det.y) + abs(words[w][2] * P - det.long))
+        return Reading({"MOUNTAIN": "mountain", "LAVA": "lava"}.get(name), name, 0.95, 0, 0)
+
+    tracker, t = Tracker(), 0.0
+    for names, occluder, frames in [
+        (["MOUNTAIN", "LAVA"], hand(0, 0), 10),
+        ([], hand(40, 170), 5),  # the hand over both
+        (["TAIN"], hand(40, 100), 3),  # it slides off one end of MOUNTAIN...
+        (["TAIN", "LAVA"], hand(40, 100), 3),  # ...and off LAVA, with MOUN still under it
+        (["MOUNTAIN", "LAVA"], hand(0, 0), 100),  # gone, and ten seconds pass
+    ]:
+        for _ in range(frames):
+            tracker.update(seen(names), occluder, t, read, ink(names))
+            t += 0.1
+    placed = {c["card"]: (round(c["x"] * tracker.size[0] / P), round(c["y"] * tracker.size[1] / P)) for c in tracker.cards()}
+    assert len(tracker.cards()) == 2
+    assert placed == {"mountain": (100, 100), "lava": (125, 125)}
