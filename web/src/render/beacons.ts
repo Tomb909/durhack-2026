@@ -3,7 +3,7 @@
 //
 // The labels are ordinary page elements placed over the picture, not part of
 // the 3D scene, so the tilt-shift blur never touches them. Copies of the same
-// card that sit close together share one label ("WATER ×3"), and labels that
+// card that sit close together share one label ("RAIN ×3"), and labels that
 // would collide on screen are stacked instead.
 import * as THREE from 'three';
 import { modifierTargets } from '../cards/modifiers';

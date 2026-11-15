@@ -130,7 +130,7 @@ export const RULES = {
   plantColdLimit: -0.45,
   plantColdGood: -0.2,
   /**
-   * Life with no help: grass and a few scattered trees on ordinary dry ground, and
+   * Forest with no help: grass and a few scattered trees on ordinary dry ground, and
    * thin scrub in a desert. Kept below forest (0.4) and below what woodcutters work (0.25).
    */
   hardyCover: 0.24,
@@ -153,6 +153,25 @@ export const RULES = {
     peaks: 0.3,
     flat: 0.004, // farmland wants it flatter still
     hilly: 0.011,
+  },
+  /** A LAKE card presses a bowl into the ground and keeps it full. */
+  lake: {
+    depth: 0.03, // from the shore down to the middle of the bed
+    shoreWobble: 0.3, // how far the shoreline strays from a plain oval
+  },
+  /**
+   * A RIVER card: a river that runs through the card. It rises on the highest ground
+   * within reach (a mountain, if there is one) and carries on past the card, away from
+   * its source, to the edge of the world, cutting itself a small valley on the way.
+   */
+  river: {
+    sourceReach: 0.25, // height a far-off peak loses, per world width, against a near one
+    sourceShort: 0.2, // the top fifth of the way up to the peak stays dry
+    pull: 0.6, // how hard the river is drawn on past the card (height per world width)
+    wander: 0.05, // how much the ground's roughness bends its course
+    bedDepth: 0.0035,
+    bankReach: 4, // cells either side shaped into the valley
+    bankRise: 0.0022, // valley side: height gained per cell squared
   },
   settleSeconds: 0.35, // how fast rivers and lakes ease to their new shape
   /** Land beside water is damper, which can move the water again. Look this many times at most. */
@@ -190,6 +209,11 @@ export interface WorldFrame {
   snowBlow: Float32Array;
   /** 0..1 how many houses. */
   homes: Float32Array;
+  /** 0..1 how much of a town it is here (tall townhouses), and of a city (taller still, stone). */
+  town: Float32Array;
+  city: Float32Array;
+  /** 0..1 the open square in the middle of a town or city, where its landmark stands. */
+  plaza: Float32Array;
   /** 0..1 farmland (flat, fertile land near people). */
   farms: Float32Array;
   /** 0..1 fishing boats (open water near people). */
@@ -218,7 +242,12 @@ const smoothstep = (a: number, b: number, x: number) => {
 
 const softCap = (x: number, ceiling: number) => ceiling * Math.tanh(x / ceiling);
 
-type LocalField = Exclude<FieldName, 'seaLevel'>;
+/** Properties that cards push on as a soft-edged area. (LAKE is dug card by card instead.) */
+type LocalField = Exclude<FieldName, 'seaLevel' | 'lake'>;
+
+const WATER_IDS = new Set(['rain', 'lake', 'river']);
+const DX8 = [1, -1, 0, 0, 1, 1, -1, -1];
+const DY8 = [0, 0, 1, -1, 1, -1, 1, -1];
 
 export class WorldSim {
   readonly frame: WorldFrame;
@@ -232,6 +261,16 @@ export class WorldSim {
   private base: Float32Array;
   private ridge: Float32Array;
   private rough: Float32Array;
+  private crags: Float32Array;
+  private foothills: Float32Array;
+  /** Water welling up (LAKE, RIVER) and the beds RIVER cards lay down: inputs to the hydrology. */
+  private spring: Float32Array;
+  private course: Float32Array;
+  /** A second flood, used to find each RIVER card's way to the edge. */
+  private router: Hydrology;
+  private routeSurface: Float32Array;
+  /** 1 inside a LAKE card's basin: rivers run into and out of these without cutting them open. */
+  private basin: Uint8Array;
   /** Summed card pushes per property (after the copies ceiling). */
   private push: Record<LocalField, Float32Array>;
   private copies: Float32Array;
@@ -253,8 +292,11 @@ export class WorldSim {
     const h = (this.h = gridHeight(aspect));
     const n = (this.n = w * h);
     const f = () => new Float32Array(n);
-    this.base = f(); this.ridge = f(); this.rough = f();
-    this.push = { height: f(), temperature: f(), wetness: f(), life: f(), settlement: f() };
+    this.base = f(); this.ridge = f(); this.rough = f(); this.crags = f(); this.foothills = f();
+    this.spring = f(); this.course = f(); this.routeSurface = f();
+    this.router = new Hydrology(w, h);
+    this.basin = new Uint8Array(n);
+    this.push = { height: f(), temperature: f(), wetness: f(), forest: f(), settlement: f(), town: f(), city: f(), plaza: f() };
     this.copies = f(); this.surfaceTarget = f(); this.riverTarget = f(); this.nearWater = f(); this.scratch = f();
     this.lastSurface = f(); this.lastRiver = f();
     this.hydrology = new Hydrology(w, h);
@@ -265,7 +307,7 @@ export class WorldSim {
       w, h,
       height: f(), temperature: f(), wetness: f(),
       vegetation: f(), waterSurface: f(), river: f(),
-      precipitation: f(), windX: f(), windY: f(), snowBlow: f(), homes: f(), farms: f(), fishing: f(), logging: f(), cleared: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
+      precipitation: f(), windX: f(), windY: f(), snowBlow: f(), homes: f(), town: f(), city: f(), plaza: f(), farms: f(), fishing: f(), logging: f(), cleared: f(), mask, aspect, outline: shape.outline, seaLevel: RULES.seaBase, version: 0,
     };
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
@@ -278,6 +320,10 @@ export class WorldSim {
         this.base[k] = fbm(X * 1.9, Y * 1.9, 4, 11);
         this.ridge[k] = ridged(X * 3.4, Y * 3.4, 5, 5);
         this.rough[k] = fbm(X * 9, Y * 9, 2, 23) - 0.5;
+        // Finer relief that only shows on lifted ground: crags and gullies on a mountain's
+        // flanks, and rolling foothills round its feet.
+        this.crags[k] = ridged(X * 8.5, Y * 8.5, 3, 41) - 0.45;
+        this.foothills[k] = fbm(X * 5.5, Y * 5.5, 3, 67) - 0.5;
       }
     }
     let lowest = Infinity;
@@ -295,7 +341,21 @@ export class WorldSim {
   /** Advance the world. Call every frame with the smoothed card list. */
   step(cards: LiveCard[], cardsMoving: boolean, dt: number): WorldFrame {
     if (cardsMoving || !this.started) {
+      // The ground moves at once but the water eases, so where the ground has just
+      // dropped (behind a mountain being dragged) the old water level would be left
+      // hanging in the air as a sheet of water. Remember how deep the water was...
+      const { waterSurface, height } = this.frame;
+      const depthBefore = this.lastSurface; // free here: only refine() uses it, and it overwrites it first
+      for (let i = 0; i < this.n; i++) depthBefore[i] = waterSurface[i] - height[i];
       this.recompute(cards);
+      // ...and never let it be deeper than it was or than it is heading for.
+      if (this.started) {
+        const st = this.surfaceTarget;
+        for (let i = 0; i < this.n; i++) {
+          const cap = Math.max(height[i] + depthBefore[i], st[i]);
+          if (waterSurface[i] > cap) waterSurface[i] = cap;
+        }
+      }
       this.settle = RULES.settleSeconds * 5;
       this.passesLeft = RULES.settlePasses;
       if (!this.started) {
@@ -448,8 +508,17 @@ export class WorldSim {
       const lift = push.height[i];
       // Ridged noise carves the lift into peaks and valleys; the middle of a range rises steepest.
       const peak = 0.72 + 0.5 * smoothstep(0.0, 0.5, lift);
-      const h = this.base[i] + lift * peak * (0.38 + 0.62 * this.ridge[i]) + lift * 0.14 * this.rough[i];
-      height[i] = h;
+      // Flanks are broken into crags and gullies, and the skirts of a range roll away as foothills.
+      const flank = Math.min(lift, 0.6) * 0.16 * this.crags[i] * smoothstep(0.03, 0.2, lift);
+      const skirt = 0.05 * this.foothills[i] * smoothstep(0.01, 0.1, lift) * (1 - smoothstep(0.18, 0.4, lift));
+      height[i] = this.base[i] + lift * peak * (0.38 + 0.62 * this.ridge[i]) + lift * 0.14 * this.rough[i] + flank + skirt;
+    }
+    this.spring.fill(0);
+    this.course.fill(0);
+    this.digLakes(cards, radiusMultipliers, sea);
+    this.runRivers(cards, sea);
+    for (let i = 0; i < n; i++) {
+      const h = height[i];
 
       const altitude = Math.max(0, h - RULES.lapseStartsAt);
       const t = Math.max(-1, Math.min(1, push.temperature[i] - RULES.lapse * altitude));
@@ -464,24 +533,179 @@ export class WorldSim {
     this.updateSnowBlow();
 
     // --- 4. water on land
-    this.hydrology.compute(height, sea, precipitation, this.surfaceTarget, this.riverTarget, RULES.hydrology, this.inside);
+    this.hydrology.compute(height, sea, precipitation, this.surfaceTarget, this.riverTarget, RULES.hydrology, this.inside, this.spring, this.course);
 
-    // --- 5. plants: forest only where Life reaches AND the climate suits AND it is not
-    // under water. Where it is too dry for forest, Life still gives hardy grass and scrub,
-    // so a LIFE card on its own shows.
+    // --- 5. plants: forest only where a FOREST card reaches AND the climate suits AND it is
+    // not under water. Where it is too dry for forest, the card still gives scrub and
+    // scattered trees, so a FOREST card on its own shows.
     for (let i = 0; i < n; i++) {
-      const life = Math.min(1, push.life[i]);
+      const forest = Math.min(1, push.forest[i]);
       const warmEnough = smoothstep(RULES.plantColdLimit, RULES.plantColdGood, temperature[i]);
       const suits = smoothstep(RULES.plantWetMin, RULES.plantWetGood, wetness[i]) * warmEnough;
       const hardy = RULES.hardyCover * warmEnough *
         (RULES.hardyInDesert + (1 - RULES.hardyInDesert) * smoothstep(0.05, 0.2, wetness[i]));
       const submerged = smoothstep(0.0, 0.004, this.surfaceTarget[i] - height[i]);
-      vegetation[i] = this.inside[i] ? life * Math.max(suits, hardy) * (1 - submerged) : 0;
+      vegetation[i] = this.inside[i] ? forest * Math.max(suits, hardy) * (1 - submerged) : 0;
     }
 
     // --- 6. people: houses on dry, gentle, liveable land; fields on flat fertile land; boats on open water
     this.settlePeople();
     frame.version++;
+  }
+
+  /** LAKE: press a bowl into the ground at each card, level with the lowest ground round its rim, and fill it. */
+  private digLakes(cards: LiveCard[], radiusMultipliers: Map<LiveCard, number>, sea: number): void {
+    const { w, h, aspect, frame, rough, inside } = this;
+    const height = frame.height;
+    const L = RULES.lake;
+    this.basin.fill(0);
+    for (const card of cards) {
+      if (card.def.id !== 'lake' || card.strength <= 0) continue;
+      const radius = (card.def.effects.find((e) => e.field === 'lake')?.radius ?? 0.075) * (radiusMultipliers.get(card) ?? 1);
+      const rx = radius * (w - 1);
+      const ry = radius * aspect * (h - 1);
+      const cx = Math.min(w - 4, Math.max(3, card.x * (w - 1)));
+      const cy = Math.min(h - 4, Math.max(3, card.y * (h - 1)));
+      // The shore sits at the lowest ground on the rim, so the bowl holds water all the way round.
+      let rim = Infinity;
+      for (let k = 0; k < 48; k++) {
+        const a = (k / 48) * Math.PI * 2;
+        const x = Math.min(w - 1, Math.max(0, Math.round(cx + Math.cos(a) * rx)));
+        const y = Math.min(h - 1, Math.max(0, Math.round(cy + Math.sin(a) * ry)));
+        rim = Math.min(rim, height[y * w + x]);
+      }
+      const x0 = Math.max(1, Math.floor(cx - rx)), x1 = Math.min(w - 2, Math.ceil(cx + rx));
+      const y0 = Math.max(1, Math.floor(cy - ry)), y1 = Math.min(h - 2, Math.ceil(cy + ry));
+      for (let j = y0; j <= y1; j++) {
+        for (let i = x0; i <= x1; i++) {
+          const k = j * w + i;
+          if (!inside[k]) continue;
+          const d = Math.hypot((i - cx) / rx, (j - cy) / ry) * (1 + L.shoreWobble * rough[k]);
+          if (d >= 1) continue;
+          this.basin[k] = 1;
+          // Leave the very edge of the world alone: it is where water runs off.
+          const border = smoothstep(0, 4, Math.min(i, j, w - 1 - i, h - 1 - j));
+          const bowl = 1 - d * d;
+          const target = Math.max(sea + 0.004, rim - L.depth * bowl * (0.6 + 0.4 * bowl));
+          if (height[k] > target) height[k] -= (height[k] - target) * card.strength * border;
+        }
+      }
+      this.spring[Math.round(cy) * w + Math.round(cx)] += RULES.hydrology.lakeFull * 1.2 * card.strength;
+    }
+  }
+
+  /**
+   * RIVER: a river through each card. It rises on the highest ground within reach,
+   * comes down through the card and runs on, away from its source, to the edge.
+   */
+  private runRivers(cards: LiveCard[], sea: number): void {
+    const rivers = cards.filter((card) => card.def.id === 'river' && card.strength > 0);
+    if (!rivers.length) return;
+    const { w, h, n, aspect, frame, rough, inside, hydrology, router, routeSurface, spring, course, basin } = this;
+    const height = frame.height;
+    const R = RULES.river;
+    const H = RULES.hydrology;
+    const ux = (i: number) => i / (w - 1);
+    const uy = (j: number) => j / (h - 1) / aspect;
+    for (const card of rivers) {
+      const cardX = Math.min(w - 3, Math.max(2, Math.round(card.x * (w - 1))));
+      const cardY = Math.min(h - 3, Math.max(2, Math.round(card.y * (h - 1))));
+      const px = ux(cardX), py = uy(cardY);
+
+      // The source: the highest ground around, a far peak counting for less than a near one.
+      let source = cardY * w + cardX;
+      let best = -Infinity;
+      for (let j = 2; j < h - 2; j += 2) {
+        for (let i = 2; i < w - 2; i += 2) {
+          const k = j * w + i;
+          if (!inside[k]) continue;
+          const score = height[k] - R.sourceReach * Math.hypot(ux(i) - px, uy(j) - py);
+          if (score > best) best = score, source = k;
+        }
+      }
+      const sx = source % w, sy = (source - sx) / w;
+      let dirX = px - ux(sx), dirY = py - uy(sy);
+      if (Math.hypot(dirX, dirY) < 0.04) {
+        // The card is on the summit: head for the lowest ground round about.
+        let low = Infinity;
+        for (let k = 0; k < 32; k++) {
+          const a = (k / 32) * Math.PI * 2;
+          const x = Math.min(w - 1, Math.max(0, Math.round(cardX + Math.cos(a) * 0.2 * (w - 1))));
+          const y = Math.min(h - 1, Math.max(0, Math.round(cardY + Math.sin(a) * 0.2 * aspect * (h - 1))));
+          if (height[y * w + x] < low) low = height[y * w + x], dirX = Math.cos(a), dirY = Math.sin(a);
+        }
+      }
+      const length = Math.hypot(dirX, dirY) || 1;
+      dirX /= length; dirY /= length;
+
+      // Up from the card to the source: always nearer, and by the lowest ground on offer (the valley floors).
+      const up: number[] = [];
+      let x = cardX, y = cardY;
+      for (let guard = 0; guard < w + h; guard++) {
+        const here = Math.hypot(x - sx, y - sy);
+        if (here < 1.5) break;
+        let next = -1, lowest = Infinity;
+        for (let d = 0; d < 8; d++) {
+          const nx = x + DX8[d], ny = y + DY8[d];
+          if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
+          const k = ny * w + nx;
+          if (!inside[k] || Math.hypot(nx - sx, ny - sy) >= here - 0.3) continue;
+          const cost = height[k] + R.wander * rough[k];
+          if (cost < lowest) lowest = cost, next = k;
+        }
+        if (next < 0) break;
+        up.push(next);
+        x = next % w; y = (next - x) / w;
+      }
+      up.length = Math.round(up.length * (1 - R.sourceShort));
+
+      // Down from the card: over ground tilted away from the source, the way water would find to the edge.
+      for (let j = 0; j < h; j++) {
+        for (let i = 0; i < w; i++) {
+          const k = j * w + i;
+          routeSurface[k] = height[k] + R.wander * rough[k] - R.pull * ((ux(i) - px) * dirX + (uy(j) - py) * dirY);
+        }
+      }
+      router.flood(routeSurface, -Infinity, inside);
+      const path = up.reverse();
+      for (let k = cardY * w + cardX, guard = 0; k >= 0 && guard < n; k = router.parent[k], guard++) path.push(k);
+
+      // The bed never climbs: it cuts through whatever rise is in its way. Across a LAKE it
+      // rides at the lake's own level (what the basin fills to), so it leaves by the brim.
+      hydrology.flood(height, sea, inside);
+      const filled = hydrology.filled;
+      const reach = R.bankReach;
+      let level = Infinity;
+      const beds = new Float32Array(path.length);
+      for (let s = 0; s < path.length; s++) {
+        const c = path[s];
+        level = Math.min(basin[c] ? filled[c] : height[c], level - 3e-5);
+        beds[s] = level - (basin[c] ? 0 : R.bedDepth);
+      }
+      for (let s = 0; s < path.length; s++) {
+        const c = path[s];
+        const cx = c % w, cy = (c - cx) / w;
+        for (let dy = -reach; dy <= reach; dy++) {
+          for (let dx = -reach; dx <= reach; dx++) {
+            const nx = cx + dx, ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const k = ny * w + nx;
+            if (!inside[k] || basin[k]) continue;
+            const target = Math.max(sea + 0.002, beds[s] + R.bankRise * (dx * dx + dy * dy));
+            if (height[k] > target) height[k] -= (height[k] - target) * card.strength;
+          }
+        }
+        // A trickle at the source, a full river by the time it has run a little way.
+        const grown = card.strength * (0.4 + 0.6 * smoothstep(0, 24, s));
+        if (grown > course[c]) course[c] = grown;
+        // Wider than one cell once it is a proper river.
+        for (let d = 0; d < 4; d++) {
+          const k = c + DX8[d] + DY8[d] * w;
+          if (cx > 0 && cx < w - 1 && cy > 0 && cy < h - 1 && inside[k] && !basin[k] && 0.6 * grown > course[k]) course[k] = 0.6 * grown;
+        }
+        spring[c] += H.lakeFull * 0.15 * card.strength;
+      }
+    }
   }
 
   private buildWindField(windCards: LiveCard[]): void {
@@ -560,18 +784,18 @@ export class WorldSim {
     }
   }
 
-  /** Wind carries LIFE seeds downwind; nearby WATER makes the trail take root. */
+  /** Wind carries FOREST seeds downwind; nearby water (RAIN, LAKE or RIVER) makes the trail take root. */
   private scatterSeeds(cards: LiveCard[], windCards: LiveCard[]): void {
     if (!windCards.length) return;
-    const lifeCards = cards.filter((card) => card.def.id === 'life' && card.strength > 0);
-    const waterCards = cards.filter((card) => card.def.id === 'water' && card.strength > 0);
+    const forestCards = cards.filter((card) => card.def.id === 'forest' && card.strength > 0);
+    const waterCards = cards.filter((card) => WATER_IDS.has(card.def.id) && card.strength > 0);
     const { w, h, aspect, push } = this;
-    for (const life of lifeCards) {
+    for (const forest of forestCards) {
       let wind: LiveCard | undefined;
       let nearest = 0.3;
       for (const candidate of windCards) {
-        const dx = candidate.x - life.x;
-        const dy = (candidate.y - life.y) / aspect;
+        const dx = candidate.x - forest.x;
+        const dy = (candidate.y - forest.y) / aspect;
         const distance = Math.hypot(dx, dy);
         if (distance < nearest) {
           nearest = distance;
@@ -581,24 +805,24 @@ export class WorldSim {
       if (!wind) continue;
 
       const hasWater = waterCards.some(
-        (water) => Math.hypot(water.x - life.x, (water.y - life.y) / aspect) < 0.3,
+        (water) => Math.hypot(water.x - forest.x, (water.y - forest.y) / aspect) < 0.3,
       );
       const plumeLength = hasWater ? 0.55 : 0.42;
       const acrossSigma = hasWater ? 0.018 : 0.028;
       const dirX = Math.cos(wind.angle);
       const dirY = Math.sin(wind.angle);
       for (let j = 0; j < h; j++) {
-        const dy = j / (h - 1) - life.y;
+        const dy = j / (h - 1) - forest.y;
         const row = j * w;
         for (let i = 0; i < w; i++) {
-          const dx = i / (w - 1) - life.x;
+          const dx = i / (w - 1) - forest.x;
           const along = dx * dirX + (dy / aspect) * dirY;
           if (along < 0 || along > plumeLength) continue;
           const across = -dx * dirY + (dy / aspect) * dirX;
           const lateral = across / acrossSigma;
           const ends = smoothstep(0, 0.035, along) * (1 - smoothstep(plumeLength - 0.05, plumeLength, along));
-          const seeds = Math.exp(-0.5 * lateral * lateral) * ends * life.strength * wind.strength;
-          push.life[row + i] += seeds * (hasWater ? 1.9 : 0.95);
+          const seeds = Math.exp(-0.5 * lateral * lateral) * ends * forest.strength * wind.strength;
+          push.forest[row + i] += seeds * (hasWater ? 1.9 : 0.95);
           if (hasWater) push.wetness[row + i] += seeds * 0.48;
         }
       }
@@ -629,14 +853,18 @@ export class WorldSim {
 
   private settlePeople(): void {
     const { n, frame, push, w } = this;
-    const { height, temperature, wetness, vegetation, homes, farms, fishing } = frame;
+    const { height, temperature, wetness, vegetation, homes, farms, fishing, town, city, plaza } = frame;
     const P = RULES.people;
     for (let i = 0; i < n; i++) {
       const reach = Math.min(1.2, push.settlement[i]);
       if (reach <= 0.01 || !this.inside[i]) {
-        homes[i] = farms[i] = fishing[i] = frame.logging[i] = 0;
+        homes[i] = farms[i] = fishing[i] = frame.logging[i] = town[i] = city[i] = plaza[i] = 0;
         continue;
       }
+      town[i] = Math.min(1, push.town[i]);
+      city[i] = Math.min(1, push.city[i]);
+      // The square in the middle is kept clear of houses for the church or the castle.
+      plaza[i] = smoothstep(0.3, 0.6, push.plaza[i]);
       const x = i % w;
       const left = x > 0 ? height[i - 1] : height[i];
       const right = x < w - 1 ? height[i + 1] : height[i];
@@ -648,7 +876,7 @@ export class WorldSim {
       const dry = 1 - smoothstep(0.0, 0.0012, depth);
       const climate = smoothstep(-0.8, -0.5, t) * (1 - smoothstep(0.65, 0.92, t));
       const gentle = (1 - smoothstep(P.steep, P.tooSteep, slope)) * (1 - smoothstep(P.highland, P.peaks, height[i]));
-      const home = smoothstep(P.homeStart, P.homeFull, reach) * climate * gentle * dry;
+      const home = smoothstep(P.homeStart, P.homeFull, reach) * climate * gentle * dry * (1 - plaza[i]);
       const fertile =
         smoothstep(0.28, 0.5, wetness[i]) * smoothstep(-0.35, -0.12, t) * (1 - smoothstep(0.45, 0.75, t)) *
         (1 - smoothstep(P.flat, P.hilly, slope));

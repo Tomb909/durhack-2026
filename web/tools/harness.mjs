@@ -3,7 +3,7 @@
 //
 //   npm --prefix web run harness                          numbers for the showcase set
 //   npm --prefix web run harness -- --set subsets         every combination of cards
-//   npm --prefix web run harness -- "water*3" "life+sun"  your own combination codes
+//   npm --prefix web run harness -- "rain*3" "forest+sun"  your own combination codes
 //   npm --prefix web run harness -- --shots               also a picture sheet (headless Chrome)
 //   npm --prefix web run harness -- --baseline            remember these numbers
 //   npm --prefix web run harness -- --diff                what changed since the baseline
@@ -24,7 +24,7 @@ const HELP = `Deck of Worlds harness
 
   npm --prefix web run harness -- [codes...] [options]
 
-  codes              combination codes, one world each: water  "water*3"  "life+water+sun"  "water*3+life@0.8,0.6"
+  codes              combination codes, one world each: rain  "rain*3"  "forest+rain+sun"  "rain*3+forest@0.8,0.6"
   --set NAMES        ready-made sets, comma separated: showcase (default), singles, pairs, subsets, copies, all
   --layout NAME      where unplaced cards go: cluster (default, together) or spread (each kind apart)
   --json             print JSON instead of a table

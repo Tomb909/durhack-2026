@@ -3,15 +3,20 @@
 // dry -> wet. Colours between the stops are blended smoothly.
 import * as THREE from 'three';
 
-const TEMPERATURE_STOPS = [-1, -0.45, -0.15, 0.3, 1]; // frozen, cold, mild, warm, scorching
+/**
+ * Temperatures at which the table columns sit. Mild holds across a band (two stops,
+ * one column), so the untouched world is wholly its mild colour: open green grassland.
+ */
+const TEMPERATURE_STOPS = [-1, -0.45, -0.15, 0.1, 0.4, 1];
+const STOP_COLUMN = [0, 1, 2, 2, 3, 4]; // frozen, cold, mild, mild, warm, scorching
 
-/** Bare ground (no plants). */
+/** Open ground (no forest): grass where it is mild, rock, sand, earth or snow elsewhere. */
 const BARE: string[][] = [
   // frozen     cold       mild       warm       scorching
-  ['#8d8a84', '#827f78', '#857f74', '#dba551', '#f4b84a'], // dry: tundra rock ... desert sand
-  ['#b9bcbc', '#7f7c6e', '#7f7a69', '#b98f52', '#e0a24d'], // dryish
-  ['#e9eef2', '#7d7a5c', '#7b7048', '#84683f', '#8e6a40'], // wet: snow ... damp earth
-  ['#f6f9fc', '#eef3f7', '#665f3f', '#6b5434', '#6f5233'], // soaked: deep snow ... dark mud
+  ['#8d8a84', '#827f78', '#4f7745', '#dba551', '#f4b84a'], // dry: tundra rock, dry grass, desert sand
+  ['#b9bcbc', '#7b8068', '#437542', '#b0964f', '#e0a24d'], // dryish: meadow
+  ['#e9eef2', '#76805c', '#3a6f3e', '#7a7a40', '#8e6a40'], // wet: snow, lush grass, damp earth
+  ['#f6f9fc', '#eef3f7', '#346239', '#66603a', '#6f5233'], // soaked: deep snow, marsh, dark mud
 ];
 
 /** Ground where plants cover it. */
@@ -25,7 +30,7 @@ const GREEN: string[][] = [
 function buildTexture(table: string[][], size = 64): THREE.DataTexture {
   const rows = table.length;
   const data = new Uint8Array(size * size * 4);
-  const colours = table.map((row) => row.map((hex) => new THREE.Color().setStyle(hex, THREE.SRGBColorSpace)));
+  const colours = table.map((row) => STOP_COLUMN.map((column) => new THREE.Color().setStyle(row[column], THREE.SRGBColorSpace)));
   const out = new THREE.Color();
   const a = new THREE.Color();
   const b = new THREE.Color();

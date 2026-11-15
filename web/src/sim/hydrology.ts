@@ -29,8 +29,11 @@ const smoothstep = (a: number, b: number, x: number) => {
 
 export class Hydrology {
   readonly n: number;
-  private filled: Float32Array;
-  private parent: Int32Array;
+  /** After flood(): the level each cell's hollow fills to before it spills. */
+  filled: Float32Array;
+  /** After flood(): the cell each cell drains to, or -1 at an outlet. */
+  parent: Int32Array;
+  private fillFlow: Float32Array;
   private order: Int32Array;
   private visited: Uint8Array;
   private flow: Float32Array;
@@ -48,6 +51,7 @@ export class Hydrology {
     this.visited = new Uint8Array(this.n);
     this.flow = new Float32Array(this.n);
     this.lakeFlow = new Float32Array(this.n);
+    this.fillFlow = new Float32Array(this.n);
     this.heapCell = new Int32Array(this.n);
     this.heapLevel = new Float32Array(this.n);
     this.scratch = new Float32Array(this.n);
@@ -100,16 +104,26 @@ export class Hydrology {
    * @param river    out: river strength 0..1
    * @param inside   optional: 1 for cells inside the play area. Outside cells stay dry
    *                 and the inside cells along the shape's edge drain off the world.
+   * @param spring   optional: water welling up per cell, in units of flow. It fills the
+   *                 hollows it runs into (LAKE, RIVER) but draws no river of its own.
+   * @param course   optional: 0..1 river strength laid down per cell (a RIVER card's bed).
    */
   compute(
     height: Float32Array, sea: number, rain: Float32Array,
     surface: Float32Array, river: Float32Array, rules: HydrologyRules,
-    inside?: Uint8Array | null,
+    inside?: Uint8Array | null, spring?: Float32Array | null, course?: Float32Array | null,
   ): void {
-    const { w, h, n, filled, parent, order, visited, flow, lakeFlow } = this;
-    const raw = this.scratch;
+    this.scratch.fill(0);
+    const count = this.flood(height, sea, inside);
+    return this.finish(count, height, sea, rain, surface, river, rules, inside, spring, course);
+  }
+
+  /**
+   * The flood alone: fills `filled`, `parent` and the visiting order. Returns how many cells were reached.
+   */
+  flood(height: Float32Array, sea: number, inside?: Uint8Array | null): number {
+    const { w, h, n, filled, parent, order, visited } = this;
     visited.fill(0);
-    raw.fill(0);
     this.heapSize = 0;
     if (inside) {
       for (let i = 0; i < n; i++) {
@@ -157,12 +171,28 @@ export class Hydrology {
       }
     }
 
+    return count;
+  }
+
+  private finish(
+    count: number, height: Float32Array, sea: number, rain: Float32Array,
+    surface: Float32Array, river: Float32Array, rules: HydrologyRules,
+    inside?: Uint8Array | null, spring?: Float32Array | null, course?: Float32Array | null,
+  ): void {
+    const { w, h, n, filled, parent, order, flow, lakeFlow, fillFlow } = this;
+    const raw = this.scratch;
     // Rain runs downhill: add each cell's flow to the cell it drains to.
-    for (let i = 0; i < n; i++) flow[i] = rain[i];
+    for (let i = 0; i < n; i++) {
+      flow[i] = rain[i];
+      fillFlow[i] = spring ? spring[i] : 0;
+    }
     for (let k = count - 1; k >= 0; k--) {
       const c = order[k];
       const p = parent[c];
-      if (p >= 0) flow[p] += flow[c];
+      if (p >= 0) {
+        flow[p] += flow[c];
+        fillFlow[p] += fillFlow[c];
+      }
     }
 
     // Every cell of a hollow shares the flow leaving at its spill point.
@@ -179,13 +209,15 @@ export class Hydrology {
       if (depth > rules.lakeMinDepth) {
         const p = parent[c];
         const upstream = p >= 0 ? lakeFlow[p] : 0;
-        lakeFlow[c] = flow[c] > upstream ? flow[c] : upstream;
+        const here = flow[c] + fillFlow[c];
+        lakeFlow[c] = here > upstream ? here : upstream;
         const full = smoothstep(rules.lakeStart, rules.lakeFull, lakeFlow[c]);
         surface[c] = height[c] + depth * full - rules.dryOffset * (1 - full);
         raw[c] = 0;
       } else {
         lakeFlow[c] = 0;
-        const r = smoothstep(rules.riverStart, rules.riverFull, flow[c]);
+        let r = smoothstep(rules.riverStart, rules.riverFull, flow[c]);
+        if (course && course[c] > r) r = course[c];
         raw[c] = r;
         surface[c] = height[c] + rules.riverDepth * r - rules.dryOffset * (1 - r);
       }

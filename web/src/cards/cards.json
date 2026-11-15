@@ -17,15 +17,28 @@
     "effects": [{ "field": "height", "amount": 0.5, "radius": 0.15 }]
   },
   {
-    "id": "water",
-    "word": "WATER",
-    "aliases": [],
-    "icon": "💧",
+    "id": "rain",
+    "word": "RAIN",
+    "aliases": ["WATER"],
+    "icon": "🌧️",
     "color": "#3aa0ff",
-    "effects": [
-      { "field": "wetness", "amount": 0.5, "radius": 0.2 },
-      { "field": "seaLevel", "amount": 0.017, "global": true }
-    ]
+    "effects": [{ "field": "wetness", "amount": 0.5, "radius": 0.2 }]
+  },
+  {
+    "id": "lake",
+    "word": "LAKE",
+    "aliases": ["LAKES"],
+    "icon": "💧",
+    "color": "#2f7fd6",
+    "effects": [{ "field": "lake", "amount": 1.0, "radius": 0.075 }]
+  },
+  {
+    "id": "river",
+    "word": "RIVER",
+    "aliases": ["RIVERS"],
+    "icon": "🏞️",
+    "color": "#4fc3e8",
+    "effects": []
   },
   {
     "id": "sun",
@@ -44,12 +57,12 @@
     "effects": [{ "field": "temperature", "amount": -0.62, "radius": 0.24 }]
   },
   {
-    "id": "life",
-    "word": "LIFE",
-    "aliases": [],
-    "icon": "🌱",
+    "id": "forest",
+    "word": "FOREST",
+    "aliases": ["FORESTS", "LIFE"],
+    "icon": "🌲",
     "color": "#58c46a",
-    "effects": [{ "field": "life", "amount": 1.0, "radius": 0.24 }]
+    "effects": [{ "field": "forest", "amount": 1.0, "radius": 0.24 }]
   },
   {
     "id": "wind",
@@ -60,11 +73,35 @@
     "effects": []
   },
   {
-    "id": "settlement",
-    "word": "SETTLEMENT",
-    "aliases": ["SETTLE", "VILLAGE", "TOWN", "PEOPLE"],
+    "id": "village",
+    "word": "VILLAGE",
+    "aliases": ["SETTLEMENT", "SETTLE", "PEOPLE"],
     "icon": "🏠",
     "color": "#e8743b",
     "effects": [{ "field": "settlement", "amount": 1.0, "radius": 0.13 }]
+  },
+  {
+    "id": "town",
+    "word": "TOWN",
+    "aliases": ["TOWNS"],
+    "icon": "⛪",
+    "color": "#e0553a",
+    "effects": [
+      { "field": "settlement", "amount": 1.3, "radius": 0.115 },
+      { "field": "town", "amount": 1.0, "radius": 0.075 },
+      { "field": "plaza", "amount": 1.0, "radius": 0.026 }
+    ]
+  },
+  {
+    "id": "city",
+    "word": "CITY",
+    "aliases": ["CITIES"],
+    "icon": "🏰",
+    "color": "#c9413f",
+    "effects": [
+      { "field": "settlement", "amount": 1.6, "radius": 0.13 },
+      { "field": "city", "amount": 1.0, "radius": 0.09 },
+      { "field": "plaza", "amount": 1.0, "radius": 0.048 }
+    ]
   }
 ]

@@ -9,6 +9,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import type { LiveCard } from '../cards/store';
 import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
 import { makeBackdrop } from './backdrop';
+import { makeGrass } from './grass';
 import { Beacons } from './beacons';
 import { CameraRig } from './camera';
 import { MAX_PULSES, SUN_DIR, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
@@ -18,7 +19,7 @@ import { makePalettes } from './palette';
 import { AmbientPass, castsShadow, GradeShader, SunShadows } from './post';
 import { makeSlabSides } from './slab';
 import { makeTerrain } from './terrain';
-import { makePeople, Merchants } from './people';
+import { Landmarks, makePeople, Merchants } from './people';
 import { makeTrees } from './trees';
 import { makeWater } from './water';
 import { makeWeather } from './weather';
@@ -47,6 +48,7 @@ export class WorldRenderer {
   private outline: number[][] = DEFAULT_SHAPE.outline;
   private beacons: Beacons;
   private merchants: Merchants;
+  private landmarks: Landmarks;
   private time = 0;
   private quality = 1.5;
   private raycaster = new THREE.Raycaster();
@@ -78,15 +80,18 @@ export class WorldRenderer {
     this.shared = makeSharedUniforms();
     this.sun = new SunShadows(this.renderer, this.shared);
     this.merchants = new Merchants(this.shared);
+    this.landmarks = new Landmarks(this.shared);
     this.scene.add(makeBackdrop(this.shared));
     this.setShape(DEFAULT_SHAPE);
     // Everything that stands on the land casts a shadow.
     const trees = makeTrees(this.shared);
     const people = makePeople(this.shared);
-    for (const o of [trees, people, this.merchants.group]) castsShadow(o);
+    for (const o of [trees, people, this.merchants.group, this.landmarks.group]) castsShadow(o);
+    this.scene.add(makeGrass(this.shared, this.palettes));
     this.scene.add(trees);
     this.scene.add(people);
     this.scene.add(this.merchants.group);
+    this.scene.add(this.landmarks.group);
     this.scene.add(makeWeather(this.shared));
     this.scene.add(makeWindEffects(this.shared));
     this.scene.add(this.beacons.group);
@@ -132,6 +137,7 @@ export class WorldRenderer {
     this.shared.uFieldB.value = this.fields.b;
     this.shared.uFieldC.value = this.fields.c;
     this.shared.uFieldD.value = this.fields.d;
+    this.shared.uFieldE.value = this.fields.e;
     setSharedWorld(this.shared, gw, gh);
     this.shaped = [makeTerrain(this.shared, this.palettes, gw, gh), makeSlabSides(this.shared, shape.outline, gw), makeWater(this.shared, gw, gh)];
     for (const object of this.shaped) this.scene.add(object);
@@ -157,6 +163,7 @@ export class WorldRenderer {
     this.composer.setPixelRatio(ratio);
     this.composer.setSize(width, height);
     this.grade.uniforms.uResolution.value.set(width * ratio, height * ratio);
+    this.shared.uViewHeight.value = height * ratio;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
   }
@@ -236,6 +243,7 @@ export class WorldRenderer {
     this.fields.update(frame);
     this.followMood(frame, dt);
     this.merchants.update(cards, frame, this.time);
+    this.landmarks.update(cards, frame);
     const count = Math.min(MAX_PULSES, cards.length);
     for (let i = 0; i < count; i++) {
       const card = cards[i];

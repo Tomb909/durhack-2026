@@ -1,10 +1,11 @@
 // Shared constants, uniforms and GLSL used by every part of the renderer.
 //
-// The renderer's whole view of the world is two textures (see fields.ts):
+// The renderer's whole view of the world is five textures (see fields.ts):
 //   uFieldA = height, temperature, wetness, vegetation
 //   uFieldB = waterSurface, river, precipitation, inside mask (0.5 on the outline)
 //   uFieldC = homes, farms, fishing, wind-blown snow
 //   uFieldD = cleared (felled forest, permanent), logging, wind-x, wind-z
+//   uFieldE = town, city, plaza (the square in the middle of a town or city), unused
 // plus the sea level. Rewrite anything in render/ freely: nothing else in the
 // app depends on it.
 import * as THREE from 'three';
@@ -39,12 +40,15 @@ export interface SharedUniforms {
   uFieldB: THREE.IUniform<THREE.Texture | null>;
   uFieldC: THREE.IUniform<THREE.Texture | null>;
   uFieldD: THREE.IUniform<THREE.Texture | null>;
+  uFieldE: THREE.IUniform<THREE.Texture | null>;
   uTexel: THREE.IUniform<THREE.Vector2>;
   uGrid: THREE.IUniform<THREE.Vector2>;
   /** World width and depth in scene units. */
   uWorld: THREE.IUniform<THREE.Vector2>;
   uSea: THREE.IUniform<number>;
   uTime: THREE.IUniform<number>;
+  /** Height of the picture in pixels. */
+  uViewHeight: THREE.IUniform<number>;
   uSunDir: THREE.IUniform<THREE.Vector3>;
   uFreezing: THREE.IUniform<number>;
   /** The world's conditions, for the sky: how hot, cold, wet and alive (each 0..1). See mood.ts. */
@@ -69,11 +73,13 @@ export function makeSharedUniforms(): SharedUniforms {
     uFieldB: { value: null },
     uFieldC: { value: null },
     uFieldD: { value: null },
+    uFieldE: { value: null },
     uTexel: { value: new THREE.Vector2(1 / GW, 1 / gridHeight(world.aspect)) },
     uGrid: { value: new THREE.Vector2(GW, gridHeight(world.aspect)) },
     uWorld: { value: new THREE.Vector2(world.w, world.d) },
     uSea: { value: RULES.seaBase },
     uTime: { value: 0 },
+    uViewHeight: { value: 1080 },
     uSunDir: { value: SUN_DIR.clone() },
     uFreezing: { value: RULES.freezing },
     uMood: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -92,6 +98,7 @@ uniform sampler2D uFieldA;
 uniform sampler2D uFieldB;
 uniform sampler2D uFieldC;
 uniform sampler2D uFieldD;
+uniform sampler2D uFieldE;
 uniform vec2 uTexel;
 uniform vec2 uGrid;
 uniform float uSea;
@@ -118,6 +125,7 @@ vec4 fieldA(vec2 uv) { return texture2D(uFieldA, fieldUv(uv)); }
 vec4 fieldB(vec2 uv) { return texture2D(uFieldB, fieldUv(uv)); }
 vec4 fieldC(vec2 uv) { return texture2D(uFieldC, fieldUv(uv)); }
 vec4 fieldD(vec2 uv) { return texture2D(uFieldD, fieldUv(uv)); }
+vec4 fieldE(vec2 uv) { return texture2D(uFieldE, fieldUv(uv)); }
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -140,6 +148,24 @@ float fbm2(vec2 p) {
   for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
   return s;
 }
+
+// A scatter of boulders over the land (scene x,z). x: how much of a boulder is here (0..1);
+// yz: which way its surface leans, for shading it as a dome. chance: share of plots with one.
+// Shared so the grass can stand clear of the same stones the land draws.
+vec3 boulders(vec2 xz, float chance) {
+  vec2 p = xz * 3.2;
+  vec2 cell = floor(p);
+  if (hash21(cell + 3.7) > chance) return vec3(0.0);
+  vec2 centre = 0.25 + 0.5 * vec2(hash21(cell + 11.1), hash21(cell + 23.9));
+  float radius = 0.09 + 0.15 * hash21(cell + 41.3);
+  vec2 d = (fract(p) - centre) / radius;
+  d.y *= 1.0 + 0.7 * hash21(cell + 5.5);
+  float r = length(d);
+  return vec3(1.0 - smoothstep(0.7, 1.0, r), d * step(r, 1.0));
+}
+// How much of the ground is a hillside (above the plains), and how much is high mountain.
+float hillside(float h) { return smoothstep(0.075, 0.15, h); }
+float alpine(float h) { return smoothstep(0.16, 0.34, h); }
 
 // --- Light ------------------------------------------------------------------------
 // Late-afternoon sun and a cool sky. Every surface takes its sunlight through

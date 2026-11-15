@@ -6,7 +6,7 @@ import { makeSharedUniforms } from './common';
 import { Merchants, tradeRoutes } from './people';
 
 const person = (key: string, x: number, y: number, strength = 1) => ({
-  ...settledCard(key, cardDef('settlement')!, x, y),
+  ...settledCard(key, cardDef('village')!, x, y),
   strength,
 });
 

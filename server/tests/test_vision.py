@@ -39,25 +39,30 @@ def by_card(vision: Vision) -> dict[str, list[dict]]:
 
 def test_match_is_forgiving_but_not_ambiguous():
     assert match("MOUNTA1N", VOCAB) == ("mountain", 0)
-    assert match("WATFR", VOCAB) == ("water", 1)
+    assert match("WATFR", VOCAB) == ("rain", 1)
     assert match("SUN", VOCAB) == ("sun", 0)
     assert match("LICE", VOCAB)[0] is None  # ICE or LIFE? refuse to guess
     assert match("VOLCANO", VOCAB)[0] is None
     assert normalise("w4ter!") == "WATERI"
-    assert match("SETTLEMENT", VOCAB) == ("settlement", 0)
-    assert match("SETTLEMNT", VOCAB) == ("settlement", 1)
+    assert match("SETTLEMENT", VOCAB) == ("village", 0)
+    assert match("SETTLEMNT", VOCAB) == ("village", 1)
+    # The water and settlement cards are each three words now; the old words still read.
+    for word, card in [("RAIN", "rain"), ("LAKE", "lake"), ("RIVER", "river"), ("VILLAGE", "village"), ("TOWN", "town"), ("CITY", "city"), ("PEOPLE", "village")]:
+        assert match(word, VOCAB) == (card, 0)
+    assert match("RIVFR", VOCAB) == ("river", 1)
+    assert match("VILLAGF", VOCAB) == ("village", 1)
 
 
 def test_reader_refreshes_vocabulary_when_card_data_changes(tmp_path):
     cards_path = tmp_path / "cards.json"
-    cards_path.write_text(json.dumps([{"id": "water", "word": "WATER"}]), encoding="utf-8")
+    cards_path.write_text(json.dumps([{"id": "rain", "word": "WATER"}]), encoding="utf-8")
     reader = Reader.__new__(Reader)
     reader._vocabulary_path = cards_path
     reader.vocabulary = load_vocabulary(cards_path)
     initial_mtime_ns = cards_path.stat().st_mtime_ns
     reader._vocabulary_mtime_ns = initial_mtime_ns
 
-    cards_path.write_text(json.dumps([{"id": "big", "word": "BIG"}, {"id": "water", "word": "WATER"}]), encoding="utf-8")
+    cards_path.write_text(json.dumps([{"id": "big", "word": "BIG"}, {"id": "rain", "word": "WATER"}]), encoding="utf-8")
     changed = cards_path.stat()
     os.utime(cards_path, ns=(changed.st_atime_ns, initial_mtime_ns + 1_000_000_000))
     reader._refresh_vocabulary()
@@ -103,17 +108,17 @@ def test_reads_every_card_at_any_rotation(reader):
     scraps = [
         Scrap("BIG", 0.1, 0.1),
         Scrap("MOUNTAIN", 0.25, 0.25, angle=0),
-        Scrap("WATER", 0.7, 0.25, angle=160),
+        Scrap("RAIN", 0.7, 0.25, angle=160),
         Scrap("SUN", 0.2, 0.7, angle=95),
         Scrap("ICE", 0.5, 0.6, angle=-40),
-        Scrap("LIFE", 0.8, 0.75, angle=200),
-        Scrap("SETTLEMENT", 0.5, 0.88, angle=5),
+        Scrap("FOREST", 0.8, 0.75, angle=200),
+        Scrap("VILLAGE", 0.5, 0.88, angle=5),
     ]
     vision = Vision(reader)
     run(vision, scraps, frames=6)
     assert vision.play_area.locked
     cards = by_card(vision)
-    assert set(cards) == {"big", "mountain", "water", "sun", "ice", "life", "settlement"}
+    assert set(cards) == {"big", "mountain", "rain", "sun", "ice", "forest", "village"}
     for scrap in scraps:
         (card,) = cards[scrap.word.lower()]
         assert abs(card["x"] - scrap.x) < 0.03, (scrap.word, card)
@@ -124,7 +129,7 @@ def test_copies_side_by_side_are_separate_cards(reader):
     scraps = [Scrap("WATER", 0.3, 0.4), Scrap("WATER", 0.3, 0.62), Scrap("WATER", 0.62, 0.4, angle=90)]
     vision = Vision(reader)
     run(vision, scraps, frames=6)
-    assert len(by_card(vision).get("water", [])) == 3
+    assert len(by_card(vision).get("rain", [])) == 3
 
 
 def test_flip_rotates_the_table(reader):
@@ -136,12 +141,12 @@ def test_flip_rotates_the_table(reader):
 
 def test_card_follows_a_slide_and_keeps_its_id(reader):
     vision = Vision(reader)
-    t = run(vision, [Scrap("LIFE", 0.3, 0.5)], frames=5)
-    first = by_card(vision)["life"][0]["id"]
+    t = run(vision, [Scrap("FOREST", 0.3, 0.5)], frames=5)
+    first = by_card(vision)["forest"][0]["id"]
     for step in range(1, 8):
-        vision.process(render_frame([Scrap("LIFE", 0.3 + 0.05 * step, 0.5)], seed=step), now=t)
+        vision.process(render_frame([Scrap("FOREST", 0.3 + 0.05 * step, 0.5)], seed=step), now=t)
         t += 0.1
-    (card,) = by_card(vision)["life"]
+    (card,) = by_card(vision)["forest"]
     assert card["id"] == first
     assert abs(card["x"] - 0.65) < 0.04
 
@@ -170,17 +175,17 @@ def test_removed_card_goes_after_a_moment(reader):
 def test_picked_up_and_put_down_elsewhere_is_a_move(reader):
     vision = Vision(reader)
     t = run(vision, [Scrap("WATER", 0.3, 0.4)], frames=5)
-    first = by_card(vision)["water"][0]["id"]
+    first = by_card(vision)["rain"][0]["id"]
     t = run(vision, [Scrap("WATER", 0.3, 0.4)], frames=4, start=t, hand=(0.3, 0.4))
     # Hand still over the old place; the card is now down somewhere else.
     t = run(vision, [Scrap("WATER", 0.75, 0.3)], frames=5, start=t, hand=(0.3, 0.4))
-    waters = by_card(vision)["water"]
+    waters = by_card(vision)["rain"]
     assert len(waters) == 1 and waters[0]["id"] == first
     assert abs(waters[0]["x"] - 0.75) < 0.04
 
 
 def test_nudged_phone_keeps_tracking(reader):
-    scraps = [Scrap("MOUNTAIN", 0.3, 0.3), Scrap("LIFE", 0.7, 0.7)]
+    scraps = [Scrap("MOUNTAIN", 0.3, 0.3), Scrap("FOREST", 0.7, 0.7)]
     vision = Vision(reader)
     t = run(vision, scraps, frames=5)
     ids = {c["id"] for c in vision.tracker.cards()}
@@ -188,15 +193,15 @@ def test_nudged_phone_keeps_tracking(reader):
     cards = by_card(vision)
     assert {c["id"] for c in vision.tracker.cards()} == ids
     assert abs(cards["mountain"][0]["x"] - 0.3) < 0.03
-    assert abs(cards["life"][0]["y"] - 0.7) < 0.03
+    assert abs(cards["forest"][0]["y"] - 0.7) < 0.03
 
 
 def test_cards_in_a_deep_shadow_are_read_and_the_shadow_is_not_an_object(reader):
     # The phone's own shadow: half the sheet at about a third of the brightness.
-    scraps = [Scrap("WATER", 0.2, 0.4, angle=20), Scrap("LIFE", 0.3, 0.75, angle=-70), Scrap("SUN", 0.8, 0.3)]
+    scraps = [Scrap("WATER", 0.2, 0.4, angle=20), Scrap("FOREST", 0.3, 0.75, angle=-70), Scrap("SUN", 0.8, 0.3)]
     vision = Vision(reader)
     run(vision, scraps, frames=8, shadow=0.34)
-    assert set(by_card(vision)) == {"water", "life", "sun"}
+    assert set(by_card(vision)) == {"rain", "forest", "sun"}
     covered = (vision.result.occluder > 0).mean()
     assert covered < 0.01, f"{covered:.1%} of the sheet was treated as a covering object"
 
@@ -205,7 +210,7 @@ def test_card_removed_from_a_shadow_is_let_go(reader):
     vision = Vision(reader)
     t = run(vision, [Scrap("WATER", 0.2, 0.4), Scrap("SUN", 0.8, 0.3)], frames=6, shadow=0.34)
     run(vision, [Scrap("SUN", 0.8, 0.3)], frames=8, start=t, shadow=0.34)
-    assert "water" not in by_card(vision)
+    assert "rain" not in by_card(vision)
 
 
 def test_shadow_arriving_over_a_card_does_not_lose_it(reader):
@@ -227,7 +232,7 @@ def test_small_words_on_scraps_stacked_close_stay_separate(reader):
     ]
     vision = Vision(reader)
     t = run(vision, scraps, frames=8)
-    assert len(by_card(vision).get("water", [])) == 3
+    assert len(by_card(vision).get("rain", [])) == 3
     ids = sorted(c["id"] for c in vision.tracker.cards())
     run(vision, scraps, frames=20, start=t)
     assert sorted(c["id"] for c in vision.tracker.cards()) == ids  # steady: no card comes and goes
@@ -270,7 +275,7 @@ def test_a_circle_is_not_taken_as_the_play_area():
 @pytest.mark.parametrize("border", ["circle", "blob"])
 def test_any_closed_border_is_a_play_area(reader, border):
     # Positions are fractions of the shape's bounding box, as for a rectangle.
-    scraps = [Scrap("SUN", 0.5, 0.3), Scrap("ICE", 0.3, 0.6, angle=30), Scrap("LIFE", 0.68, 0.62, angle=-20)]
+    scraps = [Scrap("SUN", 0.5, 0.3), Scrap("ICE", 0.3, 0.6, angle=30), Scrap("FOREST", 0.68, 0.62, angle=-20)]
     vision = Vision(reader)
     run(vision, scraps, frames=6, border=border)
     assert vision.play_area.locked and not vision.play_area.four_sided
@@ -345,7 +350,7 @@ def area_state(vision: Vision, now: float):
 def test_a_hand_reaching_in_does_not_change_the_play_area(border):
     import numpy as np
 
-    scraps = [Scrap("WATER", 0.3, 0.35), Scrap("LIFE", 0.7, 0.6)]
+    scraps = [Scrap("WATER", 0.3, 0.35), Scrap("FOREST", 0.7, 0.6)]
     vision = Vision(None)
     t = run(vision, scraps, frames=5, border=border)
     corners, shape, size = area_state(vision, t)

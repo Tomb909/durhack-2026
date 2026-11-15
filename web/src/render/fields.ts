@@ -1,4 +1,4 @@
-// Uploads the world's fields to the GPU as two float textures.
+// Uploads the world's fields to the GPU as float textures (what each holds: see common.ts).
 import * as THREE from 'three';
 import type { WorldFrame } from '../sim/world';
 
@@ -7,10 +7,12 @@ export class FieldTextures {
   readonly b: THREE.DataTexture;
   readonly c: THREE.DataTexture;
   readonly d: THREE.DataTexture;
+  readonly e: THREE.DataTexture;
   private dataA: Float32Array;
   private dataB: Float32Array;
   private dataC: Float32Array;
   private dataD: Float32Array;
+  private dataE: Float32Array;
   private version = -1;
 
   constructor(w: number, h: number, floatLinear: boolean) {
@@ -18,6 +20,7 @@ export class FieldTextures {
     this.dataB = new Float32Array(w * h * 4);
     this.dataC = new Float32Array(w * h * 4);
     this.dataD = new Float32Array(w * h * 4);
+    this.dataE = new Float32Array(w * h * 4);
     const make = (data: Float32Array) => {
       const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType);
       // Without float filtering support we fall back to blocky sampling (rare on desktop GPUs).
@@ -32,6 +35,7 @@ export class FieldTextures {
     this.b = make(this.dataB);
     this.c = make(this.dataC);
     this.d = make(this.dataD);
+    this.e = make(this.dataE);
   }
 
   dispose(): void {
@@ -39,6 +43,7 @@ export class FieldTextures {
     this.b.dispose();
     this.c.dispose();
     this.d.dispose();
+    this.e.dispose();
   }
 
   update(frame: WorldFrame): void {
@@ -46,8 +51,8 @@ export class FieldTextures {
     if (frame.w * frame.h * 4 !== this.dataA.length) return; // a frame from before a shape change
     this.version = frame.version;
     const n = frame.w * frame.h;
-    const { dataA, dataB, dataC, dataD } = this;
-    const { homes, farms, fishing, cleared, logging } = frame;
+    const { dataA, dataB, dataC, dataD, dataE } = this;
+    const { homes, farms, fishing, cleared, logging, town, city, plaza } = frame;
     const { height, temperature, wetness, vegetation, waterSurface, river, precipitation, mask } = frame;
     for (let i = 0, o = 0; i < n; i++, o += 4) {
       dataA[o] = height[i];
@@ -66,11 +71,15 @@ export class FieldTextures {
       dataD[o + 1] = logging[i] * (1 - cleared[i]);
       dataD[o + 2] = frame.windX[i];
       dataD[o + 3] = frame.windY[i];
+      dataE[o] = town[i];
+      dataE[o + 1] = city[i];
+      dataE[o + 2] = plaza[i];
       dataB[o + 3] = Math.min(1, Math.max(0, 0.5 + mask[i]));
     }
     this.a.needsUpdate = true;
     this.b.needsUpdate = true;
     this.c.needsUpdate = true;
     this.d.needsUpdate = true;
+    this.e.needsUpdate = true;
   }
 }

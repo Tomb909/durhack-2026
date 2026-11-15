@@ -58,6 +58,89 @@ function house(): THREE.BufferGeometry {
   ]);
 }
 
+/**
+ * A tall, narrow town house of three floors (parts as for the cottage). Towns are built of
+ * these; in a city they stand taller still and are of stone.
+ */
+function townhouse(): THREE.BufferGeometry {
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+  const glass: [number, number, number] = [0.20, 0.22, 0.27];
+  const windows: THREE.BufferGeometry[] = [];
+  for (const y of [0.105, 0.172, 0.236]) {
+    for (const x of [-0.04, 0.04]) for (const z of [-0.071, 0.071]) windows.push(paint(box(0.026, 0.036, 0.006, x, y, z), glass, 2));
+    windows.push(paint(box(0.006, 0.036, 0.026, 0.081, y, 0), glass, 2), paint(box(0.006, 0.036, 0.026, -0.081, y, 0), glass, 2));
+  }
+  return mergeGeometries([
+    paint(box(0.172, 0.018, 0.152, 0, 0.009, 0), [0.50, 0.47, 0.44], 2), // stone footing
+    paint(box(0.16, 0.262, 0.14, 0, 0.131 + 0.006, 0), [1, 1, 1], 0), // walls
+    paint(gable(0.19, 0.172, 0.12).translate(0, 0.266, 0), [1, 1, 1], 1), // steep roof
+    paint(box(0.032, 0.058, 0.006, 0, 0.029 + 0.012, 0.071), [0.30, 0.20, 0.13], 2), // door
+    paint(box(0.026, 0.036, 0.006, 0.05, 0.05, 0.071), glass, 2),
+    paint(box(0.026, 0.036, 0.006, -0.05, 0.05, 0.071), glass, 2),
+    ...windows,
+    paint(box(0.028, 0.075, 0.028, 0.055, 0.35, 0.02), [0.50, 0.33, 0.27], 2), // chimney
+  ]);
+}
+
+/** A town's church: nave, square tower and spire. Colours are final (no per-part tinting). */
+function church(): THREE.BufferGeometry {
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+  const stone: [number, number, number] = [0.80, 0.76, 0.68];
+  const slate: [number, number, number] = [0.30, 0.33, 0.40];
+  const dark: [number, number, number] = [0.16, 0.17, 0.22];
+  return mergeGeometries([
+    paint(box(0.62, 0.3, 0.3, 0, -0.14, 0), [0.50, 0.47, 0.43], 0), // footing, sunk into the ground
+    paint(box(0.42, 0.2, 0.2, 0.06, 0.1, 0), stone, 0), // nave
+    paint(gable(0.44, 0.235, 0.14).translate(0.06, 0.2, 0), slate, 0),
+    paint(box(0.15, 0.46, 0.15, -0.22, 0.23, 0), stone, 0), // tower
+    paint(box(0.17, 0.02, 0.17, -0.22, 0.46, 0), [0.62, 0.59, 0.53], 0),
+    paint(new THREE.ConeGeometry(0.105, 0.3, 4).rotateY(Math.PI / 4).translate(-0.22, 0.62, 0), slate, 0), // spire
+    paint(box(0.008, 0.07, 0.008, -0.22, 0.8, 0), [0.85, 0.72, 0.30], 0), // cross
+    paint(box(0.036, 0.008, 0.008, -0.22, 0.81, 0), [0.85, 0.72, 0.30], 0),
+    ...[-0.06, 0.06, 0.18].flatMap((x) => [-0.101, 0.101].map((z) => paint(box(0.03, 0.1, 0.008, x, 0.11, z), dark, 0))), // tall windows
+    paint(box(0.008, 0.11, 0.06, 0.271, 0.085, 0), dark, 0), // east window
+    paint(box(0.04, 0.08, 0.008, -0.22, 0.04, 0.076), [0.30, 0.20, 0.13], 0), // door in the tower
+    paint(box(0.05, 0.05, 0.008, -0.22, 0.36, 0.076), dark, 0), // belfry openings
+    paint(box(0.05, 0.05, 0.008, -0.22, 0.36, -0.076), dark, 0),
+  ]);
+}
+
+/** A city's castle: a square curtain wall with corner towers and a gatehouse, round a tall keep. */
+function castle(): THREE.BufferGeometry {
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+  const stone: [number, number, number] = [0.64, 0.61, 0.56];
+  const pale: [number, number, number] = [0.74, 0.71, 0.65];
+  const roof: [number, number, number] = [0.50, 0.20, 0.17];
+  const dark: [number, number, number] = [0.14, 0.14, 0.17];
+  const R = 0.4; // half the width of the walls
+  const parts: THREE.BufferGeometry[] = [
+    paint(box(2 * R + 0.1, 0.4, 2 * R + 0.1, 0, -0.2, 0), [0.44, 0.42, 0.39], 0), // rock it stands on, sunk into the ground
+    paint(box(2 * R - 0.06, 0.012, 2 * R - 0.06, 0, 0.006, 0), [0.50, 0.48, 0.45], 0), // the yard
+  ];
+  for (const [x, z, alongX] of [[0, -R, true], [0, R, true], [-R, 0, false], [R, 0, false]] as [number, number, boolean][]) {
+    parts.push(paint(alongX ? box(2 * R, 0.2, 0.05, x, 0.1, z) : box(0.05, 0.2, 2 * R, x, 0.1, z), stone, 0));
+    for (let k = -4; k <= 4; k++) {
+      // The battlements.
+      const t = (k / 4.6) * R;
+      parts.push(paint(alongX ? box(0.045, 0.035, 0.06, x + t, 0.217, z) : box(0.06, 0.035, 0.045, x, 0.217, z + t), pale, 0));
+    }
+  }
+  for (const x of [-R, R]) for (const z of [-R, R]) {
+    parts.push(paint(new THREE.CylinderGeometry(0.085, 0.095, 0.36, 10).translate(x, 0.18, z), pale, 0));
+    parts.push(paint(new THREE.ConeGeometry(0.115, 0.17, 10).translate(x, 0.445, z), roof, 0));
+  }
+  parts.push(
+    paint(box(0.2, 0.3, 0.1, 0, 0.15, R), pale, 0), // gatehouse
+    paint(box(0.08, 0.13, 0.11, 0, 0.065, R), dark, 0), // the gate
+    paint(box(0.3, 0.5, 0.26, 0, 0.25, -0.05), pale, 0), // keep
+    paint(new THREE.ConeGeometry(0.25, 0.2, 4).rotateY(Math.PI / 4).scale(1, 1, 0.88).translate(0, 0.6, -0.05), roof, 0),
+    paint(new THREE.CylinderGeometry(0.004, 0.004, 0.16, 4).translate(0, 0.78, -0.05), [0.3, 0.25, 0.2], 0), // flagpole
+    paint(box(0.07, 0.04, 0.004, 0.036, 0.835, -0.05), [0.85, 0.20, 0.18], 0), // flag
+  );
+  for (const y of [0.2, 0.34]) for (const x of [-0.08, 0.08]) parts.push(paint(box(0.03, 0.06, 0.008, x, y, 0.081), dark, 0));
+  return mergeGeometries(parts);
+}
+
 function boat(): THREE.BufferGeometry {
   const hull: [number, number, number] = [0.42, 0.27, 0.16];
   const sail = new THREE.BufferGeometry();
@@ -216,6 +299,29 @@ void main() {
 }
 `;
 
+/**
+ * Whether a house site is built on, and with what. Shared by the cottages, the town
+ * houses and the chimney smoke, so the three always agree. Needs `uniform float uKind`
+ * (0 cottage, 1 town house): each site holds one or the other.
+ */
+const HOUSE_SITE = /* glsl */ `
+  vec4 a = fieldA(aSite);
+  vec4 b = fieldB(aSite);
+  vec4 c = fieldC(aSite);
+  vec4 e = fieldE(aSite);
+  // A town or city: tall houses, more of them toward the middle, packed closer than a village.
+  float urban = max(e.r, e.g);
+  float tall = step(0.2 + 0.6 * fract(aRand.y * 5.3), urban);
+  // Villages where people live, plus the odd farmstead out in the fields.
+  float density = max(c.r, c.g * 0.18);
+  // A village builds on at most about 1 site in 2, so there are gardens and lanes.
+  float threshold = 0.3 + 1.5 * aRand.x * (1.0 - 0.55 * smoothstep(0.1, 0.7, urban));
+  float dry = 1.0 - smoothstep(0.0, 0.0012, b.r - a.r);
+  float grow = smoothstep(threshold, threshold + 0.08, density) * dry * step(0.5, b.a);
+  grow *= uKind < 0.5 ? 1.0 - tall : tall;
+  float size = uSize * (0.85 + 0.3 * aRand.y) * grow;
+`;
+
 const houseVertex = /* glsl */ `
 ${GLSL_COMMON}
 attribute vec2 aSite;
@@ -223,26 +329,20 @@ attribute vec4 aRand;
 attribute vec3 color;
 attribute float aPart;
 uniform float uSize;
+uniform float uKind;
 varying vec3 vColor;
 varying vec3 vWorld;
 varying float vTemperature;
 varying float vRain;
 varying float vRoof;
 void main() {
-  vec4 a = fieldA(aSite);
-  vec4 b = fieldB(aSite);
-  vec4 c = fieldC(aSite);
-  // Villages where people live, plus the odd farmstead out in the fields.
-  float density = max(c.r, c.g * 0.18);
-  float threshold = 0.3 + 1.5 * aRand.x; // at most about 1 in 2 sites built on, so there are gardens and lanes
-  float dry = 1.0 - smoothstep(0.0, 0.0012, b.r - a.r);
-  float grow = smoothstep(threshold, threshold + 0.08, density) * dry * step(0.5, b.a);
-  float size = uSize * (0.85 + 0.3 * aRand.y) * grow;
-
+${HOUSE_SITE}
   // Houses line up roughly with the field pattern, some turned side-on; some are long cottages.
   float angle = -0.35 + (aRand.z < 0.5 ? 0.0 : 1.5708) + (aRand.w - 0.5) * 0.25;
   float co = cos(angle), si = sin(angle);
   vec3 q = position * vec3(0.9 + 0.35 * fract(aRand.z * 7.31), 1.0, 1.0);
+  // Town houses vary in height; a city's are a floor or two taller again.
+  if (uKind > 0.5) q.y *= 0.85 + 0.3 * fract(aRand.x * 3.7) + e.g * (0.25 + 0.55 * fract(aRand.w * 9.1));
   vec3 p = vec3(co * q.x - si * q.z, q.y, si * q.x + co * q.z) * size;
 
   vec2 xz = tableXz(aSite);
@@ -252,6 +352,13 @@ void main() {
   // Walls: whitewash, ochre, pale stone or rose.
   float w = fract(aRand.x * 11.7);
   vec3 wash = w < 0.4 ? vec3(0.93, 0.90, 0.84) : w < 0.65 ? vec3(0.89, 0.77, 0.56) : w < 0.85 ? vec3(0.78, 0.76, 0.72) : vec3(0.88, 0.72, 0.64);
+  if (uKind > 0.5) {
+    // Town: painted plaster under tile. City: dressed stone under slate.
+    vec3 plaster = w < 0.3 ? vec3(0.92, 0.86, 0.72) : w < 0.55 ? vec3(0.86, 0.66, 0.46) : w < 0.8 ? vec3(0.80, 0.80, 0.76) : vec3(0.74, 0.50, 0.42);
+    vec3 dressed = w < 0.5 ? vec3(0.66, 0.63, 0.58) : w < 0.8 ? vec3(0.74, 0.68, 0.56) : vec3(0.56, 0.55, 0.55);
+    wash = mix(plaster, dressed, step(0.5, e.g + 0.4 * (aRand.z - 0.5)));
+    roof = mix(roof, aRand.w < 0.6 ? vec3(0.28, 0.30, 0.36) : vec3(0.50, 0.22, 0.16), smoothstep(0.2, 0.7, e.g));
+  }
   vColor = (aPart < 0.5 ? wash : aPart < 1.5 ? roof : color) * (0.9 + 0.2 * aRand.y);
   vWorld = world;
   vTemperature = a.g;
@@ -399,9 +506,11 @@ export interface TradeRoute {
   to: LiveCard;
 }
 
+const SETTLEMENT_IDS = new Set(['village', 'town', 'city']);
+
 /** Connect every settlement to the nearest already-connected settlement. */
 export function tradeRoutes(cards: readonly LiveCard[]): TradeRoute[] {
-  const settlements = cards.filter((card) => card.def.id === 'settlement' && card.strength > 0.15);
+  const settlements = cards.filter((card) => SETTLEMENT_IDS.has(card.def.id) && card.strength > 0.15);
   if (settlements.length < 2) return [];
 
   const connected = new Set([0]);
@@ -517,6 +626,54 @@ export class Merchants {
   }
 }
 
+const LANDMARKS: Record<string, { make: () => THREE.BufferGeometry; size: number }> = {
+  town: { make: church, size: 1.15 },
+  city: { make: castle, size: 1.1 },
+};
+
+/** The church in the square of each TOWN card and the castle in the middle of each CITY card. */
+export class Landmarks {
+  readonly group = new THREE.Group();
+  private material: THREE.ShaderMaterial;
+  private geometries = new Map<string, THREE.BufferGeometry>();
+  private meshes = new Map<string, THREE.Mesh>();
+
+  constructor(shared: SharedUniforms) {
+    this.material = new THREE.ShaderMaterial({ uniforms: { ...shared }, vertexShader: merchantVertex, fragmentShader: fragment, side: THREE.DoubleSide });
+  }
+
+  update(cards: LiveCard[], frame: WorldFrame): void {
+    const seen = new Set<string>();
+    for (const card of cards) {
+      const kind = LANDMARKS[card.def.id];
+      if (!kind || card.strength <= 0.02) continue;
+      const ground = sampleField(frame.height, frame.w, frame.h, card.x, card.y);
+      // Nothing is built in open water.
+      if (sampleField(frame.waterSurface, frame.w, frame.h, card.x, card.y) - ground > 0.002) continue;
+      const key = `${card.def.id}:${card.key}`;
+      seen.add(key);
+      let mesh = this.meshes.get(key);
+      if (!mesh) {
+        let geometry = this.geometries.get(card.def.id);
+        if (!geometry) this.geometries.set(card.def.id, (geometry = kind.make()));
+        mesh = new THREE.Mesh(geometry, this.material);
+        mesh.frustumCulled = false;
+        mesh.rotation.y = 0.35; // square with the houses round it
+        this.meshes.set(key, mesh);
+        this.group.add(mesh);
+      }
+      // It rises out of the ground as the card arrives.
+      mesh.position.set((card.x - 0.5) * world.w, ground * HSCALE - 0.01, (card.y - 0.5) * world.d);
+      mesh.scale.set(kind.size, kind.size * card.strength, kind.size);
+    }
+    for (const [key, mesh] of this.meshes) {
+      if (seen.has(key)) continue;
+      this.group.remove(mesh);
+      this.meshes.delete(key);
+    }
+  }
+}
+
 /** Five wisps of chimney smoke per house (part = which wisp). Same sites as the houses. */
 const WISPS = 5;
 function smoke(): THREE.BufferGeometry {
@@ -529,20 +686,14 @@ attribute vec2 aSite;
 attribute vec4 aRand;
 attribute float aPart;
 uniform float uSize;
+uniform float uKind;
 varying float vAlpha;
 varying float vLife;
 varying vec3 vWorld;
 varying vec3 vNormal;
 void main() {
-  // The same house as houseVertex at this site (keep the two in step).
-  vec4 a = fieldA(aSite);
-  vec4 b = fieldB(aSite);
-  vec4 c = fieldC(aSite);
-  float density = max(c.r, c.g * 0.18);
-  float threshold = 0.3 + 1.5 * aRand.x;
-  float dry = 1.0 - smoothstep(0.0, 0.0012, b.r - a.r);
-  float grow = smoothstep(threshold, threshold + 0.08, density) * dry * step(0.5, b.a);
-  float size = uSize * (0.85 + 0.3 * aRand.y) * grow;
+  // The same cottage as houseVertex at this site.
+${HOUSE_SITE}
   float angle = -0.35 + (aRand.z < 0.5 ? 0.0 : 1.5708) + (aRand.w - 0.5) * 0.25;
   float co = cos(angle), si = sin(angle);
   vec3 chimney = vec3(0.06 * (0.9 + 0.35 * fract(aRand.z * 7.31)), 0.255, 0.03);
@@ -639,7 +790,7 @@ void main() {
 
 function makeSites(
   shared: SharedUniforms, base: THREE.BufferGeometry, vertex: string, columns: number, rows: number, seed: number, size: number,
-  frag = fragment, transparent = false, jitter = 0.9,
+  frag = fragment, transparent = false, jitter = 0.9, kind = 0,
 ): THREE.Mesh {
   const count = columns * rows;
   const sites = new Float32Array(count * 2);
@@ -665,7 +816,7 @@ function makeSites(
   geometry.setAttribute('aRand', new THREE.InstancedBufferAttribute(rand, 4));
   geometry.instanceCount = count;
   const material = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uSize: { value: size } },
+    uniforms: { ...shared, uSize: { value: size }, uKind: { value: kind } },
     vertexShader: vertex,
     fragmentShader: frag,
     side: THREE.DoubleSide,
@@ -683,6 +834,8 @@ export function makePeople(shared: SharedUniforms): THREE.Group {
   // Houses and their chimney smoke share sites (same grid and seed), so the smoke finds its chimney.
   // A coarse grid with little jitter: each house has its own plot, so they never pile into each other.
   group.add(makeSites(shared, house(), houseVertex, 44, 31, 71, 0.72, fragment, false, 0.45));
+  // Town houses use the same sites: each site is a cottage or a town house, never both.
+  group.add(makeSites(shared, townhouse(), houseVertex, 44, 31, 71, 0.72, fragment, false, 0.45, 1));
   group.add(makeSites(shared, smoke(), smokeVertex, 44, 31, 71, 0.72, smokeFragment, true, 0.45));
   group.add(makeSites(shared, sheep(), sheepVertex, 70, 50, 113, 1.1));
   group.add(makeSites(shared, boat(), boatVertex, 40, 28, 83, 0.62));

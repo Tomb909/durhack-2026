@@ -27,12 +27,12 @@ const CARD_SVG = `<svg viewBox="0 0 210 150" role="img" aria-label="A scrap of p
   <path d="M72 96 H138 M126 86 L138 96 L126 106" fill="none" stroke="#111" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
   <text x="105" y="132" text-anchor="middle" font-size="10" fill="#2f6fed">blank margin all round</text></svg>`;
 
-const SIDE_SVG = `<svg viewBox="0 0 210 150" role="img" aria-label="Two WATER scraps side by side is right; one on top of the other is wrong">
-  <rect x="8" y="40" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="37" y="58" text-anchor="middle" font-size="11" font-weight="800" fill="#111">WATER</text>
-  <rect x="8" y="74" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="37" y="92" text-anchor="middle" font-size="11" font-weight="800" fill="#111">WATER</text>
+const SIDE_SVG = `<svg viewBox="0 0 210 150" role="img" aria-label="Two RAIN scraps side by side is right; one on top of the other is wrong">
+  <rect x="8" y="40" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="37" y="58" text-anchor="middle" font-size="11" font-weight="800" fill="#111">RAIN</text>
+  <rect x="8" y="74" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="37" y="92" text-anchor="middle" font-size="11" font-weight="800" fill="#111">RAIN</text>
   <text x="37" y="124" text-anchor="middle" font-size="22" fill="#15803d">✓</text>
-  <rect x="132" y="50" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="161" y="68" text-anchor="middle" font-size="11" font-weight="800" fill="#111">WATER</text>
-  <rect x="140" y="60" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="169" y="78" text-anchor="middle" font-size="11" font-weight="800" fill="#111">WATER</text>
+  <rect x="132" y="50" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="161" y="68" text-anchor="middle" font-size="11" font-weight="800" fill="#111">RAIN</text>
+  <rect x="140" y="60" width="58" height="26" fill="#fbfaf5" stroke="#bbb"/><text x="169" y="78" text-anchor="middle" font-size="11" font-weight="800" fill="#111">RAIN</text>
   <text x="165" y="124" text-anchor="middle" font-size="22" fill="#b91c1c">✗</text></svg>`;
 
 const PHONE_SVG = `<svg viewBox="0 0 210 150" role="img" aria-label="A phone held 40 to 60 centimetres above the sheet, looking down">
@@ -55,7 +55,7 @@ export class Guide {
         <figure>${PHONE_SVG}<figcaption><b>4. Prop the phone above.</b> 40–60 cm up, the whole sheet in view with a little table showing on every side. Press <b>P</b> for the QR code, then tap Start camera.</figcaption></figure>
       </div>
       <p class="words">The words: ${words}</p>
-      <p class="hint">Turning ordinary cards does nothing. WIND is directional: rotate its card to point the arrow where the wind should blow. WIND+LIFE+WATER grows a downwind tree line; WIND+ICE makes a blizzard and blows snow off high ground. Check a new card with <b>C</b>. If left and right are swapped, press <b>R</b>.</p>`;
+      <p class="hint">Turning ordinary cards does nothing. WIND is directional: rotate its card to point the arrow where the wind should blow. WIND+FOREST+RAIN grows a downwind tree line; WIND+ICE makes a blizzard and blows snow off high ground. Check a new card with <b>C</b>. If left and right are swapped, press <b>R</b>.</p>`;
   }
   toggle(): void {
     this.root.hidden = !this.root.hidden;

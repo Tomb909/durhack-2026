@@ -14,14 +14,14 @@ describe('the mood the sky follows', () => {
     expect(mood('sun*2').hot).toBeGreaterThan(0.6);
     expect(mood('sun*2').cold).toBe(0);
     expect(mood('ice*2').cold).toBeGreaterThan(0.6);
-    expect(mood('water*3').wet).toBeGreaterThan(0.6);
-    expect(mood('life+water').life).toBeGreaterThan(0.4);
-    // Life alone is only grass and scrub: a hint of green, far short of a forest's.
-    expect(mood('life').life).toBeGreaterThan(0);
-    expect(mood('life').life).toBeLessThan(mood('life+water').life / 2);
+    expect(mood('rain*3').wet).toBeGreaterThan(0.6);
+    expect(mood('forest+rain').life).toBeGreaterThan(0.4);
+    // Forest alone is only grass and scrub: a hint of green, far short of a forest's.
+    expect(mood('forest').life).toBeGreaterThan(0);
+    expect(mood('forest').life).toBeLessThan(mood('forest+rain').life / 2);
   });
   it('stays between 0 and 1', () => {
-    for (const value of Object.values(mood('mountain*3+water*3+sun*3+ice*3+life*3'))) {
+    for (const value of Object.values(mood('mountain*3+rain*3+sun*3+ice*3+forest*3'))) {
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThanOrEqual(1);
     }

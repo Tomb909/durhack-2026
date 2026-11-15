@@ -3,7 +3,12 @@
 import raw from './cards.json';
 
 /** The underlying world properties a card may push on. */
-export type FieldName = 'height' | 'temperature' | 'wetness' | 'life' | 'settlement' | 'seaLevel';
+export type FieldName =
+  | 'height' | 'temperature' | 'wetness' | 'forest' | 'seaLevel'
+  /** A basin dug at the card and kept full. `radius` is the lake's size; `amount` is unused. */
+  | 'lake'
+  /** People: how far they reach (houses, farms, boats), and what kind of place it is. */
+  | 'settlement' | 'town' | 'city' | 'plaza';
 
 export interface CardEffect {
   field: FieldName;

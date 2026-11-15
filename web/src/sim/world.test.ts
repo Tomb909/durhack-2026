@@ -93,8 +93,8 @@ describe('BIG modifier', () => {
     const empty = settle([]);
     const oneBig = settle([card('big', 0.4, 0.5), card('mountain', 0.5, 0.5)]);
     const twoBig = settle([card('big', 0.36, 0.5), card('big', 0.44, 0.5), card('mountain', 0.5, 0.5)]);
-    const water = settle([card('water', 0.5, 0.5)]);
-    const bigWater = settle([card('big', 0.4, 0.5), card('water', 0.5, 0.5)]);
+    const water = settle([card('rain', 0.5, 0.5)]);
+    const bigWater = settle([card('big', 0.4, 0.5), card('rain', 0.5, 0.5)]);
     const distantLift = (frame: WorldFrame) => at(frame, frame.height, 0.74, 0.5) - at(empty, empty.height, 0.74, 0.5);
     expect(distantLift(twoBig)).toBeGreaterThan(distantLift(oneBig));
     expect(at(bigWater, bigWater.wetness, 0.75, 0.5)).toBeGreaterThan(at(water, water.wetness, 0.75, 0.5) + 0.08);
@@ -102,9 +102,9 @@ describe('BIG modifier', () => {
   });
 });
 
-describe('water', () => {
+describe('rain', () => {
   it('rains near the card and forms rivers or lakes', () => {
-    const f = settle([card('water', 0.35, 0.35)]);
+    const f = settle([card('rain', 0.35, 0.35)]);
     expect(at(f, f.precipitation, 0.35, 0.35)).toBeGreaterThan(0.4);
     expect(at(f, f.precipitation, 0.95, 0.9)).toBe(0);
     const wetLand = fractionWhere(f, (i) => f.height[i] >= f.seaLevel && f.waterSurface[i] > f.height[i]);
@@ -112,20 +112,94 @@ describe('water', () => {
   });
   it('rains harder with each copy', () => {
     const rain = (count: number) => {
-      const f = settle(Array.from({ length: count }, (_, i) => card('water', 0.3 + 0.04 * i, 0.3)));
+      const f = settle(Array.from({ length: count }, (_, i) => card('rain', 0.3 + 0.04 * i, 0.3)));
       return f.precipitation.reduce((a, b) => a + b, 0);
     };
     expect(rain(2)).toBeGreaterThan(rain(1) * 1.25);
     expect(rain(3)).toBeGreaterThan(rain(2) * 1.1);
   });
-  it('floods the lowlands by the third copy', () => {
-    const land = (count: number) => flooded(settle(Array.from({ length: count }, (_, i) => card('water', 0.2 + 0.05 * i, 0.2))));
-    expect(land(1)).toBeLessThan(0.02);
-    expect(land(2)).toBeGreaterThan(0.01);
-    expect(land(2)).toBeLessThan(0.25);
-    expect(land(3)).toBeGreaterThan(0.25);
-    expect(land(3)).toBeGreaterThan(land(1) + 0.2);
-    expect(land(3)).toBeLessThan(0.75);
+  it('never raises the sea, however many copies', () => {
+    const f = settle(Array.from({ length: 5 }, (_, i) => card('rain', 0.2 + 0.05 * i, 0.2)));
+    expect(f.seaLevel).toBe(RULES.seaBase);
+    expect(flooded(f)).toBe(0);
+  });
+});
+
+const open = (f: WorldFrame, x: number, y: number) => at(f, f.waterSurface, x, y) - at(f, f.height, x, y);
+const openWater = (f: WorldFrame) => fractionWhere(f, (i) => f.waterSurface[i] - f.height[i] > 0.002);
+
+describe('lake', () => {
+  it('digs a basin at the card and fills it, with no rain', () => {
+    const empty = settle([]);
+    const f = settle([card('lake', 0.45, 0.5)]);
+    expect(at(f, f.height, 0.45, 0.5)).toBeLessThan(at(empty, empty.height, 0.45, 0.5) - 0.01);
+    expect(open(f, 0.45, 0.5)).toBeGreaterThan(0.01);
+    expect(Math.max(...f.precipitation)).toBe(0);
+    expect(open(f, 0.85, 0.2)).toBeLessThan(0);
+    expect(openWater(f)).toBeGreaterThan(0.005);
+    expect(openWater(f)).toBeLessThan(0.06);
+  });
+  it('holds water on a mountainside too', () => {
+    const f = settle([card('mountain', 0.4, 0.5), card('lake', 0.52, 0.5)]);
+    expect(open(f, 0.52, 0.5)).toBeGreaterThan(0.008);
+  });
+  it('is wider with BIG beside it', () => {
+    const plain = settle([card('lake', 0.45, 0.5)]);
+    const big = settle([card('lake', 0.45, 0.5), card('big', 0.6, 0.5)]);
+    expect(openWater(big)).toBeGreaterThan(openWater(plain) * 1.5);
+  });
+  it('fills in step with the card as it fades', () => {
+    const half = settle([card('lake', 0.45, 0.5, 0.5)]);
+    const full = settle([card('lake', 0.45, 0.5)]);
+    expect(open(half, 0.45, 0.5)).toBeLessThan(open(full, 0.45, 0.5));
+    expect(openWater(settle([card('lake', 0.45, 0.5, 0)]))).toBe(0);
+  });
+});
+
+describe('river', () => {
+  const wetAt = (f: WorldFrame, x: number, y: number) => {
+    // The strongest river crossing the table near this x, within a wide band about y.
+    let best = 0;
+    for (let dy = -0.3; dy <= 0.3; dy += 0.005) for (let dx = -0.04; dx <= 0.04; dx += 0.005) best = Math.max(best, at(f, f.river, x + dx, y + dy));
+    return best;
+  };
+  it('runs through the card with no rain at all', () => {
+    const f = settle([card('river', 0.5, 0.5)]);
+    expect(at(f, f.river, 0.5, 0.5)).toBeGreaterThan(0.5);
+    expect(Math.max(...f.precipitation)).toBe(0);
+    expect(fractionWhere(f, (i) => f.river[i] > 0.5)).toBeGreaterThan(0.002);
+    // It reaches the edge of the world.
+    const { w, h } = f;
+    expect(fractionWhere(f, (i) => f.river[i] > 0.5 && (i % w < 2 || i % w > w - 3 || i < 2 * w || i >= (h - 2) * w))).toBeGreaterThan(0);
+  });
+  it('flows from a mountain, through the card, and on away from it', () => {
+    const right = settle([card('mountain', 0.15, 0.5), card('river', 0.5, 0.5)]);
+    expect(wetAt(right, 0.33, 0.5)).toBeGreaterThan(0.5); // between the mountain and the card
+    expect(wetAt(right, 0.8, 0.5)).toBeGreaterThan(0.5); // beyond the card
+    expect(at(right, right.height, 0.3, 0.5)).toBeGreaterThan(at(right, right.height, 0.5, 0.5));
+    const left = settle([card('mountain', 0.85, 0.5), card('river', 0.5, 0.5)]);
+    expect(wetAt(left, 0.2, 0.5)).toBeGreaterThan(0.5);
+  });
+  it('always runs downhill', () => {
+    const sim = new WorldSim();
+    const f = sim.settleNow([card('mountain', 0.2, 0.3), card('river', 0.55, 0.6)]);
+    // Wherever the river is strong, some neighbour is lower: no stretch is left standing in a pit.
+    const { w, h } = f;
+    let stuck = 0, strong = 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      if (f.river[i] < 0.9) continue;
+      strong++;
+      const level = f.height[i];
+      const lower = [i - 1, i + 1, i - w, i + w, i - w - 1, i - w + 1, i + w - 1, i + w + 1].some((k) => f.height[k] < level);
+      if (!lower) stuck++;
+    }
+    expect(strong).toBeGreaterThan(40);
+    expect(stuck / strong).toBeLessThan(0.02);
+  });
+  it('fills a lake it runs into without draining it', () => {
+    const f = settle([card('mountain', 0.15, 0.5), card('river', 0.4, 0.5), card('lake', 0.62, 0.5)]);
+    expect(openWater(f)).toBeGreaterThan(0.004);
   });
 });
 
@@ -139,8 +213,8 @@ describe('wind', () => {
     expect(at(west, west.windY, 0.5, 0.5)).toBeCloseTo(0, 3);
   });
 
-  it('scatters LIFE downwind into a narrow line of trees', () => {
-    const cards = [card('life', 0.35, 0.5), card('water', 0.35, 0.5)];
+  it('scatters FOREST downwind into a narrow line of trees', () => {
+    const cards = [card('forest', 0.35, 0.5), card('rain', 0.35, 0.5)];
     const still = settle(cards);
     const eastward = settle([...cards, card('wind', 0.35, 0.5)]);
     const westward = settle([...cards, card('wind', 0.35, 0.5, 1, Math.PI)]);
@@ -157,8 +231,8 @@ describe('wind', () => {
   });
 
   it('scours wet snow from high ground only when wind is present', () => {
-    const mountain = settle([card('mountain', 0.5, 0.5), card('water', 0.5, 0.5)]);
-    const storm = settle([card('mountain', 0.5, 0.5), card('water', 0.5, 0.5), card('wind', 0.5, 0.5)]);
+    const mountain = settle([card('mountain', 0.5, 0.5), card('rain', 0.5, 0.5)]);
+    const storm = settle([card('mountain', 0.5, 0.5), card('rain', 0.5, 0.5), card('wind', 0.5, 0.5)]);
     expect(Math.max(...mountain.snowBlow)).toBe(0);
     expect(Math.max(...storm.snowBlow)).toBeGreaterThan(0.1);
   });
@@ -177,26 +251,26 @@ describe('climate comes from combinations, not single cards', () => {
     expect(peak).toBeLessThan(RULES.freezing);
     expect(peak).toBeLessThan(lowland);
   });
-  it('life alone is grass and scrub; forest needs it warm and wet enough', () => {
-    const lifeOnly = settle([card('life', 0.4, 0.4)]);
-    expect(at(lifeOnly, lifeOnly.vegetation, 0.4, 0.4)).toBeGreaterThan(0.15);
-    expect(fractionWhere(lifeOnly, (i) => lifeOnly.vegetation[i] > 0.4)).toBe(0);
+  it('forest alone is grass and scrub; forest needs it warm and wet enough', () => {
+    const forestOnly = settle([card('forest', 0.4, 0.4)]);
+    expect(at(forestOnly, forestOnly.vegetation, 0.4, 0.4)).toBeGreaterThan(0.15);
+    expect(fractionWhere(forestOnly, (i) => forestOnly.vegetation[i] > 0.4)).toBe(0);
 
-    const withWater = settle([card('life', 0.4, 0.4), card('water', 0.4, 0.4)]);
+    const withWater = settle([card('forest', 0.4, 0.4), card('rain', 0.4, 0.4)]);
     const cover = fractionWhere(withWater, (i) => withWater.vegetation[i] > 0.4);
     expect(cover).toBeGreaterThan(0.03);
 
-    const desert = settle([card('life', 0.4, 0.4), card('sun', 0.4, 0.4)]);
+    const desert = settle([card('forest', 0.4, 0.4), card('sun', 0.4, 0.4)]);
     expect(at(desert, desert.vegetation, 0.4, 0.4)).toBeLessThan(0.15);
 
-    const frozen = settle([card('life', 0.4, 0.4), card('water', 0.4, 0.4), card('ice', 0.4, 0.4), card('ice', 0.42, 0.4)]);
+    const frozen = settle([card('forest', 0.4, 0.4), card('rain', 0.4, 0.4), card('ice', 0.4, 0.4), card('ice', 0.42, 0.4)]);
     expect(at(frozen, frozen.vegetation, 0.4, 0.4)).toBeLessThan(0.05);
   });
   it('wet and cold snows; wet and warm rains', () => {
-    const cold = settle([card('water', 0.4, 0.4), card('ice', 0.4, 0.4)]);
+    const cold = settle([card('rain', 0.4, 0.4), card('ice', 0.4, 0.4)]);
     expect(at(cold, cold.precipitation, 0.4, 0.4)).toBeGreaterThan(0.3);
     expect(at(cold, cold.temperature, 0.4, 0.4)).toBeLessThan(RULES.freezing);
-    const warm = settle([card('water', 0.4, 0.4)]);
+    const warm = settle([card('rain', 0.4, 0.4)]);
     expect(at(warm, warm.temperature, 0.4, 0.4)).toBeGreaterThan(RULES.freezing);
   });
 });
@@ -211,6 +285,18 @@ describe('smoothness', () => {
     expect(lift(half)).toBeGreaterThan(lift(full) * 0.35);
     expect(lift(half)).toBeLessThan(lift(full) * 0.65);
     expect(lift(none)).toBeCloseTo(0, 5);
+  });
+  it('a mountain dragged across dry land leaves no water behind it', () => {
+    const sim = new WorldSim();
+    const mountain = card('mountain', 0.2, 0.5);
+    sim.settleNow([mountain]);
+    let wettest = 0;
+    for (let step = 0; step < 30; step++) {
+      mountain.x += 0.02;
+      const f = sim.step([mountain], true, 1 / 30);
+      wettest = Math.max(wettest, fractionWhere(f, (i) => f.waterSurface[i] - f.height[i] > 0.0002));
+    }
+    expect(wettest).toBe(0);
   });
 });
 
@@ -238,8 +324,8 @@ describe('shape', () => {
   });
 
   it('nothing grows or rains outside the circle', () => {
-    const cards = [0.08, 0.5, 0.92].flatMap((x) => [0.08, 0.5, 0.92].map((y) => card('life', x, y)));
-    cards.push(card('water', 0.08, 0.08), card('water', 0.5, 0.5));
+    const cards = [0.08, 0.5, 0.92].flatMap((x) => [0.08, 0.5, 0.92].map((y) => card('forest', x, y)));
+    cards.push(card('rain', 0.08, 0.08), card('rain', 0.5, 0.5));
     const f = new WorldSim(CIRCLE).settleNow(cards);
     const outside = (i: number) => f.mask[i] < -0.5;
     expect(fractionWhere(f, (i) => outside(i) && (f.vegetation[i] > 0 || f.precipitation[i] > 0 || f.river[i] > 0))).toBe(0);
@@ -247,7 +333,7 @@ describe('shape', () => {
   });
 
   it('rivers drain off the edge of the circle', () => {
-    const cards = [0.35, 0.45, 0.55].flatMap((x) => [card('water', x, 0.4), card('mountain', x, 0.3)]);
+    const cards = [0.35, 0.45, 0.55].flatMap((x) => [card('rain', x, 0.4), card('mountain', x, 0.3)]);
     const f = new WorldSim(CIRCLE).settleNow(cards);
     expect(fractionWhere(f, (i) => f.river[i] > 0.5)).toBeGreaterThan(0.002);
     // Some river reaches the rim (or the sea) instead of stopping inside.
@@ -263,38 +349,58 @@ describe('people', () => {
   const total = (a: Float32Array, t = 0.3) => a.filter((v) => v > t).length / a.length;
 
   it('build houses where they are placed, on dry liveable land', () => {
-    const f = settle([card('settlement', 0.4, 0.5)]);
+    const f = settle([card('village', 0.4, 0.5)]);
     expect(at(f, f.homes, 0.4, 0.5)).toBeGreaterThan(0.5);
     expect(at(f, f.homes, 0.9, 0.2)).toBe(0);
     expect(total(f.homes)).toBeLessThan(0.12);
   });
 
   it('farm flat land only when it is wet enough', () => {
-    expect(total(settle([card('settlement', 0.4, 0.5)]).farms)).toBe(0);
-    const f = settle([card('settlement', 0.4, 0.5), card('water', 0.45, 0.5)]);
+    expect(total(settle([card('village', 0.4, 0.5)]).farms)).toBe(0);
+    const f = settle([card('village', 0.4, 0.5), card('rain', 0.45, 0.5)]);
     expect(total(f.farms)).toBeGreaterThan(0.05);
   });
 
   it('fish where there is open water nearby', () => {
-    const lake = [card('water', 0.3, 0.5), card('water', 0.5, 0.5), card('water', 0.6, 0.6)];
+    const lake = [card('lake', 0.5, 0.5)];
     expect(total(settle(lake).fishing, 0.2)).toBe(0);
-    expect(total(settle([...lake, card('settlement', 0.4, 0.5)]).fishing, 0.2)).toBeGreaterThan(0.01);
+    expect(total(settle([...lake, card('village', 0.4, 0.5)]).fishing, 0.2)).toBeGreaterThan(0.004);
   });
 
   it('do not live on mountain peaks or in frozen land', () => {
-    expect(Math.max(...settle([card('settlement', 0.4, 0.5), card('mountain', 0.4, 0.5)]).homes)).toBeLessThan(0.3);
-    expect(Math.max(...settle([card('settlement', 0.4, 0.5), card('ice', 0.4, 0.5), card('ice', 0.42, 0.5)]).homes)).toBeLessThan(0.3);
+    expect(Math.max(...settle([card('village', 0.4, 0.5), card('mountain', 0.4, 0.5)]).homes)).toBeLessThan(0.35);
+    expect(Math.max(...settle([card('village', 0.4, 0.5), card('ice', 0.4, 0.5), card('ice', 0.42, 0.5)]).homes)).toBeLessThan(0.3);
   });
 
   it('clear the forest for their fields', () => {
-    const wild = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5)]);
-    const farmed = settle([card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('settlement', 0.4, 0.5)]);
+    const wild = settle([card('forest', 0.4, 0.5), card('rain', 0.45, 0.5)]);
+    const farmed = settle([card('forest', 0.4, 0.5), card('rain', 0.45, 0.5), card('village', 0.4, 0.5)]);
     expect(total(farmed.vegetation)).toBeLessThan(total(wild.vegetation) * 0.6);
   });
 });
 
+describe('village, town and city', () => {
+  const sum = (a: Float32Array) => a.reduce((s, v) => s + v, 0);
+  it('are three sizes of the same thing', () => {
+    const [village, town, city] = ['village', 'town', 'city'].map((id) => settle([card(id, 0.5, 0.5)]));
+    expect(sum(town.homes)).toBeGreaterThan(sum(village.homes) * 1.2);
+    expect(sum(city.homes)).toBeGreaterThan(sum(town.homes) * 1.2);
+  });
+  it('only towns and cities have tall buildings and a square', () => {
+    const [village, town, city] = ['village', 'town', 'city'].map((id) => settle([card(id, 0.5, 0.5)]));
+    expect(Math.max(...village.town, ...village.city, ...village.plaza)).toBe(0);
+    expect(at(town, town.town, 0.5, 0.5)).toBeGreaterThan(0.9);
+    expect(Math.max(...town.city)).toBe(0);
+    expect(at(city, city.city, 0.5, 0.5)).toBeGreaterThan(0.9);
+    // The square itself is clear of houses, with houses all round it.
+    expect(at(city, city.plaza, 0.5, 0.5)).toBeGreaterThan(0.9);
+    expect(at(city, city.homes, 0.5, 0.5)).toBeLessThan(0.1);
+    expect(Math.max(at(city, city.homes, 0.6, 0.5), at(city, city.homes, 0.4, 0.5))).toBeGreaterThan(0.6);
+  });
+});
+
 describe('woodcutters', () => {
-  const forest = () => [card('life', 0.4, 0.5), card('water', 0.45, 0.5), card('settlement', 0.55, 0.5)];
+  const forest = () => [card('forest', 0.4, 0.5), card('rain', 0.45, 0.5), card('village', 0.55, 0.5)];
   const felled = (f: WorldFrame) => f.cleared.reduce((s, v) => s + v, 0);
 
   it('fell the forest near people over time, never in an instant settle', () => {

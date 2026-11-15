@@ -1,11 +1,11 @@
 // Combination codes: a short text saying which cards are on the table and where.
 //
-//   water                    one card, in the default place
-//   water*3                  three copies side by side (also: water_x3)
-//   life+water+sun           several cards (also: life_water_sun, "life water sun")
-//   water*3+life@0.8,0.6     a card at a table position: x left to right, y far to near, 0..1
+//   rain                     one card, in the default place
+//   rain*3                   three copies side by side (also: rain_x3)
+//   forest+rain+sun          several cards (also: forest_rain_sun, "forest rain sun")
+//   rain*3+forest@0.8,0.6    a card at a table position: x left to right, y far to near, 0..1
 //   wind~90@0.5,0.5          a card rotated 90 degrees clockwise
-//   m+wate*2                 any unambiguous start of a card's id
+//   m+rai*2                  any unambiguous start of a card's id
 //   empty                    no cards
 //
 // Card ids come from cards.json, so a new card can be used in codes straight away.
@@ -67,7 +67,7 @@ function parseGroups(code: string): Group[] {
       continue;
     }
     const m = /^([a-z][a-z0-9-]*)(?:\*(\d+))?(?:~(-?(?:\d+(?:\.\d*)?|\.\d+)))?(?:@(\d*\.?\d+),(\d*\.?\d+))?$/.exec(token);
-    if (!m) throw new Error(`cannot read "${token}" (try: water, water*3, wind~90@0.5,0.5)`);
+    if (!m) throw new Error(`cannot read "${token}" (try: rain, rain*3, wind~90@0.5,0.5)`);
     groups.push({
       id: resolveId(m[1]),
       copies: m[2] ? Number(m[2]) : 1,
@@ -121,7 +121,7 @@ export function parseCode(code: string, layout: Layout = 'cluster'): Placement[]
   return cards;
 }
 
-/** The same code written one standard way: `water*3+life@0.8,0.6`. */
+/** The same code written one standard way: `rain*3+forest@0.8,0.6`. */
 export function tidyCode(code: string): string {
   const groups = parseGroups(code);
   if (!groups.length) return 'empty';
@@ -130,7 +130,7 @@ export function tidyCode(code: string): string {
   ).join('+');
 }
 
-/** A file-friendly name: `water_x3_life`. */
+/** A file-friendly name: `rain_x3_forest`. */
 export function nameOf(code: string): string {
   const groups = parseGroups(code);
   if (!groups.length) return 'empty';
@@ -164,10 +164,14 @@ function pairs(): string[] {
 
 /** The hand-picked tour of what the rules can do. */
 const SHOWCASE: [code: string, name?: string][] = [
-  ['empty'], ['mountain'], ['mountain*3'], ['water'], ['water*3'], ['sun'], ['ice'], ['mountain+ice'], ['water+ice'],
-  ['water+sun'], ['life'], ['life+water'], ['life+water+sun'], ['life+water+ice'], ['life+sun'], ['mountain+water'],
-  ['water*3@0.3,0.3+life@0.8,0.6', 'life_by_flooded_sea'],
-  ['settlement'], ['settlement+water+life'], ['big+mountain'],
+  ['empty'], ['mountain'], ['mountain*3'], ['rain'], ['rain*3'], ['sun'], ['ice'], ['mountain+ice'], ['rain+ice'],
+  ['rain+sun'], ['forest'], ['forest+rain'], ['forest+rain+sun'], ['forest+rain+ice'], ['forest+sun'], ['mountain+rain'],
+  ['lake'], ['big+lake'], ['lake+ice'], ['river'],
+  ['mountain@0.15,0.5+river@0.5,0.5', 'river_from_the_mountain'],
+  ['mountain@0.15,0.4+river@0.45,0.5+lake@0.7,0.55+forest@0.6,0.35', 'river_through_a_lake'],
+  ['village'], ['town'], ['city'], ['village+rain+forest'],
+  ['village@0.2,0.5+town@0.5,0.45+city@0.8,0.5+rain@0.5,0.7', 'village_town_city'],
+  ['big+mountain'],
 ];
 
 export const SETS: Record<string, () => [code: string, name?: string][]> = {
@@ -182,7 +186,7 @@ export const SETS: Record<string, () => [code: string, name?: string][]> = {
 export interface ScenarioRequest {
   /** One or more set names, comma separated. */
   set?: string | null;
-  /** Codes separated by ";" or "|" or new lines. Each may be given a name: `flood=water*3`. */
+  /** Codes separated by ";" or "|" or new lines. Each may be given a name: `wet=rain*3`. */
   codes?: string | null;
   layout?: Layout;
 }

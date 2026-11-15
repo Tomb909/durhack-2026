@@ -130,7 +130,7 @@ class Server:
                     Scrap("MOUNTAIN", 0.25, 0.3, angle=10),
                     Scrap("WATER", 0.5 + 0.25 * math.cos(t * 0.5), 0.5 + 0.25 * math.sin(t * 0.5), angle=t * 20),
                     Scrap("SUN", 0.8, 0.25, angle=95),
-                    Scrap("LIFE", 0.3, 0.75, angle=-30),
+                    Scrap("FOREST", 0.3, 0.75, angle=-30),
                 ]
                 frame = await asyncio.to_thread(render_frame, scraps, (1280, 720))
                 ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])

@@ -153,10 +153,10 @@ window.addEventListener('keyup', (e) => {
 window.addEventListener('blur', () => moveKeys.clear());
 
 // --- cards by code, with no waiting -------------------------------------------------
-//   ?cards=water*3+life@0.8,0.6   start with these cards, already settled
+//   ?cards=rain*3+forest@0.8,0.6   start with these cards, already settled
 //   ?instant                      no fading or easing at all (also the I key)
 //   ?still=6                      freeze the picture at this moment (seconds)
-// The same from the console: deck.set('life+water+sun')
+// The same from the console: deck.set('forest+rain+sun')
 
 const params = new URLSearchParams(location.search);
 store.instant = params.has('instant');

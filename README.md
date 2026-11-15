@@ -1,8 +1,8 @@
 # Deck of Worlds
 
-Handwritten word cards on a table, watched by a phone, reshape a 3D world on a laptop. Turn WIND to steer rain, spread LIFE+WATER into a tree line, blow snow off mountains, raise blizzards with ICE, and move boats, merchants, smoke and dust. DurHack 2026.
+Handwritten word cards on a table, watched by a phone, reshape a 3D world on a laptop. Turn WIND to steer rain, spread FOREST+RAIN into a tree line, blow snow off mountains, raise blizzards with ICE, and move boats, merchants, smoke and dust. DurHack 2026.
 
-Put **MOUNTAIN** in a corner and mountains rise there. Add **WATER** and it rains; add more and the sea floods the lowlands. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **LIFE** grows forest only where it is warm and wet enough. Every card shows on its own too: LIFE alone is grass and scattered trees, ICE alone frosts the ground. The world comes from how the cards combine.
+Put **MOUNTAIN** in a corner and mountains rise there. Add **RAIN** and it rains, and rivers gather where the rain runs off. **LAKE** digs a basin at the card and fills it. **RIVER** runs a river through the card: it rises on the highest ground around (a mountain, if there is one), comes down through the card and carries on to the edge of the world. **VILLAGE**, **TOWN** and **CITY** are three sizes of settlement: cottages and farms, then tall town houses round a church, then a packed stone city round a castle. **ICE** beside the mountains snows the peaks, **SUN** dries a desert, and **FOREST** grows trees only where it is warm and wet enough. The empty world is open grassland, and every card shows on its own too: FOREST alone is scrub and scattered trees, ICE alone frosts the ground. The world comes from how the cards combine.
 
 ## Run it
 
@@ -75,14 +75,14 @@ A **Reset view** button also appears at the top right whenever the view has been
 
 A developer option, hidden by default: press **Tab** to show the table map and a tray of cards. Drag a card from the tray onto the map, or straight onto the world. Drag it off to remove it. They add to whatever the camera sees. If the camera drops out, the tray appears by itself and the real cards stay where they were and become draggable, with no restart.
 
-Place **BIG** near the card it modifies, on any side, with their centers no more than 30% of the table width apart. The nearest card is modified, and the table map marks it with **+BIG**. BIG increases that card's local area of influence by 1.5×; on MOUNTAIN, it also makes the height effect 1.5× stronger. Multiple BIG cards stack. Global effects such as WATER's sea-level rise are unchanged.
+Place **BIG** near the card it modifies, on any side, with their centers no more than 30% of the table width apart. The nearest card is modified, and the table map marks it with **+BIG**. BIG increases that card's local area of influence by 1.5×; on MOUNTAIN, it also makes the height effect 1.5× stronger. Multiple BIG cards stack. BIG makes a LAKE wider.
 
 ## Making cards and the sheet
 
 - **Sheet:** A3 (or two A4s taped flat). Draw one closed rectangle with a thick black marker, a finger-width in from the edge.
 - **Cards:** one word per scrap of plain white paper, BLOCK CAPITALS, thick black marker, letters 1.5–2.5 cm tall and close together, blank margin all round. WIND also has a clear arrow beneath it.
-- **Words:** BIG, MOUNTAIN, WATER, SUN, ICE, LIFE, PEOPLE, WIND. Make several of each.
-- **WIND:** draw a clear arrow under the word, with its point facing right when WIND reads upright. Rotate the card to point the wind across the table. Wind drives rain and clouds, carries LIFE+WATER seeds and moisture into a narrow tree line, scours snow from mountains, and turns nearby ICE into a blizzard. It also bends trees and villagers, pushes boats and merchants, blows chimney smoke, and lifts dust over hot, dry ground.
+- **Words:** BIG, MOUNTAIN, RAIN, LAKE, RIVER, SUN, ICE, FOREST, VILLAGE, TOWN, CITY, WIND. Make several of each. (Older cards still read: WATER as RAIN, and PEOPLE or SETTLEMENT as VILLAGE.)
+- **WIND:** draw a clear arrow under the word, with its point facing right when WIND reads upright. Rotate the card to point the wind across the table. Wind drives rain and clouds, carries FOREST seeds (with RAIN, LAKE or RIVER nearby) and moisture into a narrow tree line, scours snow from mountains, and turns nearby ICE into a blizzard. It also bends trees and villagers, pushes boats and merchants, blows chimney smoke, and lifts dust over hot, dry ground.
 - **Copies** go side by side, never stacked. Turning cards does nothing except for WIND, whose arrow sets its direction.
 
 ## If something goes wrong
@@ -132,8 +132,8 @@ Cards can also come from the address, already settled, with no dragging and no w
 
 | Address | Does |
 |---|---|
-| `/?cards=life+water+sun` | Start with these cards in place |
-| `/?cards=water*3+life@0.8,0.6` | Copies, and a card at a table position (x left to right, y far to near, 0..1) |
+| `/?cards=forest+rain+sun` | Start with these cards in place |
+| `/?cards=rain*3+forest@0.8,0.6` | Copies, and a card at a table position (x left to right, y far to near, 0..1) |
 | `&instant` | No fading or easing for anything you do afterwards (same as **I**) |
 | `&still=6` | Freeze the picture at second 6: no camera sway, rain stopped mid-fall |
 
@@ -190,7 +190,7 @@ The sheet and its numbers land in `.deck/harness/` (`sheet.jpg`, `metrics.json`)
 
 | Option (command line / address) | Meaning |
 |---|---|
-| `"water*3" "life+sun"` / `c=water*3;life+sun` | Your own combination codes, one world each. `name=code` names one. |
+| `"rain*3" "forest+sun"` / `c=rain*3;forest+sun` | Your own combination codes, one world each. `name=code` names one. |
 | `--set` / `set=` | `showcase` (default), `singles`, `pairs`, `subsets` (every mix of the cards, 64 with six cards), `copies` (each card ×1 to ×3), `all`. Comma separated. |
 | `--layout` / `layout=` | Where cards without a position go: `cluster` (together, default) or `spread` (each kind apart) |
 | `--view` / `view=` | `3d`, `map` (flat top-down, no GPU needed), `both` (3D with a map inset) |
