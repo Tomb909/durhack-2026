@@ -10,9 +10,9 @@
 // the one gate between untrusted data and the sim, the shaders and the page.
 // Guesses are kept in this browser only, so trying again later can replace them.
 import {
-  BUILT_IN_IDS, CARD_DEFS, HABITATS, PART_MIRRORS, PART_SHAPES, PARTICLE_MOTIONS, PROP_COUNTS, PROP_MOTIONS, PROP_SCALES,
+  BUILT_IN_IDS, CARD_DEFS, HABITATS, LAND_SHAPES, PART_MIRRORS, PART_SHAPES, PARTICLE_MOTIONS, PROP_COUNTS, PROP_MOTIONS, PROP_SCALES,
   cardDef, cardsChanged, registerCard, unregisterCard,
-  type Atmosphere, type Ground, type CardDef, type CardEffect, type FieldName, type Particles, type Prop, type PropPart,
+  type Atmosphere, type Biome, type CardDef, type CardEffect, type FieldName, type Particles, type Prop, type PropPart,
 } from './defs';
 
 export const MAX_WORD = 40;
@@ -27,7 +27,7 @@ export const copiesOf = (part: PropPart): number => (part.repeat ?? 1) * (part.m
 
 /** The scale word for a real size in metres (keep in step with scale_for in server/deck/words.py). */
 export const scaleForMetres = (m: number): Prop['scale'] => (m < 4 ? 'small' : m < 15 ? 'medium' : m < 45 ? 'large' : 'landmark');
-const MAX_EFFECTS = 4;
+const MAX_EFFECTS = 6;
 const LOCAL_STORE = 'deck.words.1';
 
 // --- words and ids ------------------------------------------------------------------
@@ -82,21 +82,20 @@ const triple = (v: unknown, lo: number, hi: number, fallback: number): [number, 
   return [num(a[0], lo, hi, fallback), num(a[1], lo, hi, fallback), num(a[2], lo, hi, fallback)];
 };
 
-/**
- * The fields a generated card may push on. Lava is left out: the word server does not offer it
- * (FIELDS in server/deck/words.py), so a made card naming it is dropped like any unknown field.
- */
-type MadeField = Exclude<FieldName, 'lava'>;
-
 /** How far each field may be pushed by one copy of a generated card. */
-const FIELD_LIMITS: Record<MadeField, [number, number]> = {
+const FIELD_LIMITS: Record<FieldName, [number, number]> = {
   height: [-0.4, 0.6],
-  temperature: [-0.7, 0.7],
-  wetness: [-0.6, 0.6],
+  temperature: [-0.9, 0.9],
+  wetness: [-0.9, 0.9],
   life: [-1, 1],
   settlement: [0, 1],
+  lava: [0, 1.2],
   seaLevel: [-0.015, 0.02],
 };
+
+/** A round patch fades out over about three times its radius, so it is kept small; a shape ends at its radius. */
+const PATCH_RADIUS: [number, number] = [0.05, 0.3];
+const SHAPE_RADIUS: [number, number] = [0.04, 0.6];
 
 function cleanEffects(v: unknown): CardEffect[] {
   if (!Array.isArray(v)) return [];
@@ -108,12 +107,18 @@ function cleanEffects(v: unknown): CardEffect[] {
     const named = r.field === 'people' ? 'settlement' : r.field;
     // Own names only: `constructor` or `toString` is not a field, though `in` would say it is.
     if (!(typeof named === 'string' && Object.hasOwn(FIELD_LIMITS, named))) continue;
-    const field = named as MadeField;
+    const field = named as FieldName;
     const [lo, hi] = FIELD_LIMITS[field];
     const amount = num(r.amount, lo, hi, 0);
     if (amount === 0) continue;
     // Sea level is the one world-wide push; the sim ignores "global" on anything else.
-    out.push(field === 'seaLevel' ? { field, amount, global: true } : { field, amount, radius: num(r.radius, 0.05, 0.3, 0.18) });
+    if (field === 'seaLevel') {
+      out.push({ field, amount, global: true });
+      continue;
+    }
+    const shape = LAND_SHAPES.includes(r.shape as never) ? (r.shape as CardEffect['shape']) : undefined;
+    const [near, far] = shape ? SHAPE_RADIUS : PATCH_RADIUS;
+    out.push({ field, amount, radius: num(r.radius, near, far, 0.18), ...(shape ? { shape } : {}) });
   }
   return out;
 }
@@ -133,11 +138,31 @@ function cleanParticles(v: unknown): Particles | null {
   };
 }
 
-function cleanGround(v: unknown): Ground | undefined {
-  if (!v || typeof v !== 'object') return undefined;
-  const r = v as Record<string, unknown>;
-  const ground: Ground = { color: colour(r.color, '#ffffff'), strength: num(r.strength, 0, 1, 0), radius: num(r.radius, 0.05, 0.35, 0.2) };
-  return ground.strength > 0 ? ground : undefined;
+/**
+ * The card's biome. Cards made before biomes carry `ground` (one colour painted on the land):
+ * that is read as a biome with only its ground colour.
+ */
+function cleanBiome(v: unknown, old: unknown): Biome | undefined {
+  const given = v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+  const before = old && typeof old === 'object' ? (old as Record<string, unknown>) : null;
+  const r = given ?? before;
+  if (!r) return undefined;
+  const strength = num(r.strength, 0, 1, 0);
+  if (strength <= 0) return undefined;
+  const biome: Biome = {
+    radius: num(r.radius, 0.05, 0.6, 0.2),
+    strength,
+    ground: colour(given ? r.ground : r.color, '#8a8378'),
+    trees: r.trees !== false,
+  };
+  const plants = colour(r.plants, '');
+  if (plants) biome.plants = plants;
+  const rock = colour(r.rock, '');
+  if (rock) biome.rock = rock;
+  const liquid = r.liquid && typeof r.liquid === 'object' ? (r.liquid as Record<string, unknown>) : null;
+  const liquidColour = colour(liquid?.color, '');
+  if (liquidColour) biome.liquid = { color: liquidColour, glow: num(liquid?.glow, 0, 1, 0) };
+  return biome;
 }
 
 function cleanAtmosphere(v: unknown): Atmosphere | undefined {
@@ -227,15 +252,15 @@ export function cleanCard(input: unknown): CardDef | null {
   };
   const atmosphere = cleanAtmosphere(r.atmosphere);
   if (atmosphere) def.atmosphere = atmosphere;
-  const ground = cleanGround(r.ground);
-  if (ground) def.ground = ground;
+  const biome = cleanBiome(r.biome, r.ground);
+  if (biome) def.biome = biome;
   const prop = cleanProp(r.prop);
   if (prop) def.prop = prop;
   const ms = num(r.ms, 0, 600_000, Number.NaN);
   if (Number.isFinite(ms)) def.ms = Math.round(ms);
   // Every word shows something: a card that would do nothing gets the abstract shape instead.
   // (The fallback always has an object, so this cannot loop.)
-  if (!def.effects.length && !def.atmosphere && !def.ground && !def.prop) return cleanCard(fallbackCard(word));
+  if (!def.effects.length && !def.atmosphere && !def.biome && !def.prop) return cleanCard(fallbackCard(word));
   return def;
 }
 

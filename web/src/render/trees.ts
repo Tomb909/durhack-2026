@@ -3,7 +3,7 @@
 // forests spread and retreat smoothly with no work on the CPU.
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { GLSL_COMMON, type SharedUniforms } from './common';
+import { GLSL_BIOME, GLSL_COMMON, MAX_BIOMES, type SharedUniforms } from './common';
 import { SPARE, Sites, together, type Culled } from './sites';
 
 /** A tree stands where the plant cover beats its own threshold: its random number times this. (Shader and CPU test share it.) */
@@ -63,6 +63,7 @@ function jungle(): THREE.BufferGeometry {
 
 const vertex = /* glsl */ `
 ${GLSL_COMMON}
+${GLSL_BIOME}
 attribute vec2 aSite;
 attribute vec4 aRand;
 attribute vec3 color;
@@ -82,6 +83,15 @@ void main() {
   float dry = 1.0 - smoothstep(0.0, 0.0015, b.r - a.r);
   float threshold = aRand.x * ${glsl(GROW_SPREAD)}; // the CPU test in makeForest uses the same number
   float grow = smoothstep(threshold, threshold + 0.20, a.a * fits) * dry;
+  // Biomes: some have no trees of the world's kind, and some colour the leaves.
+  vec3 leaf = color;
+  for (int i = 0; i < ${MAX_BIOMES}; i++) {
+    if (i >= uBiomeCount) break;
+    float w = biomeAt(i, aSite, tableXz(aSite));
+    if (w <= 0.0) continue;
+    grow *= 1.0 - smoothstep(0.0, 0.4, w) * (1.0 - uBiomeExtra[i].y);
+    leaf = mix(leaf, uBiomePlants[i].rgb, w * uBiomePlants[i].a * aLeaf);
+  }
   float size = uSize * (0.62 + 0.62 * aRand.y) * (0.78 + 0.45 * a.b) * grow;
 
   // Woodcutters: once the felled amount here passes this tree's turn, it topples,
@@ -109,7 +119,7 @@ void main() {
 
   vec2 xz = tableXz(aSite);
   vec3 world = vec3(xz.x, a.r * HSCALE - 0.01, xz.y) + p;
-  vColor = color * (0.82 + 0.36 * aRand.w);
+  vColor = leaf * (0.82 + 0.36 * aRand.w);
   vWorld = world;
   vTemperature = temperature;
   vRain = b.b;

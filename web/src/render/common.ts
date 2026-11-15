@@ -55,18 +55,24 @@ export interface SharedUniforms {
   uPulse: THREE.IUniform<THREE.Vector4[]>;
   uPulseColor: THREE.IUniform<THREE.Color[]>;
   uPulseCount: THREE.IUniform<number>;
-  /** Per ground card: table u, v, radius (share of width), strength. */
-  uGround: THREE.IUniform<THREE.Vector4[]>;
-  uGroundColor: THREE.IUniform<THREE.Color[]>;
-  uGroundCount: THREE.IUniform<number>;
+  /** Per card with a biome: table u, v, radius (share of width), strength. */
+  uBiome: THREE.IUniform<THREE.Vector4[]>;
+  uBiomeGround: THREE.IUniform<THREE.Color[]>;
+  uBiomeRock: THREE.IUniform<THREE.Color[]>;
+  /** Colour, and 1 when the biome has its own (0: the world's greens, or water). */
+  uBiomePlants: THREE.IUniform<THREE.Vector4[]>;
+  uBiomeLiquid: THREE.IUniform<THREE.Vector4[]>;
+  /** x: how far the liquid is lit from within (0..1). y: 1 when the world's own trees grow here. */
+  uBiomeExtra: THREE.IUniform<THREE.Vector4[]>;
+  uBiomeCount: THREE.IUniform<number>;
   /** Where smoke rises (see vents.ts): table u, table v, strength, unused. */
   uVent: THREE.IUniform<THREE.Vector4[]>;
   uVentCount: THREE.IUniform<number>;
 }
 
 export const MAX_PULSES = 16;
-/** Cards that paint the land a colour (Ground), at most this many at once. */
-export const MAX_GROUNDS = 8;
+/** Cards with a biome (their own ground, plants, rock and liquid), at most this many at once. */
+export const MAX_BIOMES = 8;
 
 export function makeSharedUniforms(): SharedUniforms {
   return {
@@ -88,9 +94,13 @@ export function makeSharedUniforms(): SharedUniforms {
     uPulse: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Vector4(0, 0, 99, 0)) },
     uPulseColor: { value: Array.from({ length: MAX_PULSES }, () => new THREE.Color(1, 1, 1)) },
     uPulseCount: { value: 0 },
-    uGround: { value: Array.from({ length: MAX_GROUNDS }, () => new THREE.Vector4(0, 0, 0, 0)) },
-    uGroundColor: { value: Array.from({ length: MAX_GROUNDS }, () => new THREE.Color(1, 1, 1)) },
-    uGroundCount: { value: 0 },
+    uBiome: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uBiomeGround: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Color(1, 1, 1)) },
+    uBiomeRock: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Color(1, 1, 1)) },
+    uBiomePlants: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uBiomeLiquid: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uBiomeExtra: { value: Array.from({ length: MAX_BIOMES }, () => new THREE.Vector4(0, 1, 0, 0)) },
+    uBiomeCount: { value: 0 },
     uVent: { value: Array.from({ length: MAX_VENTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
     uVentCount: { value: 0 },
   };
@@ -152,6 +162,28 @@ float fbm2(vec2 p) {
   float a = 0.5;
   for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
   return s;
+}
+`;
+
+/**
+ * GLSL for biomes (include after GLSL_COMMON): a card's own ground, plants, rock and liquid, held
+ * inside its radius. The land, the water and the trees each ask `biomeAt` how far a biome holds
+ * where they are and lean their colours that far, so a region changes material as one.
+ */
+export const GLSL_BIOME = /* glsl */ `
+uniform vec4 uBiome[${MAX_BIOMES}];
+uniform vec3 uBiomeGround[${MAX_BIOMES}];
+uniform vec3 uBiomeRock[${MAX_BIOMES}];
+uniform vec4 uBiomePlants[${MAX_BIOMES}];
+uniform vec4 uBiomeLiquid[${MAX_BIOMES}];
+uniform vec4 uBiomeExtra[${MAX_BIOMES}];
+uniform int uBiomeCount;
+// How far biome i holds at a place (table uv, scene xz): its strength inside, 0 outside, with a ragged edge.
+float biomeAt(int i, vec2 uv, vec2 xz) {
+  vec4 g = uBiome[i];
+  float r = length((uv - g.xy) * vec2(WORLD_W, WORLD_D)) / (g.z * WORLD_W);
+  if (r > 1.2) return 0.0;
+  return g.w * (1.0 - smoothstep(0.82, 1.0, r + (fbm2(xz * 1.7 + float(i) * 13.0) - 0.5) * 0.3));
 }
 `;
 

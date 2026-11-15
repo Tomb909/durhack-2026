@@ -12,7 +12,7 @@ import { AirLayer, GradeShader } from './air';
 import { makeBackdrop } from './backdrop';
 import { Beacons } from './beacons';
 import { CameraRig } from './camera';
-import { HSCALE, MAX_GROUNDS, MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
+import { HSCALE, MAX_BIOMES, MAX_PULSES, makeSharedUniforms, setSharedWorld, setWorldAspect, world, type SharedUniforms } from './common';
 import { FieldTextures } from './fields';
 import { makeLava } from './lava';
 import { CALM, worldMood, type Mood } from './mood';
@@ -100,6 +100,7 @@ export class WorldRenderer {
   private palettes = makePalettes();
   /** Each card's colour, read from its text once rather than on every frame. */
   private pulseColours = new WeakMap<object, THREE.Color>();
+  private biomeTone = new THREE.Color();
   /** Meshes that depend on the play area's shape; rebuilt by setShape. */
   private shaped: THREE.Object3D[] = [];
   /** The last shape's meshes, kept until the new ones have been drawn once (see setShape). */
@@ -396,15 +397,25 @@ export class WorldRenderer {
       this.shared.uPulseColor.value[i].copy(colour);
     }
     this.shared.uPulseCount.value = count;
-    let grounds = 0;
+    let biomes = 0;
+    const tone = this.biomeTone;
     for (const card of cards) {
-      const g = card.def.ground;
-      if (!g || card.strength <= 0 || grounds >= MAX_GROUNDS) continue;
-      this.shared.uGround.value[grounds].set(card.x, card.y, g.radius, g.strength * Math.min(1, card.strength));
-      this.shared.uGroundColor.value[grounds].set(g.color);
-      grounds++;
+      const b = card.def.biome;
+      if (!b || card.strength <= 0 || biomes >= MAX_BIOMES) continue;
+      const s = this.shared;
+      s.uBiome.value[biomes].set(card.x, card.y, b.radius, b.strength * Math.min(1, card.strength));
+      s.uBiomeGround.value[biomes].set(b.ground);
+      // Cliffs with no colour of their own are a darker shade of the ground.
+      if (b.rock) s.uBiomeRock.value[biomes].set(b.rock);
+      else s.uBiomeRock.value[biomes].set(b.ground).multiplyScalar(0.7);
+      if (b.plants) s.uBiomePlants.value[biomes].set(tone.set(b.plants).r, tone.g, tone.b, 1);
+      else s.uBiomePlants.value[biomes].set(0, 0, 0, 0);
+      if (b.liquid) s.uBiomeLiquid.value[biomes].set(tone.set(b.liquid.color).r, tone.g, tone.b, 1);
+      else s.uBiomeLiquid.value[biomes].set(0, 0, 0, 0);
+      s.uBiomeExtra.value[biomes].set(b.liquid?.glow ?? 0, b.trees ? 1 : 0, 0, 0);
+      biomes++;
     }
-    this.shared.uGroundCount.value = grounds;
+    this.shared.uBiomeCount.value = biomes;
     this.props.update(frame, cards, dt > 0);
     this.air.update(frame, cards, (this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight)) * this.renderer.getPixelRatio());
     const grade = this.air.grade;

@@ -1,7 +1,7 @@
 // All open water (sea, lakes, rivers) is one surface, lifted to the water
 // level texture and drawn only where it is above the ground.
 import * as THREE from 'three';
-import { GLSL_COMMON, world, type SharedUniforms } from './common';
+import { GLSL_BIOME, GLSL_COMMON, MAX_BIOMES, world, type SharedUniforms } from './common';
 
 const vertex = /* glsl */ `
 ${GLSL_COMMON}
@@ -19,6 +19,7 @@ void main() {
 
 const fragment = /* glsl */ `
 ${GLSL_COMMON}
+${GLSL_BIOME}
 varying vec2 vUv;
 varying vec3 vWorld;
 
@@ -50,13 +51,35 @@ void main() {
   float deep = smoothstep(0.0, 0.055, depth);
   vec3 shallowCol = vec3(0.16, 0.62, 0.66);
   vec3 deepCol = vec3(0.02, 0.17, 0.38);
+  vec3 riverCol = vec3(0.10, 0.42, 0.72);
+  vec3 foamCol = vec3(0.95, 0.98, 1.0);
+  // Biomes: what the liquid is made of here (a green swamp, a sea of lava). 'own' is how far it
+  // is no longer water, 'glow' how far it is lit from within.
+  vec3 ownCol = vec3(0.0);
+  float own = 0.0;
+  float glow = 0.0;
+  for (int i = 0; i < ${MAX_BIOMES}; i++) {
+    if (i >= uBiomeCount) break;
+    float w = biomeAt(i, vUv, vWorld.xz) * uBiomeLiquid[i].a;
+    if (w <= 0.0) continue;
+    // Full strength well before the biome's own: a half-blue sea of lava is neither.
+    w = smoothstep(0.0, 0.45, w);
+    vec3 c = uBiomeLiquid[i].rgb;
+    shallowCol = mix(shallowCol, c * 1.25 + 0.02, w);
+    deepCol = mix(deepCol, c * 0.5, w);
+    riverCol = mix(riverCol, c, w);
+    foamCol = mix(foamCol, clamp(c * 2.0 + 0.1, 0.0, 1.0), w);
+    ownCol = mix(ownCol, c, own + w > 0.0 ? w / (own + w - own * w) : 0.0);
+    glow = mix(glow, uBiomeExtra[i].x, w);
+    own = own + w - own * w;
+  }
   vec3 col = mix(shallowCol, deepCol, deep);
-  col = mix(col, vec3(0.10, 0.42, 0.72), river * (1.0 - deep) * 0.85);
+  col = mix(col, riverCol, river * (1.0 - deep) * 0.85);
 
   vec3 view = normalize(cameraPosition - vWorld);
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 4.0);
   vec3 skyCol = mix(vec3(0.55, 0.72, 0.95), vec3(0.50, 0.55, 0.62), rain);
-  col = mix(col, skyCol, 0.10 + 0.55 * fresnel);
+  col = mix(col, skyCol, (0.10 + 0.55 * fresnel) * (1.0 - 0.8 * glow));
 
   float overcast = 1.0 - 0.38 * rain;
   float ndl = max(dot(n, uSunDir), 0.0);
@@ -68,7 +91,7 @@ void main() {
   float lap = 0.0016 + 0.0009 * sin(t * 1.3 + p.x * 3.0 + p.y * 2.0);
   float foam = (1.0 - smoothstep(0.0, lap + 0.0016, depth)) * smoothstep(0.35, 0.65, n2 + 0.25);
   foam += (1.0 - smoothstep(0.0, 0.0009, depth)) * 0.8;
-  col = mix(col, vec3(0.95, 0.98, 1.0), clamp(foam, 0.0, 1.0) * 0.85 * (1.0 - frozen) * (1.0 - smoothstep(0.05, 0.4, river)));
+  col = mix(col, foamCol, clamp(foam, 0.0, 1.0) * 0.85 * (1.0 - frozen) * (1.0 - smoothstep(0.05, 0.4, river)));
   vec2 flow = normalize(wind + vec2(0.00001));
   float windChop = pow(max(0.0, sin(dot(vWorld.xz, flow) * 19.0 - t * 3.2)), 12.0) * smoothstep(0.16, 0.75, gust);
   col = mix(col, vec3(0.82, 0.94, 1.0), windChop * 0.38 * (1.0 - frozen) * smoothstep(0.001, 0.025, depth));
@@ -82,7 +105,20 @@ void main() {
   ice = mix(ice * 0.86, ice, crack);
   col = mix(col, ice, frozen);
 
+  // Lit from within: its own light, whatever the sun does. A darker skin drifts on it and it burns
+  // brightest where the skin parts and where it meets the land.
+  if (glow > 0.001) {
+    float skin = smoothstep(0.38, 0.72, fbm2(p * 2.4 + vec2(t * 0.045, -t * 0.03)));
+    float seam = 1.0 - smoothstep(0.0, 0.10, abs(fbm2(p * 3.1 - vec2(t * 0.03, t * 0.05)) - 0.5));
+    vec3 hot = mix(ownCol * 2.3 + 0.06, ownCol * 0.42, skin * 0.8);
+    hot += ownCol * 1.6 * seam * skin;
+    hot += clamp(ownCol * 2.0 + 0.1, 0.0, 1.0) * (1.0 - smoothstep(0.0, 0.006, depth)) * 0.8;
+    col = mix(col, hot, glow * (1.0 - frozen));
+  }
+
   float alpha = mix(0.62, 0.95, max(deep, river * 0.8));
+  alpha = mix(alpha, max(alpha, 0.9), own); // not water: you do not see far into it
+  alpha = mix(alpha, 0.98, glow * own);
   alpha = mix(alpha, 0.97, frozen);
   alpha *= smoothstep(0.0002, 0.0016, depth);
   gl_FragColor = vec4(col, alpha);

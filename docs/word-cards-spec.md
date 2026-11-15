@@ -31,6 +31,8 @@ These are the reasons the idea is viable. Break one and the prototype proves not
 
 ## A card can now do three things
 
+> Since this was written a card can do a fourth thing, `biome`, and effects can be landforms with an edge (`shape`). The README section "Any word becomes a card" describes both.
+
 All three are optional and a word may use any mix. Extend `CardDef` in `web/src/cards/defs.ts`; everything new is optional so `cards.json` needs no change.
 
 **1. Push on the world (exists today).** `effects` on the existing fields. Generated cards may also push the other way: negative `height` (CANYON), `wetness` (DESERT), `temperature`, `life` (BLIGHT). Check the sim copes: anything derived must stay in range (clamp life to 0..1 after the sum). At most 4 effects.

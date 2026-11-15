@@ -1,10 +1,11 @@
 // Card definitions are plain data (cards.json). Adding a card means adding an
 // entry there: no new logic. The server reads the same file for the words.
 //
-// A card can do three things, in any mix: push on the world's fields
-// (`effects`), change the air (`atmosphere`), and stand an object in the world
-// (`prop`). Built-in cards use only the first. Cards made from a typed word
-// (see words.ts) may use all three, and are still only data.
+// A card can do four things, in any mix: push on the world's fields
+// (`effects`, as a round patch or as a landform with an edge), say what the land
+// round it is made of (`biome`), change the air (`atmosphere`), and stand an
+// object in the world (`prop`). Built-in cards use only the first. Cards made
+// from a typed word (see words.ts) may use all four, and are still only data.
 import raw from './cards.json';
 
 /** The underlying world properties a card may push on. */
@@ -31,7 +32,27 @@ export interface CardEffect {
    * (copies standing close together lift each other a little).
    */
   cone?: ConeShape;
+  /**
+   * A landform with a hard edge instead of a round patch that fades out a long way. `radius` is
+   * then where the effect ends (not the width of a bell curve), so it cannot leak across the world.
+   * On height it is the shape of the land; on any other field only `mound` and `flat` differ
+   * (every other shape acts as `flat`).
+   */
+  shape?: LandShape;
 }
+
+/**
+ * Landforms. `amount` is the height of the top (or, below zero, the depth of the floor).
+ * - mound: a smooth dome, or a bowl
+ * - flat: a level top or floor with steep sides (a mesa, a plateau, a basin, a crater floor)
+ * - ridges: sharp parallel-ish crests and valleys (a mountain range, badlands)
+ * - spires: many separate needles (stalagmites, hoodoos, crystals, termite mounds)
+ * - dunes: long rounded waves
+ * - terraces: a dome cut into level steps (rice terraces, a ziggurat hill, a stepped canyon)
+ * - rim: a ring wall with a hollow middle (a crater, an atoll, a caldera)
+ */
+export const LAND_SHAPES = ['mound', 'flat', 'ridges', 'spires', 'dunes', 'terraces', 'rim'] as const;
+export type LandShape = (typeof LAND_SHAPES)[number];
 
 /** The shape of a volcano. Every share is of the cone's own size, so BIG scales it as a whole. */
 export interface ConeShape {
@@ -81,16 +102,36 @@ export interface Particles {
   glow: boolean;
 }
 
-/** How a card changes the air. Tint and light are for the whole world; particles stay by the card. */
-/** A colour painted onto the land round the card (the red of Mars, the grey of the Moon). */
-export interface Ground {
-  color: string;
-  /** 0..1: how far the land takes the colour. */
-  strength: number;
-  /** A share of the world's width, as for effects. */
+/**
+ * What the land round the card is made of: its own colours for ground, plant cover, rock and
+ * whatever liquid stands there. The world's rules still decide where there are hills, plants and
+ * water; a biome only says what they look like here. So the Nether's sea is lava, a swamp's lakes
+ * are green, and the Moon is grey with no trees, with no rule written for any of them.
+ */
+export interface Biome {
+  /** Where the region ends, as a share of the world's width (its edge is ragged, not a circle). */
   radius: number;
+  /** 0..1: how far the region takes these materials. */
+  strength: number;
+  /** Bare land. */
+  ground: string;
+  /** Land under plant cover, and the leaves of the world's own trees. Left out: the world's greens. */
+  plants?: string;
+  /** Steep faces and cliffs. Left out: a darker shade of `ground`. */
+  rock?: string;
+  /** What lakes, rivers and sea are made of here. Left out: water. */
+  liquid?: Liquid;
+  /** False: the world's own trees do not grow here (the card's object may stand in for them). */
+  trees: boolean;
 }
 
+export interface Liquid {
+  color: string;
+  /** 0 an ordinary liquid that reflects the sky (a green swamp, a sea of milk) .. 1 lit from within (lava, plasma). */
+  glow: number;
+}
+
+/** How a card changes the air. Tint and light are for the whole world; particles stay by the card. */
 export interface Atmosphere {
   /** A colour the sky and light lean towards. */
   tint: string;
@@ -156,7 +197,7 @@ export interface CardDef {
    */
   compound?: boolean;
   atmosphere?: Atmosphere;
-  ground?: Ground;
+  biome?: Biome;
   prop?: Prop;
   /** Only on cards made from a typed word: read by the model, or guessed in the page. */
   origin?: 'llm' | 'fallback';

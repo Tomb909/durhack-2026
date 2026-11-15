@@ -5,7 +5,7 @@
 // you see is derived from those. WIND is the one card that looks at the others: it gives
 // the weather a direction, drives snow off nearby ICE and carries LIFE's seeds downwind
 // (buildWindField, buildBlizzard, scatterSeeds).
-import type { CardEffect, FieldName } from '../cards/defs';
+import type { CardEffect, FieldName, LandShape } from '../cards/defs';
 import { heightMultiplier, modifierTargets, radiusMultiplier } from '../cards/modifiers';
 import type { LiveCard } from '../cards/store';
 import { Hydrology, type HydrologyRules } from './hydrology';
@@ -199,6 +199,18 @@ export const RULES = {
     notchReach: 0.12, // a notch fades out down the flank over this share of the base radius
     evenOut: [0.35, 0.65], // the summit evens out the ground under it fully within this share of the base radius, and not at all beyond that
   },
+  /** A landform (an effect with `shape`): it ends at its radius, with an uneven outline. */
+  form: {
+    lobes: 0.3, // the outline bulges in and out by this share of the radius per unit of slow noise
+    frayed: 0.18, // and by this share per unit of fine noise
+    wall: 0.78, // `flat`: level out to this share of the radius, then the side falls away
+    evenOut: 0.85, // `flat` and `terraces`: how far the ground underneath is levelled (0 keeps every hill, 1 is dead level)
+    steps: 5, // `terraces`: how many
+    crests: 9, // `dunes`: how many would fit across the world's width
+    rimAt: 0.72, // `rim`: the wall stands at this share of the radius
+    rimWidth: 0.26, // and is this wide either side of that, as a share of the radius
+    grit: 0.06, // fine roughness on a landform, as a share of its height
+  },
   settleSeconds: 0.35, // how fast rivers and lakes ease to their new shape
   /** Land beside water is damper, which can move the water again. Look this many times at most. */
   settlePasses: 12,
@@ -313,6 +325,12 @@ export class WorldSim {
   /** Height at full precision while it is worked out. */
   private ground: Float64Array;
   private hadCone = false;
+  /** Landforms (height effects with `shape`): what they add to the ground, uncarved by the ridge noise. */
+  private formed: Float32Array;
+  /** How far a level landform evens out the ground under it (0..1), and the level it evens it to (summed, weighted by that share). */
+  private formMask: Float32Array;
+  private formFloor: Float32Array;
+  private hadForm = false;
   /** Summed card pushes per property (after the copies ceiling). */
   private push: Record<LocalField, Float32Array>;
   private copies: Float32Array;
@@ -341,7 +359,7 @@ export class WorldSim {
     const h = (this.h = gridHeight(aspect));
     const n = (this.n = w * h);
     const f = () => new Float32Array(n);
-    this.base = f(); this.ridge = f(); this.rough = f(); this.fault = f(); this.faultGrade = f(); this.jag = f(); this.swell = f(); this.coneLift = f(); this.ventFlow = f(); this.coneMask = f(); this.coneFloor = f(); this.ground = new Float64Array(n);
+    this.base = f(); this.ridge = f(); this.rough = f(); this.fault = f(); this.faultGrade = f(); this.jag = f(); this.swell = f(); this.coneLift = f(); this.ventFlow = f(); this.coneMask = f(); this.coneFloor = f(); this.formed = f(); this.formMask = f(); this.formFloor = f(); this.ground = new Float64Array(n);
     this.push = { height: f(), temperature: f(), wetness: f(), life: f(), settlement: f(), lava: f() };
     this.lavaSource = f(); this.lavaTarget = f(); this.lavaHeatTarget = f(); this.lavaSurfaceTarget = f();
     this.lavaFlow = new Hydrology(w, h);
@@ -524,6 +542,12 @@ export class WorldSim {
       this.coneFloor.fill(0);
       this.hadCone = false;
     }
+    if (this.hadForm) {
+      this.formed.fill(0);
+      this.formMask.fill(0);
+      this.formFloor.fill(0);
+      this.hadForm = false;
+    }
     const windCards = cards.filter((card) => card.def.id === 'wind' && card.strength > 0);
 
     const modifiersByTarget = modifierTargets(cards);
@@ -557,6 +581,10 @@ export class WorldSim {
         }
         const target = push[effect.field as LocalField];
         if (!target) continue;
+        if (effect.shape) {
+          this.addShape(group, effect, target, radiusMultipliers, modifiersByTarget);
+          continue;
+        }
         const byRadius = new Map<number, Map<number, LiveCard[]>>();
         for (const card of group) {
           const radius = (effect.radius ?? 0.2) * (radiusMultipliers.get(card) ?? 1);
@@ -601,6 +629,17 @@ export class WorldSim {
       const peak = 0.72 + 0.5 * smoothstep(0.0, 0.5, lift);
       const shaped = lift >= 0 ? peak * (0.38 + 0.62 * this.ridge[i]) : 0.72 + 0.28 * this.ridge[i];
       ground[i] = height[i] = this.base[i] + lift * shaped + lift * 0.14 * this.rough[i];
+    }
+    // Landforms keep their own shape: added whole, after levelling the ground under the flat ones.
+    if (this.hadForm) {
+      const { formed, formMask, formFloor, rough } = this;
+      const F = RULES.form;
+      for (let i = 0; i < n; i++) {
+        const m = formMask[i];
+        const g = ground[i];
+        const even = m > 0 ? g + (formFloor[i] / m - g) * Math.min(1, m) * F.evenOut : g;
+        ground[i] = height[i] = even + formed[i] * (1 + F.grit * rough[i]);
+      }
     }
     // Volcanoes stand on that ground.
     for (const [group, effect] of cones) this.addCones(group, effect, radiusMultipliers, modifiersByTarget);
@@ -1022,6 +1061,88 @@ export class WorldSim {
         this.splat(ventFlow, cx + r * Math.cos(b), cy + r * Math.sin(b), flow * Math.pow(0.6, k));
       }
     });
+  }
+
+  /**
+   * A landform for every copy in the group: an effect that ends at its radius, in one of a few
+   * shapes (see LandShape). On height it goes into `formed`, which is added to the ground whole;
+   * on any other field it is a patch of that field with a hard, uneven edge.
+   */
+  private addShape(
+    group: LiveCard[], effect: CardEffect, target: Float32Array,
+    radiusMultipliers: Map<LiveCard, number>, modifiers: Map<LiveCard, LiveCard[]>,
+  ): void {
+    const { w, h, aspect, copies, swell, jag, ridge, base } = this;
+    const F = RULES.form;
+    const isHeight = effect.field === 'height';
+    // Off height only the outline matters: a dome, or level with a hard edge.
+    const shape: LandShape = isHeight || effect.shape === 'mound' ? effect.shape! : 'flat';
+    const levels = isHeight && (shape === 'flat' || shape === 'terraces');
+    copies.fill(0);
+    for (const card of group) {
+      const R = (effect.radius ?? 0.2) * (radiusMultipliers.get(card) ?? 1) * (w - 1);
+      if (R <= 0) continue;
+      const weight = card.strength * (isHeight ? heightMultiplier(modifiers.get(card) ?? []) : 1);
+      const cx = card.x * (w - 1);
+      const cy = card.y * (h - 1);
+      const level = levels ? sampleField(base, w, h, card.x, card.y) : 0;
+      const reach = R * (1 + 0.5 * F.lobes + 0.5 * F.frayed) + 1;
+      const x0 = Math.max(0, Math.floor(cx - reach));
+      const x1 = Math.min(w - 1, Math.ceil(cx + reach));
+      const y0 = Math.max(0, Math.floor(cy - reach));
+      const y1 = Math.min(h - 1, Math.ceil(cy + reach));
+      for (let j = y0; j <= y1; j++) {
+        const dy = j - cy;
+        for (let i = x0; i <= x1; i++) {
+          const dx = i - cx;
+          const k = j * w + i;
+          // Distance as a share of the radius, with the outline pushed in and out by noise.
+          const d = (Math.hypot(dx, dy) / R) * (1 + F.lobes * swell[k] + F.frayed * jag[k]);
+          if (d >= 1) continue;
+          const dome = (1 - d * d) * (1 - d * d);
+          const table = 1 - smoothstep(F.wall, 1, d);
+          let e: number;
+          switch (shape) {
+            case 'mound': e = dome; break;
+            case 'flat': e = table; break;
+            case 'ridges': e = (1 - smoothstep(0.5, 1, d)) * (0.1 + 0.9 * Math.pow(Math.max(0, ridge[k]), 1.6)); break;
+            case 'spires': {
+              const s = smoothstep(0.04, 0.26, jag[k]);
+              e = table * s * s;
+              break;
+            }
+            case 'dunes': {
+              const along = ((i / (w - 1)) * 0.8 + ((j / (h - 1)) / aspect) * 0.6) * F.crests * 2 * Math.PI + 5 * swell[k];
+              e = table * (0.15 + 0.85 * Math.pow(0.5 + 0.5 * Math.sin(along), 1.5));
+              break;
+            }
+            case 'terraces': {
+              const q = (1 - d) * F.steps;
+              const step = Math.floor(q);
+              e = Math.min(1, (step + smoothstep(0.7, 1, q - step)) / (F.steps - 1));
+              break;
+            }
+            case 'rim': {
+              const off = (d - F.rimAt) / F.rimWidth;
+              e = off > -1 && off < 1 ? (1 - off * off) * (1 - off * off) : 0;
+              break;
+            }
+          }
+          copies[k] += weight * e;
+          if (levels) {
+            const m = card.strength * table;
+            this.formMask[k] += m;
+            this.formFloor[k] += m * level;
+          }
+        }
+      }
+    }
+    const into = isHeight ? this.formed : target;
+    if (isHeight) this.hadForm = true;
+    const ceiling = RULES.copiesCeiling;
+    for (let i = 0; i < this.n; i++) {
+      if (copies[i] > 0) into[i] += effect.amount * ceiling * Math.tanh(copies[i] / ceiling);
+    }
   }
 
   /** Add `amount` at a point between cells, shared among the four around it. */

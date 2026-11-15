@@ -99,7 +99,19 @@ const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 function doings(def: CardDef): string[] {
   const out: string[] = [];
   if (def.effects.length) {
-    out.push(`Pushes ${def.effects.map((e) => `${e.field === 'seaLevel' ? 'sea level' : e.field} ${signed(e.amount)}${e.global ? '' : ` (reach ${Math.round((e.radius ?? 0.2) * 100)}%)`}`).join(', ')}`);
+    // A shape ends at its radius ("to 30%"); a round patch fades out well beyond it ("reach 30%").
+    const where = (e: CardDef['effects'][number]) => e.global ? '' : e.shape ? ` (${e.shape}, to ${Math.round((e.radius ?? 0.2) * 100)}%)` : ` (reach ${Math.round((e.radius ?? 0.2) * 100)}%)`;
+    out.push(`Pushes ${def.effects.map((e) => `${e.field === 'seaLevel' ? 'sea level' : e.field} ${signed(e.amount)}${where(e)}`).join(', ')}`);
+  }
+  const biome = def.biome;
+  if (biome) {
+    const swatch = (label: string, colour: string) => `<span class="combos-swatch" style="--s:${esc(colour)}"></span>${label}`;
+    const bits = [swatch('ground', biome.ground)];
+    if (biome.plants) bits.push(swatch('plants', biome.plants));
+    if (biome.rock) bits.push(swatch('rock', biome.rock));
+    if (biome.liquid) bits.push(swatch(biome.liquid.glow > 0.5 ? 'glowing liquid' : 'liquid', biome.liquid.color));
+    if (!biome.trees) bits.push('no trees');
+    out.push(`Biome to ${Math.round(biome.radius * 100)}%: ${bits.join(', ')}`);
   }
   const air = def.atmosphere;
   if (air) {
@@ -260,7 +272,7 @@ export class Combinations {
       ? { card: document.activeElement.closest<HTMLElement>('.combos-card')?.dataset.card, does: document.activeElement.dataset.do }
       : null;
     // One switch per card, with its number of copies and "only with" beside it. Cards made from
-    // words say where they came from; a guess can be read again; any of them can be removed.
+    // words say where they came from; any of them can be read again by the model, or removed.
     this.cards.innerHTML = CARD_DEFS.map((def) => {
       const name = esc(titleCase(def.word));
       const made = !BUILT_IN_IDS.has(def.id);
@@ -269,7 +281,9 @@ export class Combinations {
         ? `<span class="combos-tag" title="${guess ? 'A guess from the sound of the word: the model could not be asked' : 'Read by the model'}">${guess ? 'guess' : 'AI'}</span>`
         : '';
       const madeButtons = made
-        ? (guess ? `<button type="button" data-do="retry" aria-label="Try ${name} again with the model" title="Try again with the model">Try again</button>` : '') +
+        ? (guess
+          ? `<button type="button" data-do="retry" aria-label="Try ${name} again with the model" title="Try again with the model">Try again</button>`
+          : `<button type="button" data-do="retry" aria-label="Have the model read ${name} again" title="Ask the model again and replace this card (one model call)">Read again</button>`) +
           `<button type="button" data-do="remove" aria-label="Remove ${name}" title="Remove this card">✕</button>`
         : '';
       return `

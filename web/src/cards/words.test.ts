@@ -62,7 +62,7 @@ describe('cleanCard, the one gate', () => {
     expect(def.reading!.length).toBeLessThanOrEqual(200);
     expect(def.color).toMatch(/^#[0-9a-f]{6}$/);
     expect(def.origin).toBe('fallback');
-    expect(def.effects.length).toBeLessThanOrEqual(4);
+    expect(def.effects.length).toBeLessThanOrEqual(6);
     for (const e of def.effects) {
       expect(Number.isFinite(e.amount)).toBe(true);
       expect(Math.abs(e.amount)).toBeLessThanOrEqual(1);
@@ -86,6 +86,36 @@ describe('cleanCard, the one gate', () => {
     }
     expect([prop.scale, prop.count, prop.habitat, prop.motion, prop.glow]).toEqual(['medium', 'one', 'land', 'still', false]);
     expect(Object.keys(def)).not.toContain('polluted');
+  });
+  it('lets a place have landforms, lava and a biome, each within bounds', () => {
+    const def = cleanCard({
+      word: 'the nether', origin: 'llm',
+      effects: [
+        { field: 'height', amount: -0.03, radius: 0.22, shape: 'flat' }, { field: 'lava', amount: 9, radius: 5, shape: 'flat' },
+        { field: 'height', amount: 0.1, radius: 0.3, shape: 'teapot' }, { field: 'temperature', amount: 0.8, radius: 0.9, shape: 'patch' },
+        { field: 'lava', amount: -1, radius: 0.1 },
+      ],
+      biome: {
+        ground: '#6E2A2E', strength: 4, radius: 9, rock: 'url(x)', plants: '#445566',
+        liquid: { color: '#ff6a1a', glow: 7, script: 'x' }, trees: 'no', extra: 1,
+      },
+    })!;
+    expect(def.effects).toEqual([
+      { field: 'height', amount: -0.03, radius: 0.22, shape: 'flat' },
+      { field: 'lava', amount: 1.2, radius: 0.6, shape: 'flat' }, // a shape ends at its radius, so it may be wide
+      { field: 'height', amount: 0.1, radius: 0.3 }, // an unknown shape is a round patch
+      { field: 'temperature', amount: 0.8, radius: 0.3 }, // and a patch is kept small
+    ]);
+    expect(def.biome).toEqual({ ground: '#6e2a2e', strength: 1, radius: 0.6, plants: '#445566', liquid: { color: '#ff6a1a', glow: 1 }, trees: true });
+    // No liquid colour, no liquid; a biome of no strength is no biome.
+    expect(cleanCard({ word: 'moon', origin: 'llm', biome: { ground: '#cccccc', strength: 0.8, liquid: { glow: 1 }, trees: false } })!.biome)
+      .toEqual({ ground: '#cccccc', strength: 0.8, radius: 0.2, trees: false });
+    expect(cleanCard({ word: 'moon', origin: 'llm', effects: [{ field: 'life', amount: -1 }], biome: { ground: '#cccccc', strength: 0 } })!.biome).toBeUndefined();
+  });
+  it('reads the ground colour of a card made before biomes as a biome', () => {
+    const def = cleanCard({ word: 'mars', origin: 'llm', ground: { color: '#B5532E', strength: 0.8, radius: 0.3 } })!;
+    expect(def.biome).toEqual({ ground: '#b5532e', strength: 0.8, radius: 0.3, trees: true });
+    expect('ground' in def).toBe(false);
   });
   it('keeps a taper, a mirror and a repeat only where they mean something, and bounds what they draw', () => {
     const part = (extra: object) => ({ shape: 'cylinder', at: [0.2, 0.3, 0.2], size: [0.1, 0.6, 0.1], rotate: [0, 0, 0], color: '#808080', ...extra });

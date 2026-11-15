@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 export const HARNESS_OUT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.deck', 'harness');
 /** Cards made from typed words, as the Python server stores them. */
-export const WORDS_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.deck', 'words.json');
+// DECK_WORDS_FILE points the harness at another store (to draw cards without touching the real one).
+export const WORDS_FILE = process.env.DECK_WORDS_FILE || resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.deck', 'words.json');
 
 /** The stored word cards as a list (empty if there are none or the file is spoiled). */
 export function readWords() {

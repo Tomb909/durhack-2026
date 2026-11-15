@@ -5,7 +5,7 @@ import { WorldRenderer } from '../render/scene';
 import { placeProps } from '../sim/props';
 import { GH, GW, WorldSim } from '../sim/world';
 import type { Placement } from './codes';
-import { drawCardMarks, drawMap, drawObjectMarks } from './map';
+import { biomesOf, drawCardMarks, drawMap, drawObjectMarks } from './map';
 import { liveCards, measure, type Metrics } from './metrics';
 
 /** 3d: the world as the app shows it. map: flat and top-down, no GPU. both: 3D with a small map in the corner. */
@@ -86,7 +86,7 @@ export class TileRenderer {
       g.drawImage(gl, x, y, o.width, o.height);
     }
     if (o.view !== '3d') {
-      drawMap(frame, this.map);
+      drawMap(frame, this.map, biomesOf(cards));
       // Alone: the whole tile. With 3D: a small inset in the corner.
       const w = o.view === 'map' ? o.width : Math.round(o.width * 0.3);
       const h = o.view === 'map' ? o.height : Math.round((w * GH) / GW);

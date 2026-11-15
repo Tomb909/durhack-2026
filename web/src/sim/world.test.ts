@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cardDef } from '../cards/defs';
+import { cardDef, type CardDef } from '../cards/defs';
+import { cleanCard } from '../cards/words';
 import type { LiveCard } from '../cards/store';
 import { RULES, WorldSim, gridHeight, sampleField, type WorldFrame, type WorldShape } from './world';
 
@@ -505,5 +506,103 @@ describe('volcano', () => {
     const wet = settle([card('volcano', X, Y), card('water', X + 0.05, Y), card('water', X + 0.1, Y), card('water', X + 0.15, Y)]);
     expect(at(wet, wet.waterSurface, X, Y)).toBeLessThan(at(wet, wet.height, X, Y));
     expect(at(wet, wet.lavaHeat, X, Y)).toBeGreaterThan(0.9);
+  });
+});
+
+// A place as the model is asked to describe one: landforms that end at their radius, a climate
+// kept inside it, lava, and a biome (materials only: the sim never reads it).
+const NETHER = cleanCard({
+  word: 'the nether', origin: 'llm', icon: '🔥', color: '#6e2a2e', reading: 'Netherrack round a lava lake.',
+  effects: [
+    { field: 'height', amount: -0.03, radius: 0.22, shape: 'flat' }, { field: 'lava', amount: 1, radius: 0.17, shape: 'flat' },
+    { field: 'height', amount: 0.1, radius: 0.3, shape: 'spires' }, { field: 'temperature', amount: 0.8, radius: 0.3, shape: 'flat' },
+    { field: 'wetness', amount: -0.9, radius: 0.3, shape: 'flat' }, { field: 'life', amount: -1, radius: 0.3, shape: 'flat' },
+  ],
+  biome: { ground: '#6e2a2e', strength: 0.95, radius: 0.32, rock: '#4a1c20', liquid: { color: '#ff6a1a', glow: 1 }, trees: false },
+})!;
+const made = (def: CardDef, x: number, y: number, strength = 1): LiveCard =>
+  ({ key: `${def.id}-${x}-${y}`, def, source: 'sim', x, y, tx: x, ty: y, vx: 0, vy: 0, angle: 0, targetAngle: 0, strength, age: 10 }) as LiveCard;
+const shaped = (shape: string, amount: number, radius = 0.15, field = 'height'): CardDef =>
+  cleanCard({ word: `${shape} ${field} ${amount > 0 ? 'up' : 'down'}`, origin: 'llm', effects: [{ field, amount, radius, shape }] })!;
+/** Every cell further than `radius` (a share of the width) from x, y. */
+const beyond = (f: WorldFrame, x: number, y: number, radius: number, each: (i: number) => void) => {
+  for (let j = 0; j < f.h; j++) {
+    for (let i = 0; i < f.w; i++) {
+      if (Math.hypot(i - x * (f.w - 1), j - y * (f.h - 1)) > radius * (f.w - 1)) each(j * f.w + i);
+    }
+  }
+};
+
+describe('landforms (effects with a shape)', () => {
+  const empty = settle([]);
+  it('end at their radius: the ground beyond is exactly the empty world', () => {
+    for (const shape of ['mound', 'flat', 'ridges', 'spires', 'dunes', 'terraces', 'rim']) {
+      for (const amount of [0.2, -0.05]) {
+        const f = settle([made(shaped(shape, amount), 0.5, 0.5)]);
+        let moved = 0;
+        // The outline wanders by up to about a third of the radius.
+        beyond(f, 0.5, 0.5, 0.15 * 1.35, (i) => { if (f.height[i] !== empty.height[i]) moved++; });
+        expect(moved, `${shape} ${amount}`).toBe(0);
+        expect(Math.abs(at(f, f.height, 0.5, 0.5) - at(empty, empty.height, 0.5, 0.5)) > 0.01 || shape === 'rim' || shape === 'spires' || shape === 'dunes' || shape === 'ridges', shape).toBe(true);
+      }
+    }
+  });
+  it('flat is level on top, with the hills under it evened out', () => {
+    const f = settle([made(shaped('flat', 0.12, 0.2), 0.5, 0.5)]);
+    const spread = (frame: WorldFrame) => {
+      let lo = Infinity, hi = -Infinity;
+      for (let j = -6; j <= 6; j++) for (let i = -6; i <= 6; i++) {
+        const v = at(frame, frame.height, 0.5 + i / 100, 0.5 + j / 100);
+        lo = Math.min(lo, v); hi = Math.max(hi, v);
+      }
+      return hi - lo;
+    };
+    expect(at(f, f.height, 0.5, 0.5)).toBeGreaterThan(at(empty, empty.height, 0.5, 0.5) + 0.09);
+    expect(spread(f)).toBeLessThan(spread(empty) * 0.5 + 0.004);
+  });
+  it('each shape is its own landform', () => {
+    const top = (shape: string) => at(settle([made(shaped(shape, 0.2), 0.5, 0.5)]), settle([made(shaped(shape, 0.2), 0.5, 0.5)]).height, 0.5, 0.5);
+    // A rim is hollow in the middle; a mound and a table are highest there.
+    expect(top('rim')).toBeLessThan(top('mound') - 0.1);
+    expect(top('flat')).toBeGreaterThan(at(empty, empty.height, 0.5, 0.5) + 0.15);
+    // Spires are separate needles: most of their ground is left low.
+    const spires = settle([made(shaped('spires', 0.2), 0.5, 0.5)]);
+    let raised = 0, cells = 0;
+    for (let j = -8; j <= 8; j++) for (let i = -8; i <= 8; i++) {
+      cells++;
+      if (at(spires, spires.height, 0.5 + i / 100, 0.5 + j / 100) > at(empty, empty.height, 0.5 + i / 100, 0.5 + j / 100) + 0.05) raised++;
+    }
+    expect(raised).toBeGreaterThan(0);
+    expect(raised / cells).toBeLessThan(0.6);
+  });
+  it('keep a climate inside the place: a patch of the same radius reaches far further', () => {
+    const hot = settle([made(shaped('flat', 0.8, 0.2, 'temperature'), 0.3, 0.5)]);
+    const patch = settle([made(cleanCard({ word: 'hot patch', origin: 'llm', effects: [{ field: 'temperature', amount: 0.8, radius: 0.2 }] })!, 0.3, 0.5)]);
+    expect(at(hot, hot.temperature, 0.3, 0.5)).toBeGreaterThan(0.7);
+    expect(at(hot, hot.temperature, 0.7, 0.5)).toBeCloseTo(at(empty, empty.temperature, 0.7, 0.5), 6);
+    expect(at(patch, patch.temperature, 0.7, 0.5)).toBeGreaterThan(at(empty, empty.temperature, 0.7, 0.5) + 0.05);
+  });
+});
+
+describe('a place made from a word (THE NETHER)', () => {
+  const seaShare = (f: WorldFrame) => fractionWhere(f, (i) => f.height[i] < f.seaLevel && f.waterSurface[i] > f.height[i]);
+  const lavaShare = (f: WorldFrame) => fractionWhere(f, (i) => f.lava[i] > 0.2 && f.lavaHeat[i] > 0.5);
+  const waters = () => [card('water', 0.5, 0.1), card('water', 0.85, 0.3)];
+  it('has a molten lava lake of its own', () => {
+    const f = settle([made(NETHER, 0.4, 0.55)]);
+    expect(lavaShare(f)).toBeGreaterThan(0.03);
+    expect(at(f, f.lava, 0.4, 0.55)).toBeGreaterThan(0.5);
+  });
+  it('does not turn the world into a sea when WATER cards raise it', () => {
+    const without = seaShare(settle(waters()));
+    const withNether = seaShare(settle([made(NETHER, 0.4, 0.55), ...waters()]));
+    expect(withNether).toBeLessThan(without + 0.12);
+  });
+  it('leaves a forest across the table alone', () => {
+    const forest = [card('life', 0.85, 0.5), card('water', 0.85, 0.6)];
+    const alone = settle(forest);
+    const beside = settle([made(NETHER, 0.25, 0.5), ...forest]);
+    expect(at(beside, beside.vegetation, 0.85, 0.5)).toBeCloseTo(at(alone, alone.vegetation, 0.85, 0.5), 2);
+    expect(at(alone, alone.vegetation, 0.85, 0.5)).toBeGreaterThan(0.3);
   });
 });

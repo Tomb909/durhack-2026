@@ -133,6 +133,34 @@ def test_reply_becomes_a_card_entry():
     assert card["atmosphere"]["particles"]["motion"] == "drift"
 
 
+def test_a_place_keeps_its_landforms_and_its_biome():
+    """Shapes and the biome reach the store as the page reads them; "patch" and "" mean "none"."""
+    card = card_from_reply("THE NETHER", {**REPLY, "has_object": False, "effects": [
+        {"field": "height", "amount": -0.03, "radius": 0.22, "shape": "flat"},
+        {"field": "lava", "amount": 1.0, "radius": 0.17, "shape": "flat"},
+        {"field": "temperature", "amount": 0.8, "radius": 0.2, "shape": "patch"},
+        {"field": "life", "amount": -1, "radius": 0.3, "shape": "teapot"},
+        {"field": "seaLevel", "amount": 0.01, "radius": 0.3, "shape": "flat"},
+        {"field": "wetness", "amount": -0.9, "radius": 0.3, "shape": "flat"},
+        {"field": "height", "amount": 0.1, "radius": 0.3, "shape": "spires"},
+    ], "ground_color": "#6e2a2e", "ground_strength": 0.95, "ground_radius": 0.32, "plant_color": "", "rock_color": "#4a1c20",
+        "liquid_color": "#ff6a1a", "liquid_glow": 1.0, "keep_trees": False}, 5)
+    assert card["effects"] == [
+        {"field": "height", "amount": -0.03, "radius": 0.22, "shape": "flat"},
+        {"field": "lava", "amount": 1.0, "radius": 0.17, "shape": "flat"},
+        {"field": "temperature", "amount": 0.8, "radius": 0.2},
+        {"field": "life", "amount": -1, "radius": 0.3},
+        {"field": "seaLevel", "amount": 0.01, "global": True},
+        {"field": "wetness", "amount": -0.9, "radius": 0.3, "shape": "flat"},
+    ]  # six at most
+    assert card["biome"] == {"ground": "#6e2a2e", "strength": 0.95, "radius": 0.32, "trees": False, "rock": "#4a1c20",
+                             "liquid": {"color": "#ff6a1a", "glow": 1.0}}
+    assert "ground" not in card
+    plain = card_from_reply("CASTLE", REPLY, 5)["biome"]
+    assert "liquid" not in plain and "plants" not in plain and plain["trees"] is True
+    assert "lava" in CARD_SCHEMA["properties"]["effects"]["items"]["properties"]["field"]["enum"]
+
+
 def test_parts_are_written_shortly_and_stored_plainly():
     prop = card_from_reply("CASTLE", REPLY, 10)["prop"]
     assert prop["metres"] == 60 and prop["scale"] == "landmark"

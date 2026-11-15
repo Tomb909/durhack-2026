@@ -22,10 +22,21 @@ const HAUNTED = cleanCard({
   word: 'haunted house', origin: 'llm', icon: '👻', color: '#4c4652', reading: 'A dark house.',
   prop: { parts: [{ shape: 'box', at: [0, 0.25, 0], size: [0.7, 0.5, 0.45], rotate: [0, 0, 0], color: '#4c4652' }], scale: 'medium', count: 'one', habitat: 'land', motion: 'still', glow: false },
 })!;
+// A place: landforms that end at their radius, lava, and a biome.
+const NETHER = cleanCard({
+  word: 'the nether', origin: 'llm', icon: '🔥', color: '#6e2a2e', reading: 'Netherrack round a lava lake.',
+  effects: [
+    { field: 'height', amount: -0.03, radius: 0.22, shape: 'flat' }, { field: 'lava', amount: 1, radius: 0.17, shape: 'flat' },
+    { field: 'height', amount: 0.1, radius: 0.3, shape: 'spires' }, { field: 'temperature', amount: 0.8, radius: 0.3, shape: 'flat' },
+    { field: 'wetness', amount: -0.9, radius: 0.3, shape: 'flat' }, { field: 'life', amount: -1, radius: 0.3, shape: 'flat' },
+  ],
+  biome: { ground: '#6e2a2e', strength: 0.95, radius: 0.32, rock: '#4a1c20', liquid: { color: '#ff6a1a', glow: 1 }, trees: false },
+})!;
 registerCard(MUD);
+registerCard(NETHER);
 registerCard(HAUNTED);
 /** Worlds with made cards in, for the "depends on the cards alone" checks below. */
-const MADE_CODES = ['mud', 'mud*3', 'mud+water*3', 'mud+life+water', 'mud+mountain+sun', 'haunted-house+water', 'mud+haunted-house+settlement+life+water'];
+const MADE_CODES = ['mud', 'mud*3', 'mud+water*3', 'mud+life+water', 'mud+mountain+sun', 'haunted-house+water', 'mud+haunted-house+settlement+life+water', 'the-nether', 'the-nether*2+water*3', 'the-nether+life+water+mountain'];
 
 describe('combination codes', () => {
   it('reads cards, copies and positions', () => {
@@ -52,7 +63,7 @@ describe('combination codes', () => {
   });
   it('keeps the ready-made sets to built-in cards; made cards have their own', () => {
     expect(resolveScenarios({ set: 'subsets' }).every((s) => s.cards.every((c) => BUILT_IN_IDS.has(c.id)))).toBe(true);
-    expect(resolveScenarios({ set: 'words' }).map((s) => s.code)).toEqual(['mud', 'haunted-house']);
+    expect(resolveScenarios({ set: 'words' }).map((s) => s.code)).toEqual(['mud', 'the-nether', 'haunted-house']);
   });
   it('puts copies side by side, never on top of each other', () => {
     const cards = parseCode('water*3+life');
