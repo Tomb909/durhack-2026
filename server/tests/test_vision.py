@@ -488,3 +488,33 @@ def test_text_that_keeps_changing_or_is_unsure_is_not_a_word():
     known = Reading("forest", "FOREST", 0.95, 0, 0)
     healed = track_after([unknown("FORFSTXY")] * 5 + [known] * 60)
     assert (healed.card, healed.word) == ("forest", "")
+
+
+def test_a_word_with_a_hand_over_its_first_letter_is_not_a_new_word():
+    import numpy as np
+
+    from deck.vision.detect import Detection
+    from deck.vision.reader import Reading
+
+    clear = np.zeros((800, 1200), np.uint8)
+    hand = clear.copy()
+    hand[250:350, 150:245] = 255  # over the left end of the word, where its first letter is
+    arm = Reading(None, "ARM", 0.97, 99, 0, phrase="ARM")
+    farm = Reading(None, "FARM", 0.97, 99, 0, phrase="FARM")
+
+    # A scrap first seen with a hand on it: nothing is made of what shows until the hand has gone.
+    tracker = Tracker()
+    for i in range(10):
+        tracker.update([Detection(320, 300, 0, 150, 50, 0.0)], hand, i * 0.2, lambda det: arm)
+    assert tracker.cards() == []
+    for i in range(10, 20):
+        tracker.update([Detection(300, 300, 0, 200, 50, 0.0)], clear, i * 0.2, lambda det: farm)
+    assert [c["word"] for c in tracker.cards()] == ["FARM"]
+
+    # The made card FARM, its F then covered for ten seconds: it stays FARM, with the same identity.
+    (made,) = tracker.cards()
+    for i in range(20, 70):
+        tracker.update([Detection(320, 300, 0, 150, 50, 0.0)], hand, i * 0.2, lambda det: arm)
+    for i in range(70, 110):  # the hand leaves, and the whole word is seen again
+        tracker.update([Detection(300, 300, 0, 200, 50, 0.0)], clear, i * 0.2, lambda det: farm)
+        assert [(c["id"], c["word"]) for c in tracker.cards()] == [(made["id"], "FARM")]

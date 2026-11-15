@@ -58,6 +58,7 @@ WORD_MIN_LETTERS = 3
 WORD_CONFIDENCE = 0.8  # each of those reads must be at least this sure
 WORD_READS = 3  # this many reads in a row must agree...
 WORD_SECONDS = 0.8  # ...over at least this long
+HAND_NEAR_MM = 12.0  # a hand this close to a word may be covering some of its letters: FARM reads as ARM
 
 
 @dataclass
@@ -178,7 +179,7 @@ class Tracker:
                 track.last_read = now
                 track.text, track.confidence = reading.text, reading.confidence
                 if reading.card is None:
-                    self._count_unknown(track, reading, now)
+                    self._count_unknown(track, reading, now, occluder)
                     continue
                 track.run = 0
                 track.votes[reading.card] += 1
@@ -204,6 +205,10 @@ class Tracker:
                 # A card made from a word is known by its text; it may turn out to be another such word.
                 claim, word = reading.card, ""
                 if claim is None and track.word and self._is_word(reading):
+                    if reading.text.lower() != track.card and (track.regroup_since is not None or self._hand_near(track, occluder)):
+                        # Some of its letters are or were under a hand (the word is a different
+                        # size for now): it has not become another word.
+                        continue
                     claim, word = reading.text.lower(), reading.phrase or reading.text
                 if claim == track.card:
                     track.dissent.clear()
@@ -295,9 +300,27 @@ class Tracker:
         """Could this reading, which matched no card, be a word to make a card from?"""
         return len(reading.text) >= WORD_MIN_LETTERS and reading.confidence >= WORD_CONFIDENCE
 
-    def _count_unknown(self, track: Track, reading: Reading, now: float) -> None:
+    @staticmethod
+    def _hand_near(track: Track, occluder: np.ndarray | None) -> bool:
+        """Is something (a hand, a sleeve) on or right beside this word, where it could hide a letter?"""
+        if occluder is None:
+            return False
+        pad = 2 * HAND_NEAR_MM * PX_PER_MM
+        box = cv2.boxPoints(((track.x, track.y), (track.long + pad, track.short + pad), track.angle))
+        h, w = occluder.shape[:2]
+        x0, y0 = np.clip(np.floor(box.min(axis=0)).astype(int), 0, [w - 1, h - 1])
+        x1, y1 = np.clip(np.ceil(box.max(axis=0)).astype(int) + 1, 1, [w, h])
+        if x1 <= x0 or y1 <= y0:
+            return False
+        under = np.zeros((y1 - y0, x1 - x0), np.uint8)
+        cv2.fillConvexPoly(under, np.round(box - [x0, y0]).astype(np.int32), 255)
+        return bool(np.any(occluder[y0:y1, x0:x1][under > 0]))
+
+    def _count_unknown(self, track: Track, reading: Reading, now: float, occluder: np.ndarray | None = None) -> None:
         """A read that matched no card. The same text several times over is a word of its own."""
-        if not self.make_words or not self._is_word(reading):
+        # With a hand beside it the word may be only part of what is written: start counting again
+        # when the hand has gone.
+        if not self.make_words or not self._is_word(reading) or self._hand_near(track, occluder):
             track.run = 0
             return
         if track.run == 0 or reading.text != track.run_text:
