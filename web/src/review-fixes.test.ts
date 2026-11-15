@@ -10,7 +10,7 @@ import { WorldSim } from './sim/world';
 
 describe('the live world ends exactly where the settled one is', () => {
   it('for lava as well as water (lava used to stop 0.7% short for good)', () => {
-    for (const code of ['lava', 'volcano', 'lava+mountain', 'ravine+rain']) {
+    for (const code of ['lava', 'lava+mountain', 'ravine+rain']) {
       const placements = parseCode(code);
       const settled = new WorldSim().settleNow(liveCards(placements));
       const store = new CardStore();

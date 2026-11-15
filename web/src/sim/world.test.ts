@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { cardDef, type CardDef } from '../cards/defs';
+import { MADE, NEXT_TO, combine, settlementsOf } from '../cards/recipes';
 import { cleanCard } from '../cards/words';
 import type { LiveCard } from '../cards/store';
 import { RULES, WorldSim, gridHeight, sampleField, type WorldFrame, type WorldShape } from './world';
 
 let n = 0;
+/** A card on the table, or (volcano, village, town, city) one of the things cards make together, put down directly. */
 function card(id: string, x: number, y: number, strength = 1, angle = 0): LiveCard {
-  const def = cardDef(id)!;
+  const def = cardDef(id) ?? (MADE as Record<string, CardDef>)[id];
   return { key: `t${n++}`, def, source: 'sim', x, y, angle, targetAngle: angle, tx: x, ty: y, vx: 0, vy: 0, strength, fade: strength, present: true, visible: true, age: 9 };
 }
 
@@ -186,6 +188,22 @@ describe('lake', () => {
     const big = settle([card('lake', 0.45, 0.5), card('big', 0.6, 0.5)]);
     expect(openWater(big)).toBeGreaterThan(openWater(plain) * 1.5);
   });
+  it('is one bigger lake, between them, when two LAKE cards lie next to each other', () => {
+    const one = settle([card('lake', 0.45, 0.5)]);
+    const two = settle([card('lake', 0.4, 0.5), card('lake', 0.56, 0.5)]);
+    expect(open(two, 0.48, 0.5)).toBeGreaterThan(0.01);
+    expect(openWater(two)).toBeGreaterThan(openWater(one) * 1.5);
+    // At no distance do they cancel each other out (half way between joined and apart, they did).
+    for (let gap = 0.2; gap <= 0.34; gap += 0.01) {
+      const f = settle([card('lake', 0.5 - gap / 2, 0.5), card('lake', 0.5 + gap / 2, 0.5)]);
+      expect(openWater(f), `lakes ${gap.toFixed(2)} apart`).toBeGreaterThan(openWater(one) * 1.5);
+    }
+    // Far apart they stay two lakes, with dry land between.
+    const apart = settle([card('lake', 0.25, 0.5), card('lake', 0.7, 0.5)]);
+    expect(open(apart, 0.475, 0.5)).toBeLessThan(0);
+    expect(open(apart, 0.25, 0.5)).toBeGreaterThan(0.01);
+    expect(open(apart, 0.7, 0.5)).toBeGreaterThan(0.01);
+  });
   it('fills in step with the card as it fades', () => {
     const half = settle([card('lake', 0.45, 0.5, 0.5)]);
     const full = settle([card('lake', 0.45, 0.5)]);
@@ -234,6 +252,80 @@ describe('river', () => {
     }
     expect(strong).toBeGreaterThan(40);
     expect(stuck / strong).toBeLessThan(0.02);
+  });
+  /** The cells where the river runs strongly. */
+  const course = (f: WorldFrame) => {
+    const cells: number[] = [];
+    for (let i = 0; i < f.river.length; i++) if (f.river[i] > 0.5) cells.push(i);
+    return cells;
+  };
+  /** The share of river `a` that lies within `reach` cells of river `b`. */
+  const kept = (a: WorldFrame, b: WorldFrame, reach = 4) => {
+    const { w, h } = a;
+    const near = new Uint8Array(w * h);
+    for (const i of course(b)) {
+      const x = i % w, y = (i - x) / w;
+      for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < w && ny < h) near[ny * w + nx] = 1;
+      }
+    }
+    const mine = course(a);
+    return mine.length ? mine.filter((i) => near[i]).length / mine.length : 1;
+  };
+  it('keeps its course when the card moves a little (it used to leap across the table)', { timeout: 20_000 }, () => {
+    // A river dragged in small steps across open ground, past a mountain, and beside a lake.
+    const others = [[], [card('mountain', 0.25, 0.3)], [card('lake', 0.7, 0.65)]];
+    let worst = 1, total = 0, count = 0;
+    for (const rest of others) {
+      for (const [x0, y0, dx, dy] of [[0.2, 0.3, 0.006, 0.004], [0.3, 0.75, 0.007, -0.004], [0.75, 0.25, -0.006, 0.005], [0.5, 0.15, 0.002, 0.008]]) {
+        // At four places along the drag: the river before and after one small move (under a hundredth of the table).
+        for (let place = 0; place < 4; place++) {
+          const x = x0 + dx * place * 18, y = y0 + dy * place * 18;
+          const before = settle([...rest, card('river', x, y)]);
+          const after = settle([...rest, card('river', x + dx, y + dy)]);
+          // (Coming up to a lake is no exception: the river bends towards it little by little. It used to leap to it.)
+          const share = Math.min(kept(before, after, 6), kept(after, before, 6));
+          worst = Math.min(worst, share);
+          total += share;
+          count++;
+        }
+      }
+    }
+    // Before: 0.91 on average, and at the worst places none of the river stayed where it was.
+    expect(total / count).toBeGreaterThan(0.97);
+    expect(worst).toBeGreaterThan(0.8);
+  });
+  it('runs through a lake it is put beside, and on from it', { timeout: 30_000 }, () => {
+    /** The strongest river within `reach` of a place. */
+    const riverNear = (f: WorldFrame, x: number, y: number, reach: number) => {
+      let best = 0;
+      for (let oy = -reach; oy <= reach; oy += 0.006) for (let ox = -reach; ox <= reach; ox += 0.006) best = Math.max(best, at(f, f.river, x + ox, y + oy));
+      return best;
+    };
+    for (const [rx, ry] of [[0.62, 0.5], [0.45, 0.38], [0.36, 0.6], [0.5, 0.66]]) {
+      const f = settle([card('lake', 0.48, 0.5), card('river', rx, ry)]);
+      // The river passes the card and meets the lake (inside it there is only the lake)...
+      expect(riverNear(f, rx, ry, 0.012), `river at ${rx},${ry}: at the card`).toBeGreaterThan(0.5);
+      expect(riverNear(f, 0.48, 0.5, 0.1), `river at ${rx},${ry}: at the lake's shore`).toBeGreaterThan(0.5);
+      // ...the lake still full, and the river carrying on to the edge of the world.
+      expect(open(f, 0.48, 0.5)).toBeGreaterThan(0.01);
+      const { w, h } = f;
+      expect(fractionWhere(f, (i) => f.river[i] > 0.5 && (i % w < 2 || i % w > w - 3 || i < 2 * w || i >= (h - 2) * w))).toBeGreaterThan(0);
+    }
+    // Sliding the card up to the lake, the river bends to it a little at a time: no leap anywhere on the way.
+    for (const [ux, uy] of [[1, 0], [-1, 0], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]]) {
+      let before: WorldFrame | null = null;
+      for (let d = 0.42; d >= 0.06; d -= 0.01) {
+        const f = settle([card('lake', 0.48, 0.5), card('river', 0.48 + ux * d, 0.5 + uy * d * 1.3)]);
+        if (before) expect(Math.min(kept(before, f, 6), kept(f, before, 6)), `river ${d.toFixed(2)} from the lake, towards ${ux},${uy}`).toBeGreaterThan(0.6);
+        before = f;
+      }
+    }
+    // Further off, the river goes its own way.
+    const apart = settle([card('lake', 0.2, 0.3), card('river', 0.7, 0.7)]);
+    const alone = settle([card('river', 0.7, 0.7)]);
+    expect(kept(apart, alone)).toBeGreaterThan(0.9);
   });
   it('fills a lake it runs into without draining it', () => {
     const f = settle([card('mountain', 0.15, 0.5), card('river', 0.4, 0.5), card('lake', 0.62, 0.5)]);
@@ -420,7 +512,8 @@ describe('people', () => {
 describe('village, town and city', () => {
   const sum = (a: Float32Array) => a.reduce((s, v) => s + v, 0);
   it('are three sizes of the same thing', () => {
-    const [village, town, city] = ['village', 'town', 'city'].map((id) => settle([card(id, 0.5, 0.5)]));
+    // One, two and three CIVILIZATION cards together (a city is its middle and a district at each card).
+    const [village, town, city] = [1, 2, 3].map((count) => settle(Array.from({ length: count }, (_, k) => card('civilization', 0.5 + (k - (count - 1) / 2) * 0.04, 0.5))));
     expect(sum(town.homes)).toBeGreaterThan(sum(village.homes) * 1.2);
     expect(sum(city.homes)).toBeGreaterThan(sum(town.homes) * 1.2);
   });
@@ -532,7 +625,7 @@ describe('lava', () => {
 describe('volcano', () => {
   const X = 0.5, Y = 0.5;
   const f = settle([card('volcano', X, Y)]);
-  const spec = cardDef('volcano')!.effects.find((e) => e.cone)!;
+  const spec = MADE.volcano.effects.find((e) => e.cone)!;
   const R = spec.radius! * (f.w - 1); // base radius in cells
   const rc = spec.cone!.crater * R; // crater radius in cells
   const cx = X * (f.w - 1), cy = Y * (f.h - 1);
@@ -650,6 +743,140 @@ describe('volcano', () => {
     const wet = settle([card('volcano', X, Y), card('rain', X + 0.05, Y), card('rain', X + 0.1, Y), card('rain', X + 0.15, Y)]);
     expect(at(wet, wet.waterSurface, X, Y)).toBeLessThan(at(wet, wet.height, X, Y));
     expect(at(wet, wet.lavaHeat, X, Y)).toBeGreaterThan(0.9);
+  });
+});
+
+describe('cards that make something together', () => {
+  const X = 0.5, Y = 0.5;
+  const near = NEXT_TO.full * 0.5;
+  const far = NEXT_TO.none + 0.05;
+  const same = (a: WorldFrame, b: WorldFrame, field: 'height' | 'lava' | 'homes' | 'town' | 'city' | 'plaza') => {
+    let most = 0;
+    for (let i = 0; i < a[field].length; i++) most = Math.max(most, Math.abs(a[field][i] - b[field][i]));
+    return most;
+  };
+
+  it('MOUNTAIN next to LAVA is a volcano, standing between them', () => {
+    const pair = settle([card('mountain', X - near / 2, Y), card('lava', X + near / 2, Y)]);
+    const volcano = settle([card('volcano', X, Y)]);
+    expect(same(pair, volcano, 'height')).toBeLessThan(1e-6);
+    expect(same(pair, volcano, 'lava')).toBeLessThan(1e-6);
+    expect(volcano.rules).toBeGreaterThan(0);
+  });
+
+  it('apart they are a mountain and a pool of lava, and nothing else', () => {
+    const cards = [card('mountain', 0.2, 0.4), card('lava', 0.2 + far, 0.4)];
+    expect(combine(cards)).toEqual(cards);
+    expect(combine([card('mountain', 0.2, 0.4)]).map((c) => c.def.id)).toEqual(['mountain']);
+  });
+
+  it('the volcano grows as the lava is slid towards the mountain: no jump', () => {
+    const sim = new WorldSim();
+    const span = NEXT_TO.none - NEXT_TO.full;
+    let before = sim.settleNow([card('mountain', 0.3, Y), card('lava', 0.3 + NEXT_TO.none, Y)]).height.slice();
+    for (let k = 1; k <= 40; k++) {
+      const now = sim.settleNow([card('mountain', 0.3, Y), card('lava', 0.3 + NEXT_TO.none - (span * k) / 40, Y)]).height;
+      let most = 0;
+      for (let i = 0; i < now.length; i++) most = Math.max(most, Math.abs(now[i] - before[i]));
+      expect(most, `step ${k}`).toBeLessThan(0.06);
+      before = now.slice();
+    }
+  });
+
+  it('one lava makes one volcano: a second mountain beside it stays a mountain', () => {
+    const made = combine([card('mountain', 0.4, Y), card('mountain', 0.6, Y), card('lava', 0.45, Y)]);
+    const strong = made.filter((c) => c.strength > 0.5).map((c) => c.def.id).sort();
+    expect(strong).toEqual(['mountain', 'volcano']);
+  });
+
+  it('BIG beside the pair makes a bigger volcano', () => {
+    const plain = settle([card('mountain', X - near / 2, Y), card('lava', X + near / 2, Y)]);
+    const big = settle([card('big', X, Y + 0.1), card('mountain', X - near / 2, Y), card('lava', X + near / 2, Y)]);
+    expect(Math.max(...big.height)).toBeGreaterThan(Math.max(...plain.height) + 0.08);
+  });
+
+  it('one CIVILIZATION is a village, two next to each other a town, three a city', () => {
+    const civ = (count: number, step = near) => Array.from({ length: count }, (_, k) => card('civilization', X + (k - (count - 1) / 2) * step, Y));
+    for (const [count, kind] of [[1, 'village'], [2, 'town'], [3, 'city'], [4, 'city']] as const) {
+      const made = combine(civ(count)).filter((c) => c.def.id !== 'district');
+      expect(made.map((c) => c.def.id), `${count}`).toEqual([kind]);
+      expect(made[0].strength).toBeCloseTo(1, 6);
+      expect(made[0].x).toBeCloseTo(X, 6);
+      if (count > 2) continue; // a city is more than its middle: see the next test
+      const together = settle(civ(count));
+      const direct = settle([card(kind, X, Y)]);
+      for (const field of ['homes', 'town', 'city', 'plaza'] as const) expect(same(together, direct, field), `${count} ${field}`).toBeLessThan(1e-6);
+    }
+    // Three in a row count, though the two at the ends are not next to each other.
+    const row = combine(civ(3, NEXT_TO.full));
+    expect(row.map((c) => c.def.id)).toEqual(['district', 'district', 'district', 'city']);
+    // Apart, they are villages.
+    expect(combine(civ(3, far)).map((c) => c.def.id)).toEqual(['village', 'village', 'village']);
+  });
+
+  it('a city grows with every card, and a line of cards is a long city', () => {
+    const line = (count: number) => Array.from({ length: count }, (_, k) => card('civilization', 0.15 + k * 0.14, Y));
+    const built = (f: WorldFrame) => fractionWhere(f, (i) => f.homes[i] > 0.25);
+    const [three, four, six] = [3, 4, 6].map((count) => settle(line(count)));
+    expect(built(four)).toBeGreaterThan(built(three) * 1.15);
+    expect(built(six)).toBeGreaterThan(built(four) * 1.25);
+    // City streets at both ends of the line, and still one city: one square, in the middle.
+    expect(at(six, six.city, 0.15, Y)).toBeGreaterThan(0.8);
+    expect(at(six, six.city, 0.85, Y)).toBeGreaterThan(0.8);
+    expect(at(six, six.homes, 0.2, Y + 0.05)).toBeGreaterThan(0.5);
+    expect(at(six, six.plaza, 0.5, Y)).toBeGreaterThan(0.9);
+    expect(at(six, six.plaza, 0.15, Y)).toBe(0);
+    expect(settlementsOf(combine(line(6))).map((c) => c.def.word)).toEqual(['CITY']);
+    // Huddled close, three cards are a little more than the city in their middle, not three cities' worth.
+    const huddle = built(settle(Array.from({ length: 3 }, (_, k) => card('civilization', X + (k - 1) * 0.04, Y))));
+    expect(huddle).toBeLessThan(built(three));
+    expect(huddle).toBeLessThan(0.36);
+  });
+
+  it('a town covers more ground than a village, and a city more than a town', () => {
+    const covered = (count: number) => {
+      const f = settle(Array.from({ length: count }, (_, k) => card('civilization', X + (k - (count - 1) / 2) * 0.04, Y)));
+      return fractionWhere(f, (i) => f.homes[i] > 0.25 || f.plaza[i] > 0.25);
+    };
+    const [village, town, city] = [1, 2, 3].map(covered);
+    expect(town).toBeGreaterThan(village * 1.6);
+    expect(city).toBeGreaterThan(town * 1.25);
+    expect(city).toBeLessThan(0.36); // and still leaves most of the table
+  });
+
+  it('is named for what it has become: one settlement to a place', () => {
+    const civ = (count: number, x: number) => Array.from({ length: count }, (_, k) => card('civilization', x + k * 0.03, Y));
+    const named = settlementsOf(combine([...civ(1, 0.1), ...civ(2, 0.5), ...civ(3, 0.85)]));
+    expect(named.map((c) => c.def.word)).toEqual(['VILLAGE', 'TOWN', 'CITY']);
+    // Two cards half way between "next to" and "apart": two villages fading into one town between
+    // them, never two towns side by side.
+    const gap = (NEXT_TO.full + NEXT_TO.none) / 2;
+    const half = settlementsOf(combine([card('civilization', 0.3, Y), card('civilization', 0.3 + gap, Y)]));
+    expect(half.map((c) => c.def.word).sort()).toEqual(['TOWN', 'VILLAGE', 'VILLAGE']);
+    expect(half.find((c) => c.def.word === 'TOWN')!.x).toBeCloseTo(0.3 + gap / 2, 6);
+    expect(half.reduce((sum, c) => sum + c.strength, 0)).toBeCloseTo(1.5, 6);
+    // The labels do not show that fade: decided, it is one or the other, changing half way.
+    const decided = (apart: number) => settlementsOf(combine([card('civilization', 0.3, Y), card('civilization', 0.3 + apart, Y)], true));
+    expect(decided(gap - 0.005).map((c) => [c.def.word, c.strength])).toEqual([['TOWN', 1]]);
+    expect(decided(gap + 0.005).map((c) => [c.def.word, c.strength])).toEqual([['VILLAGE', 1], ['VILLAGE', 1]]);
+    // And a third card half way in: the town fading into a city, the newcomer still a village.
+    const growing = settlementsOf(combine([card('civilization', 0.3, Y), card('civilization', 0.33, Y), card('civilization', 0.33 + gap, Y)]));
+    expect(growing.map((c) => c.def.word).sort()).toEqual(['CITY', 'TOWN', 'VILLAGE']);
+  });
+
+  it('a town becomes a city smoothly as a third card is slid in', () => {
+    const third = (x: number) => combine([card('civilization', 0.3, Y), card('civilization', 0.3 + near, Y), card('civilization', x, Y)]);
+    const total = (cards: LiveCard[], id: string) => cards.filter((c) => c.def.id === id).reduce((s, c) => s + c.strength, 0);
+    let before = third(0.3 + near + NEXT_TO.none + 0.01);
+    expect(total(before, 'town')).toBeCloseTo(1, 6);
+    expect(total(before, 'village')).toBeCloseTo(1, 6);
+    for (let k = 1; k <= 50; k++) {
+      const now = third(0.3 + near + NEXT_TO.none + 0.01 - (k / 50) * (NEXT_TO.none - NEXT_TO.full + 0.02));
+      for (const id of ['village', 'town', 'city']) expect(Math.abs(total(now, id) - total(before, id)), `${id} step ${k}`).toBeLessThan(0.12);
+      before = now;
+    }
+    expect(total(before, 'city')).toBeCloseTo(1, 6);
+    expect(total(before, 'town') + total(before, 'village')).toBeCloseTo(0, 6);
   });
 });
 

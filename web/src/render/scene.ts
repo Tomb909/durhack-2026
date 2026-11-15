@@ -6,6 +6,7 @@ import { FullScreenQuad, Pass } from 'three/addons/postprocessing/Pass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { combine } from '../cards/recipes';
 import type { LiveCard } from '../cards/store';
 import { DEFAULT_SHAPE, GW, gridHeight, outlineDistance, type WorldFrame, type WorldShape } from '../sim/world';
 import { AirLayer, GradeShader } from './air';
@@ -415,8 +416,10 @@ export class WorldRenderer {
     if (this.lava) this.lava.visible = this.fields.lavaShows;
     this.cullSites(frame);
     this.followMood(frame, dt);
-    this.merchants.update(cards, frame, this.time);
-    this.landmarks.update(cards, frame);
+    // The settlements the CIVILIZATION cards make (a village, a town, a city), not the cards themselves.
+    const made = combine(cards);
+    this.merchants.update(made, frame, this.time);
+    this.landmarks.update(made, frame);
     const count = Math.min(MAX_PULSES, cards.length);
     for (let i = 0; i < count; i++) {
       const card = cards[i];

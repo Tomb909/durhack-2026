@@ -21,7 +21,7 @@ npm --prefix web run dev
 
 Open <http://localhost:5173>. For word cards read by the model, also run `uv run deck` in another terminal; the key lives in `~/.config/deck-of-worlds/keys.env` as `GEMINI_API_KEY=...`.
 
-Useful while testing: **Tab** opens the card tray, **V** the Combinations view, **X** clears simulated cards, **T** changes the table shape, **I** is instant mode. In the browser console, `deck.set('volcano+rain*2')` puts cards down at once.
+Useful while testing: **Tab** opens the card tray, **V** the Combinations view, **X** clears simulated cards, **T** changes the table shape, **I** is instant mode. In the browser console, `deck.set('mountain+lava+rain*2')` puts cards down at once.
 
 ## 0. Automated checks
 
@@ -39,8 +39,8 @@ Useful while testing: **Tab** opens the card tray, **V** the Combinations view, 
 
 ### Only what shows is drawn
 
-- [ ] **Nothing is missing.** For each of these, look for trees, houses, chimney smoke, people, sheep, boats, rain, snow and clouds where you expect them: `forest+rain`, `ice+forest+rain`, `sun+forest+rain*2`, `village+rain+forest`, `village+lake` (boats), `ice+rain*2`.
-- [ ] **Culling changes nothing.** With `village+lake+forest+wind` on the table, run `deck.view.cull = false` in the console, then `deck.view.cull = true`. Expected: the picture does not change at all either way. **Not yet checked by anyone since wind was merged** (boats are now pushed by the wind, and the culling was widened to match).
+- [ ] **Nothing is missing.** For each of these, look for trees, houses, chimney smoke, people, sheep, boats, rain, snow and clouds where you expect them: `forest+rain`, `ice+forest+rain`, `sun+forest+rain*2`, `civilization+rain+forest`, `civilization+lake` (boats), `ice+rain*2`.
+- [ ] **Culling changes nothing.** With `civilization+lake+forest+wind` on the table, run `deck.view.cull = false` in the console, then `deck.view.cull = true`. Expected: the picture does not change at all either way. **Not yet checked by anyone since wind was merged** (boats are now pushed by the wind, and the culling was widened to match).
 - [ ] `deck.view.sitesDrawn` on an empty table reports `drawn` near 0 out of about 20,000.
 
 ### Auto quality
@@ -57,16 +57,17 @@ Useful while testing: **Tab** opens the card tray, **V** the Combinations view, 
 ### Smoothness (by eye)
 
 - [ ] **Not yet checked by anyone on a real screen:** with a normal mix of 6 to 10 cards the picture holds the screen's frame rate while idle and while dragging a card that does not move the ground (SUN, FOREST, VILLAGE).
-- [ ] Dragging MOUNTAIN, RAVINE or VOLCANO is the heaviest case. Note the frame rate on the demo laptop.
+- [ ] Dragging MOUNTAIN, RAVINE or a volcano (MOUNTAIN next to LAVA) is the heaviest case. Note the frame rate on the demo laptop.
 
 ## 2. Lava, ravine and volcano
 
 - [ ] **LAVA** alone: a glowing pool with dark crust, smoke and embers over it, ash on the ground around.
-- [ ] **VOLCANO** alone: a cone with a crater, lava running down gullies, a smoke column.
+- [ ] **MOUNTAIN next to LAVA** (`mountain+lava`): a volcano between the two cards, a cone with a crater, lava running down gullies, a smoke column. **Not yet checked with real cards:** slide LAVA slowly towards MOUNTAIN from the far side of the table: the mountain grows into the volcano with no jump, and slides back the same way.
+- [ ] MOUNTAIN and LAVA far apart: a mountain, and a pool of lava by itself.
 - [ ] **RAVINE** alone: a narrow crack, not a round pit. `ravine+rain`: it stays dry until rain runs into it, then holds a lake.
-- [ ] `lava+lake` and `volcano+lake`: lava under water sets to dark rock.
+- [ ] `lava+lake` and `mountain+lava+lake`: lava under water sets to dark rock.
 - [ ] `lava+ice`: lava in the cold cools to rock.
-- [ ] `volcano+forest+village`: forest is burnt back from the lava; nobody builds or farms on it.
+- [ ] `mountain+lava+forest+civilization`: forest is burnt back from the lava; nobody builds or farms on it.
 - [ ] **The live world matches the Combinations view.** Put LAVA down by hand and wait ten seconds; compare with the `lava` tile. They should look the same (lava used to stop slightly short when placed live).
 - [ ] Remove the lava card: the lava and its smoke go completely.
 - [ ] Known issue: in `lava+ravine`, close up and from the side, lava inside the ravine can show as tall bright spikes.
@@ -107,11 +108,12 @@ Useful while testing: **Tab** opens the card tray, **V** the Combinations view, 
 
 ## 4. Where this branch meets main
 
-- [ ] **Wind and lava together.** `volcano+wind~45+rain`: wind streaks, slanted rain and lava all draw correctly, and the lava is not blown about or coloured like wind. (Both were written to use the same texture channels; wind was moved to its own.)
+- [ ] **Wind and lava together.** `mountain+lava+wind~45+rain`: wind streaks, slanted rain and lava all draw correctly, and the lava is not blown about or coloured like wind. (Both were written to use the same texture channels; wind was moved to its own.)
 - [ ] **WIND bends everything it should:** chimney smoke, rain, clouds, people, boats, water ripples; wind beside ICE makes a blizzard; wind beside FOREST and RAIN (or LAKE, or RIVER) grows a line of trees downwind.
-- [ ] **VILLAGE** makes villages; a card reading PEOPLE or SETTLEMENT still does too.
+- [ ] **CIVILIZATION** alone is a village; a card reading VILLAGE, TOWN, CITY, PEOPLE or SETTLEMENT is the same card.
+- [ ] **Two CIVILIZATION cards next to each other** are one town with a church, standing between them; **three** (in a row or a huddle) are one city with a castle. Apart, they are separate villages. **Not yet checked with real cards:** that scraps laid side by side on the sheet are close enough to count (within about a quarter of the sheet's width, centre to centre).
 - [ ] **Villages look like main's:** cottages with windows and chimneys, each on its own plot; fewer people and sheep than before; five-wisp smoke from about two houses in five.
-- [ ] **Merchants** travel between two VILLAGE, TOWN or CITY cards.
+- [ ] **Merchants** travel between two settlements (not between the cards that make up one town or city).
 - [ ] **Sound** plays and **M** mutes it.
 - [ ] A word card made before today that used the old `people` field (for example CASTLE or CIRCUS, if stored) still grows a village.
 - [ ] The card tray shows five cards to a row, word cards after the built-in ones, guesses with dashed borders.

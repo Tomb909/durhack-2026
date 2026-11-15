@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { cardDef } from '../cards/defs';
+import { MADE } from '../cards/recipes';
 import { settledCard } from '../cards/store';
 import { WorldSim } from '../sim/world';
 import { makeSharedUniforms } from './common';
 import { Merchants, tradeRoutes } from './people';
 
 const person = (key: string, x: number, y: number, strength = 1) => ({
-  ...settledCard(key, cardDef('village')!, x, y),
+  ...settledCard(key, MADE.village, x, y),
   strength,
 });
 

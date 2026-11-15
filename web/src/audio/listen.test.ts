@@ -48,7 +48,7 @@ describe('listening to the world', () => {
 });
 
 describe('listening to a settlement', () => {
-  const village = [...sea(0.3), card('forest', 0.6, 0.5), card('village', 0.5, 0.5)];
+  const village = [...sea(0.3), card('forest', 0.6, 0.5), card('civilization', 0.5, 0.5)];
   it('is silent without one, and heard with one', () => {
     const none = hear([...sea(0.3), card('forest', 0.6, 0.5)]);
     expect(none.village + none.farm + none.fishing + none.logging).toBe(0);

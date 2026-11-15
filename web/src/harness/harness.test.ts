@@ -150,7 +150,7 @@ describe('the settled world depends on the cards alone', { timeout: 30_000 }, ()
     for (const v of frame.height) expect(Number.isFinite(v)).toBe(true);
   });
   it('is where the animated world ends up, at any frame rate', () => {
-    for (const code of ['rain', 'rain*3', 'forest+rain', 'mountain+rain', 'rain*3@0.3,0.3+forest@0.8,0.6', 'mountain+rain+sun+ice+forest', 'ravine+rain', 'lava+ravine', 'volcano+rain', 'mud+forest+rain', 'mud*3+mountain']) {
+    for (const code of ['rain', 'rain*3', 'forest+rain', 'mountain+rain', 'rain*3@0.3,0.3+forest@0.8,0.6', 'mountain+rain+sun+ice+forest', 'ravine+rain', 'lava+ravine', 'mountain+lava+rain', 'mud+forest+rain', 'mud*3+mountain']) {
       const placements = parseCode(code);
       const settled = measure(new WorldSim().settleNow(liveCards(placements)));
       for (const fps of [60, 24]) {

@@ -104,10 +104,10 @@ void main() {
   float ring = smoothstep(0.80, 0.98, vnoise(p * 26.0 + floor(t * 6.0) * 7.3)) * rain;
   col += ring * 0.10 * (1.0 - frozen);
 
-  // Ice: pale, matte, with cracks.
+  // Ice: blue (so that it does not pass for snow), matte, with darker cracks.
   float crack = smoothstep(0.47, 0.5, abs(vnoise(p * 7.0) - 0.5) * 2.0 + 0.45) ;
-  vec3 ice = mix(vec3(0.80, 0.90, 0.97), vec3(0.93, 0.97, 1.0), n2) * (0.72 + 0.45 * ndl * overcast);
-  ice = mix(ice * 0.86, ice, crack);
+  vec3 ice = mix(vec3(0.07, 0.28, 0.66), vec3(0.16, 0.45, 0.84), n2) * (0.72 + 0.45 * ndl * overcast);
+  ice = mix(ice * vec3(0.62, 0.74, 0.90), ice, crack);
   col = mix(col, ice, frozen);
 
   // Lit from within: its own light, whatever the sun does. A darker skin drifts on it and it burns

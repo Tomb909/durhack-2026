@@ -4,9 +4,11 @@
 // (height, temperature, wetness, sea level, life, settlement, lava) and everything
 // you see is derived from those. WIND is the one card that looks at the others: it gives
 // the weather a direction, drives snow off nearby ICE and carries LIFE's seeds downwind
-// (buildWindField, buildBlizzard, scatterSeeds).
+// (buildWindField, buildBlizzard, scatterSeeds). Cards that make something else when they lie
+// next to each other (MOUNTAIN + LAVA: a volcano) are swapped for it first (cards/recipes.ts).
 import type { CardEffect, FieldName, LandShape } from '../cards/defs';
 import { heightMultiplier, modifierTargets, radiusMultiplier } from '../cards/modifiers';
+import { combine } from '../cards/recipes';
 import type { LiveCard } from '../cards/store';
 import { Hydrology, type HydrologyRules } from './hydrology';
 import { fbm, ridged } from './noise';
@@ -177,15 +179,27 @@ export const RULES = {
     bank: 0.9, // higher ground slopes down to the shore over this share of the radius, instead of standing as a cliff
   },
   /**
-   * A RIVER card: a river that runs through the card. It rises on the highest ground
-   * within reach (a mountain, if there is one) and carries on past the card, away from
-   * its source, to the edge of the world, cutting itself a small valley on the way.
+   * A RIVER card: a river that runs through the card. Its course is the way water would run
+   * over the lie of the land (the ground with its small bumps smoothed away), drawn on past
+   * the card to the edge of the world. Followed back uphill it rises on a mountain, if there
+   * is one that way, or in a LAKE that draws it in, or else comes in from the edge.
+   * It cuts itself a small valley on the way.
    */
   river: {
-    sourceReach: 0.25, // height a far-off peak loses, per world width, against a near one
-    sourceShort: 0.2, // the top fifth of the way up to the peak stays dry
-    pull: 0.6, // how hard the river is drawn on past the card (height per world width)
-    wander: 0.05, // how much the ground's roughness bends its course
+    lie: 0.036, // the land is smoothed over about this share of the world's width to find the course
+    aim: 0.15, // and over about this much to find which way the river heads as it passes the card
+    drift: 0.18, // on open ground the river heads for the near edge: a slope this steep (height per world width) turns it half aside
+    pull: 0.6, // how hard the river is drawn on in that direction (height per world width)
+    steady: 0.85, // how much of its heading the river keeps at each step (0 turns at once, 1 never turns)
+    onward: 0.2, // at least this share of every step is the way the river heads
+    meander: 0.9, // how far it swings from side to side on the way (radians per unit of slow noise)
+    summit: 0.08, // followed uphill, the river rises where the land has fallen this far below the highest point passed (more than open ground ever does: only a mountain is a source)
+    sourceShort: 0.2, // the top fifth of the way up to a summit stays dry
+    // A LAKE draws rivers to it: fully within `join` of its shore (shares of the world's width), not at
+    // all beyond `reach`, and smoothly more in between, so a river card sliding up to a lake bends its
+    // river towards the lake little by little.
+    join: 0.03,
+    reach: 0.3,
     bedDepth: 0.0035,
     bankReach: 4, // cells either side shaped into the valley
     bankRise: 0.0022, // valley side: height gained per cell squared
@@ -217,7 +231,7 @@ export const RULES = {
     deepen: 1.3, // depth swells by this share per unit of slow noise
     jagged: 0.7, // and by this share per unit of fine noise
   },
-  /** A volcano's cone (an effect with `cone`; the shape itself is on the card). */
+  /** A volcano's cone (an effect with `cone`; the shape itself is on the volcano in cards/recipes.ts). */
   volcano: {
     ceiling: 0.9, // rims level off around this height, however many copies or BIG
     huddle: 0.35, // each copy close by lifts a cone by up to this share
@@ -333,6 +347,31 @@ const DY8 = [0, 0, 1, -1, 1, -1, 1, -1];
 /** True where the sea covers this cell. Ground below sea level can still be dry: a hole the sea has not reached. */
 export const underSea = (frame: WorldFrame, i: number) => frame.height[i] < frame.seaLevel && frame.waterSurface[i] > frame.height[i];
 
+/**
+ * Smooth a field: three passes of a running average over `radius` cells each way, along rows then
+ * columns (close to a Gaussian blur). Edges repeat. `to` and `scratch` are written; `from` is not.
+ */
+function smooth(from: Float32Array, to: Float32Array, scratch: Float32Array, w: number, h: number, radius: number): void {
+  const span = 2 * radius + 1;
+  const pass = (src: Float32Array, dst: Float32Array, lines: number, length: number, lineStep: number, step: number) => {
+    for (let line = 0; line < lines; line++) {
+      const start = line * lineStep;
+      let sum = 0;
+      for (let k = -radius; k <= radius; k++) sum += src[start + Math.min(length - 1, Math.max(0, k)) * step];
+      for (let k = 0; k < length; k++) {
+        dst[start + k * step] = sum / span;
+        sum += src[start + Math.min(length - 1, k + radius + 1) * step] - src[start + Math.max(0, k - radius) * step];
+      }
+    }
+  };
+  let src = from;
+  for (let times = 0; times < 3; times++) {
+    pass(src, scratch, h, w, w, 1); // along rows
+    pass(scratch, to, w, h, 1, w); // along columns
+    src = to;
+  }
+}
+
 export class WorldSim {
   readonly frame: WorldFrame;
   readonly shape: WorldShape;
@@ -350,9 +389,10 @@ export class WorldSim {
   /** Water welling up (LAKE, RIVER) and the beds RIVER cards lay down: inputs to the hydrology. */
   private spring: Float32Array;
   private course: Float32Array;
-  /** A second flood, used to find each RIVER card's way to the edge. */
-  private router: Hydrology;
-  private routeSurface: Float32Array;
+  /** The lie of the land, for finding each RIVER card's course: the ground smoothed, smoothed further, and a scratch copy. */
+  private lie: Float32Array;
+  private aim: Float32Array;
+  private blurScratch: Float32Array;
   /** 1 inside a LAKE card's basin: rivers run into and out of these without cutting them open. */
   private basin: Uint8Array;
   /** Fault lines: a cut (an effect with `crack`) follows the line of this field that runs through its card. */
@@ -411,8 +451,7 @@ export class WorldSim {
     const n = (this.n = w * h);
     const f = () => new Float32Array(n);
     this.base = f(); this.ridge = f(); this.rough = f(); this.crags = f(); this.foothills = f();
-    this.spring = f(); this.course = f(); this.routeSurface = f();
-    this.router = new Hydrology(w, h);
+    this.spring = f(); this.course = f(); this.lie = f(); this.aim = f(); this.blurScratch = f();
     this.basin = new Uint8Array(n);
     this.fault = f(); this.faultGrade = f(); this.jag = f(); this.swell = f(); this.coneLift = f(); this.ventFlow = f(); this.coneMask = f(); this.coneFloor = f(); this.formed = f(); this.formMask = f(); this.formFloor = f(); this.ground = new Float64Array(n);
     this.push = { height: f(), temperature: f(), wetness: f(), forest: f(), settlement: f(), town: f(), city: f(), plaza: f(), lava: f() };
@@ -605,8 +644,10 @@ export class WorldSim {
     return false;
   }
 
-  private recompute(cards: LiveCard[]): void {
+  private recompute(onTable: LiveCard[]): void {
     const { n, frame, push } = this;
+    // MOUNTAIN + LAVA is a volcano, CIVILIZATION cards together are a town or a city, LAKE cards together one bigger lake.
+    const cards = combine(onTable);
     for (const key of Object.keys(push) as LocalField[]) push[key].fill(0);
     if (this.hadCone) {
       this.coneLift.fill(0);
@@ -732,7 +773,7 @@ export class WorldSim {
     this.spring.fill(0);
     this.course.fill(0);
     this.digLakes(cards, radiusMultipliers, sea);
-    this.runRivers(cards, sea);
+    this.runRivers(cards, radiusMultipliers, sea);
     for (let i = 0; i < n; i++) {
       const h = height[i];
 
@@ -887,80 +928,135 @@ export class WorldSim {
   }
 
   /**
-   * RIVER: a river through each card. It rises on the highest ground within reach,
-   * comes down through the card and runs on, away from its source, to the edge.
+   * RIVER: a river through each card. Its course follows the lie of the land (see RULES.river):
+   * found on smoothed ground, so that moving the card a little moves the river a little.
    */
-  private runRivers(cards: LiveCard[], sea: number): void {
+  private runRivers(cards: LiveCard[], radiusMultipliers: Map<LiveCard, number>, sea: number): void {
     const rivers = cards.filter((card) => card.def.id === 'river' && card.strength > 0);
     if (!rivers.length) return;
-    const { w, h, n, aspect, frame, rough, inside, hydrology, router, routeSurface, spring, course, basin } = this;
+    const { w, h, frame, inside, hydrology, spring, course, basin, lie, aim, blurScratch, foothills } = this;
     const height = frame.height;
     const R = RULES.river;
     const H = RULES.hydrology;
-    const ux = (i: number) => i / (w - 1);
-    const uy = (j: number) => j / (h - 1) / aspect;
+    // The lie of the land as it stands before any river is cut, so one river does not turn another.
+    smooth(height, lie, blurScratch, w, h, Math.max(1, Math.round(R.lie * (w - 1))));
+    smooth(lie, aim, blurScratch, w, h, Math.max(1, Math.round(R.aim * (w - 1))));
+    /** A field between cells. */
+    const read = (field: Float32Array, x: number, y: number) => {
+      const fx = Math.min(w - 1.001, Math.max(0, x)), fy = Math.min(h - 1.001, Math.max(0, y));
+      const i = Math.floor(fx), j = Math.floor(fy);
+      const tx = fx - i, ty = fy - j;
+      const k = j * w + i;
+      return (field[k] * (1 - tx) + field[k + 1] * tx) * (1 - ty) + (field[k + w] * (1 - tx) + field[k + w + 1] * tx) * ty;
+    };
+    // The lakes, in cells.
+    const lakes = cards.filter((card) => card.def.id === 'lake' && card.strength > 0).map((card) => ({
+      x: Math.min(w - 4, Math.max(3, card.x * (w - 1))),
+      y: Math.min(h - 4, Math.max(3, card.y * (h - 1))),
+      radius: (card.def.effects.find((e) => e.field === 'lake')?.radius ?? 0.075) * (radiusMultipliers.get(card) ?? 1) * (w - 1),
+    }));
+    /** How strongly a lake draws a river at this place: 1 beside it, 0 out of its reach. */
+    const drawn = (lake: { x: number; y: number; radius: number }, x: number, y: number) =>
+      smoothstep(lake.radius + R.reach * (w - 1), lake.radius + R.join * (w - 1), Math.hypot(x - lake.x, y - lake.y));
+    const tilt = R.pull / (w - 1); // height per cell
+    const STEP = 0.5; // cells
+    const longest = 6 * (w + h);
     for (const card of rivers) {
-      const cardX = Math.min(w - 3, Math.max(2, Math.round(card.x * (w - 1))));
-      const cardY = Math.min(h - 3, Math.max(2, Math.round(card.y * (h - 1))));
-      const px = ux(cardX), py = uy(cardY);
+      const cardX = Math.min(w - 3, Math.max(2, card.x * (w - 1)));
+      const cardY = Math.min(h - 3, Math.max(2, card.y * (h - 1)));
 
-      // The source: the highest ground around, a far peak counting for less than a near one.
-      let source = cardY * w + cardX;
-      let best = -Infinity;
-      for (let j = 2; j < h - 2; j += 2) {
-        for (let i = 2; i < w - 2; i += 2) {
+      // Which way the river heads as it passes the card.
+      // Downhill on the broad lie of the land, which near a mountain is away from it. Open ground
+      // has no slope to speak of at that scale: there the river drifts to the near edge of the table.
+      // (Without the drift its heading would spin round every flat spot, and the river with it.)
+      let headX = -(read(aim, cardX + 1, cardY) - read(aim, cardX - 1, cardY)) / 2;
+      let headY = R.drift / (w - 1) - (read(aim, cardX, cardY + 1) - read(aim, cardX, cardY - 1)) / 2;
+      const headed = Math.hypot(headX, headY);
+      if (headed < 1e-12) headX = 1, headY = 0;
+      else headX /= headed, headY /= headed;
+
+      /**
+       * Follow the water from the card: down (+1) or back up (-1). The ground is the lie of the land
+       * tilted the way the river heads, so there is always a way on. Returns the cells passed, and
+       * for the way up, whether it ended on a summit (and not at the edge of the world).
+       */
+      const follow = (way: 1 | -1): { cells: number[]; summit: boolean } => {
+        const cells: number[] = [];
+        let x = cardX, y = cardY;
+        let dirX = headX * way, dirY = headY * way;
+        let last = Math.round(cardY) * w + Math.round(cardX);
+        let top = -Infinity, topAt = 0;
+        for (let step = 0; step < longest; step++) {
+          let wantX = way * (tilt * headX - (read(lie, x + 1, y) - read(lie, x - 1, y)) / 2);
+          let wantY = way * (tilt * headY - (read(lie, x, y + 1) - read(lie, x, y - 1)) / 2);
+          const steep = Math.hypot(wantX, wantY);
+          if (steep < 1e-12) wantX = dirX, wantY = dirY;
+          else wantX /= steep, wantY /= steep;
+          // A lake within reach draws the river in: it runs into the lake, through it and on. Only a
+          // lake ahead does so (followed back up, one off to the side as well, so that a river beside
+          // a lake comes out of it): once past, the lake lets it go.
+          let draw = 0;
+          for (const lake of lakes) {
+            const toX = lake.x - x, toY = lake.y - y;
+            const apart = Math.hypot(toX, toY);
+            if (apart < 1) continue;
+            const ahead = ((toX * headX + toY * headY) * way) / apart;
+            const d = drawn(lake, x, y) * (way < 0 ? smoothstep(-0.95, -0.5, ahead) : smoothstep(0.1, 0.6, ahead));
+            if (d <= 0) continue;
+            // Never back the way it came: a lake behind draws it sideways only.
+            const back = Math.min(0, ahead) * way;
+            let pullX = toX / apart - back * headX, pullY = toY / apart - back * headY;
+            const pull = Math.hypot(pullX, pullY) || 1;
+            pullX /= pull; pullY /= pull;
+            wantX += d * (pullX - wantX);
+            wantY += d * (pullY - wantY);
+            draw = Math.max(draw, d);
+          }
+          // Swing from side to side: slow noise fixed to the ground turns the river a little.
+          const bend = R.meander * read(foothills, x, y) * (1 - draw);
+          const co = Math.cos(bend), si = Math.sin(bend);
+          // (Drawn to a lake it turns more readily, or it would swing wide of one close by.)
+          const steady = R.steady * (1 - 0.6 * draw);
+          dirX = steady * dirX + (1 - steady) * (co * wantX - si * wantY);
+          dirY = steady * dirY + (1 - steady) * (si * wantX + co * wantY);
+          // Never turning back on the way it heads: it cannot circle in a dip, and always reaches the edge.
+          // (Where the ground rises in its way it turns aside as far as that allows, then cuts through.)
+          const onward = (dirX * headX + dirY * headY) * way;
+          if (onward < R.onward) {
+            dirX += (R.onward - onward) * headX * way;
+            dirY += (R.onward - onward) * headY * way;
+          }
+          const speed = Math.hypot(dirX, dirY) || 1;
+          dirX /= speed; dirY /= speed;
+          x += dirX * STEP; y += dirY * STEP;
+          const i = Math.round(x), j = Math.round(y);
+          if (i < 0 || j < 0 || i >= w || j >= h || !inside[j * w + i]) return { cells, summit: false };
           const k = j * w + i;
-          if (!inside[k]) continue;
-          const score = height[k] - R.sourceReach * Math.hypot(ux(i) - px, uy(j) - py);
-          if (score > best) best = score, source = k;
+          if (k !== last) cells.push(k), last = k;
+          if (way < 0) {
+            // Back uphill: over the top and well down the far side means the summit was the source.
+            const ground = read(lie, x, y);
+            if (ground > top) top = ground, topAt = cells.length;
+            else if (ground < top - R.summit) {
+              cells.length = topAt;
+              return { cells, summit: true };
+            }
+          }
         }
-      }
-      const sx = source % w, sy = (source - sx) / w;
-      let dirX = px - ux(sx), dirY = py - uy(sy);
-      if (Math.hypot(dirX, dirY) < 0.04) {
-        // The card is on the summit: head for the lowest ground round about.
-        let low = Infinity;
-        for (let k = 0; k < 32; k++) {
-          const a = (k / 32) * Math.PI * 2;
-          const x = Math.min(w - 1, Math.max(0, Math.round(cardX + Math.cos(a) * 0.2 * (w - 1))));
-          const y = Math.min(h - 1, Math.max(0, Math.round(cardY + Math.sin(a) * 0.2 * aspect * (h - 1))));
-          if (height[y * w + x] < low) low = height[y * w + x], dirX = Math.cos(a), dirY = Math.sin(a);
-        }
-      }
-      const length = Math.hypot(dirX, dirY) || 1;
-      dirX /= length; dirY /= length;
+        return { cells, summit: false };
+      };
 
-      // Up from the card to the source: always nearer, and by the lowest ground on offer (the valley floors).
-      const up: number[] = [];
-      let x = cardX, y = cardY;
-      for (let guard = 0; guard < w + h; guard++) {
-        const here = Math.hypot(x - sx, y - sy);
-        if (here < 1.5) break;
-        let next = -1, lowest = Infinity;
-        for (let d = 0; d < 8; d++) {
-          const nx = x + DX8[d], ny = y + DY8[d];
-          if (nx < 1 || ny < 1 || nx >= w - 1 || ny >= h - 1) continue;
-          const k = ny * w + nx;
-          if (!inside[k] || Math.hypot(nx - sx, ny - sy) >= here - 0.3) continue;
-          const cost = height[k] + R.wander * rough[k];
-          if (cost < lowest) lowest = cost, next = k;
-        }
-        if (next < 0) break;
-        up.push(next);
-        x = next % w; y = (next - x) / w;
+      let trickle = false; // a river from a summit starts small; one from a lake or the edge is already a river
+      const back = follow(-1);
+      const up = back.cells;
+      if (back.summit) {
+        up.length = Math.round(up.length * (1 - R.sourceShort));
+        trickle = true;
       }
-      up.length = Math.round(up.length * (1 - R.sourceShort));
-
-      // Down from the card: over ground tilted away from the source, the way water would find to the edge.
-      for (let j = 0; j < h; j++) {
-        for (let i = 0; i < w; i++) {
-          const k = j * w + i;
-          routeSurface[k] = height[k] + R.wander * rough[k] - R.pull * ((ux(i) - px) * dirX + (uy(j) - py) * dirY);
-        }
-      }
-      router.flood(routeSurface, -Infinity, inside);
-      const path = up.reverse();
-      for (let k = cardY * w + cardX, guard = 0; k >= 0 && guard < n; k = router.parent[k], guard++) path.push(k);
+      up.reverse();
+      const here = Math.round(cardY) * w + Math.round(cardX);
+      const path = up[up.length - 1] === here ? up : [...up, here];
+      for (const k of follow(1).cells) path.push(k);
 
       // The bed never climbs: it cuts through whatever rise is in its way. Across a LAKE it
       // rides at the lake's own level (what the basin fills to), so it leaves by the brim.
@@ -988,7 +1084,7 @@ export class WorldSim {
           }
         }
         // A trickle at the source, a full river by the time it has run a little way.
-        const grown = card.strength * (0.4 + 0.6 * smoothstep(0, 24, s));
+        const grown = card.strength * (trickle ? 0.4 + 0.6 * smoothstep(0, 24, s) : 1);
         if (grown > course[c]) course[c] = grown;
         // Wider than one cell once it is a proper river.
         for (let d = 0; d < 4; d++) {

@@ -313,7 +313,7 @@ and every other shape but patch is level right up to a hard edge.
 
 For scale, the built-in cards are: MOUNTAIN height +0.5 patch radius 0.15 (a great peak); RAIN wetness +0.5 \
 patch radius 0.2; SUN temperature +0.62 patch radius 0.24; ICE temperature -0.62 patch \
-radius 0.24; FOREST life +1.0 patch radius 0.24; VILLAGE settlement +1.0 patch radius 0.13; LAVA lava +1.0 \
+radius 0.24; FOREST life +1.0 patch radius 0.24; CIVILIZATION (a village) settlement +1.0 patch radius 0.13; LAVA lava +1.0 \
 patch radius 0.045. For landforms, height is the real height: a low rise 0.03, a mesa or a field of spires \
 0.08 to 0.15, a mountain 0.3 to 0.5; a shallow basin -0.03, a deep pit -0.1.
 
@@ -469,7 +469,7 @@ in that language. A misspelt word means the word it was meant to be.
 Do not make things the world already makes for itself unless the word is about them: it has trees, houses, \
 rain, snow and boats of its own, and a TREE card is better as a few large striking trees than as a forest \
 effect, while a FOREST card is better as life plus wetness. Built-in cards already cover MOUNTAIN, RAIN, \
-LAKE, RIVER, SUN, ICE, FOREST, VILLAGE, TOWN, CITY, WIND, RAVINE, LAVA and VOLCANO. A place from a story or a game (THE NETHER, \
+LAKE, RIVER, SUN, ICE, FOREST, CIVILIZATION, WIND, RAVINE and LAVA. A place from a story or a game (THE NETHER, \
 MORDOR, HOTH, PANDORA, ATLANTIS) is a place like any other: build what a person who knows it would expect \
 to see there, from landforms, climate, materials, air and one or two of its most recognisable things.
 

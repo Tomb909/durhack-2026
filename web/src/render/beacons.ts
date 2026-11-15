@@ -4,9 +4,11 @@
 // The labels are ordinary page elements placed over the picture, not part of
 // the 3D scene, so the tilt-shift blur never touches them. Copies of the same
 // card that sit close together share one label ("RAIN ×3"), and labels that
-// would collide on screen are stacked instead.
+// would collide on screen are stacked instead. CIVILIZATION cards are labelled
+// by what they have made: one VILLAGE, TOWN or CITY label over each settlement.
 import * as THREE from 'three';
 import { modifierTargets } from '../cards/modifiers';
+import { combine, settlementsOf } from '../cards/recipes';
 import type { LiveCard } from '../cards/store';
 import { sampleField, type WorldFrame } from '../sim/world';
 import { HSCALE, world } from './common';
@@ -134,7 +136,22 @@ export class Beacons {
     }
 
     // --- group nearby copies of the same card; attached modifiers share the target label
-    const groups = groupCopies(cards, attachedModifiers, world.aspect);
+    const civilization = cards.filter((card) => card.def.id === 'civilization');
+    const groups = groupCopies(cards, new Set([...attachedModifiers, ...civilization]), world.aspect);
+    // CIVILIZATION: a label for each settlement (VILLAGE, TOWN or CITY), where it stands. One or the
+    // other: while the world fades two villages into a town, the label changes once, half way.
+    const settlements = civilization.length ? settlementsOf(combine(cards, true)) : [];
+    const nearestSettlement = (card: LiveCard) =>
+      settlements.reduce((a, b) => (Math.hypot(b.x - card.x, b.y - card.y) < Math.hypot(a.x - card.x, a.y - card.y) ? b : a));
+    for (const place of settlements) {
+      ground.set(place, Math.max(sampleField(frame.height, frame.w, frame.h, place.x, place.y), sampleField(frame.waterSurface, frame.w, frame.h, place.x, place.y)) * HSCALE);
+      // A modifier beside one of its cards is named on its label (BIG TOWN).
+      const modifiers = civilization.filter((card) => nearestSettlement(card) === place).flatMap((card) => modifiersByTarget.get(card) ?? []);
+      if (modifiers.length) modifiersByTarget.set(place, modifiers);
+      // Dimmed only while the camera cannot see any of the cards.
+      place.visible = civilization.some((card) => card.visible);
+      groups.push([place]);
+    }
 
     // --- one label per group
     const live = new Set<string>();

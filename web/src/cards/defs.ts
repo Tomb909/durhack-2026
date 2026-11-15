@@ -6,6 +6,10 @@
 // round it is made of (`biome`), change the air (`atmosphere`), and stand an
 // object in the world (`prop`). Built-in cards use only the first. Cards made
 // from a typed word (see words.ts) may use all four, and are still only data.
+//
+// Some cards make something else when they lie next to each other (MOUNTAIN + LAVA: a
+// volcano; CIVILIZATION cards together: a town, a city). Those recipes, and the data
+// for what they make, are in recipes.ts.
 import raw from './cards.json';
 
 /** The underlying world properties a card may push on. */
@@ -199,7 +203,7 @@ export interface CardDef {
   effects: CardEffect[];
   modifier?: CardModifier;
   /**
-   * True for a card that is several simpler cards in one (VOLCANO: a cone, a crater and lava).
+   * True for a card that is several simpler cards in one (a made card that is a cone, a crater and lava, say).
    * Left out of the every-combination sets, which double with each card in them.
    */
   compound?: boolean;

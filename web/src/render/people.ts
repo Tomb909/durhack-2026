@@ -536,9 +536,15 @@ export interface TradeRoute {
 
 const SETTLEMENT_IDS = new Set(['village', 'town', 'city']);
 
-/** Connect every settlement to the nearest already-connected settlement. */
+/**
+ * Connect every settlement to the nearest already-connected settlement. Takes the settlements
+ * themselves (what `combine` makes of the CIVILIZATION cards), one to a place.
+ */
 export function tradeRoutes(cards: readonly LiveCard[]): TradeRoute[] {
-  const settlements = cards.filter((card) => SETTLEMENT_IDS.has(card.def.id) && card.strength > 0.15);
+  const settlements = cards
+    .filter((card) => SETTLEMENT_IDS.has(card.def.id) && card.strength > 0.15)
+    // A village growing into a town is two cards on one spot for a moment: one settlement.
+    .filter((card, k, all) => !all.slice(0, k).some((other) => Math.hypot(other.x - card.x, other.y - card.y) < 0.001));
   if (settlements.length < 2) return [];
 
   const connected = new Set([0]);
@@ -587,7 +593,7 @@ function makeConvoy(body: THREE.BufferGeometry, wheel: THREE.BufferGeometry, mat
   return { group, wheels };
 }
 
-/** Tiny horse-drawn carts linking the active SETTLEMENT cards. */
+/** Tiny horse-drawn carts linking the settlements. */
 export class Merchants {
   readonly group = new THREE.Group();
   private body = merchantBody();
@@ -659,7 +665,7 @@ const LANDMARKS: Record<string, { make: () => THREE.BufferGeometry; size: number
   city: { make: castle, size: 1.1 },
 };
 
-/** The church in the square of each TOWN card and the castle in the middle of each CITY card. */
+/** The church in the square of each town and the castle in the middle of each city. */
 export class Landmarks {
   readonly group = new THREE.Group();
   private material: THREE.ShaderMaterial;

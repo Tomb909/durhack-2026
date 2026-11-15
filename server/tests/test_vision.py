@@ -43,15 +43,17 @@ def test_match_is_forgiving_but_not_ambiguous():
     assert match("SUN", VOCAB) == ("sun", 0)
     assert match("LICE", VOCAB)[0] is None  # ICE or LIFE? refuse to guess
     assert match("CASTLE", VOCAB)[0] is None  # not a card, and not close to one
-    assert match("VOLCANO", VOCAB) == ("volcano", 0)  # a card since the lava cards (this line used to say it was not)
+    assert match("VOLCANO", VOCAB)[0] is None  # not a card: MOUNTAIN next to LAVA makes one
     assert normalise("w4ter!") == "WATERI"
-    assert match("SETTLEMENT", VOCAB) == ("village", 0)
-    assert match("SETTLEMNT", VOCAB) == ("village", 1)
-    # The water and settlement cards are each three words now; the old words still read.
-    for word, card in [("RAIN", "rain"), ("LAKE", "lake"), ("RIVER", "river"), ("VILLAGE", "village"), ("TOWN", "town"), ("CITY", "city"), ("PEOPLE", "village")]:
+    assert match("SETTLEMENT", VOCAB) == ("civilization", 0)
+    assert match("SETTLEMNT", VOCAB) == ("civilization", 1)
+    # Water is three cards. Settlement is one, CIVILIZATION: the words for its sizes all read as it.
+    for word, card in [("RAIN", "rain"), ("LAKE", "lake"), ("RIVER", "river"), ("CIVILIZATION", "civilization"), ("CIVILISATION", "civilization"), ("VILLAGE", "civilization"), ("TOWN", "civilization"), ("CITY", "civilization"), ("PEOPLE", "civilization")]:
         assert match(word, VOCAB) == (card, 0)
     assert match("RIVFR", VOCAB) == ("river", 1)
-    assert match("VILLAGF", VOCAB) == ("village", 1)
+    assert match("VILLAGF", VOCAB) == ("civilization", 1)
+    assert match("CIVILIZATI0N", VOCAB) == ("civilization", 0)
+    assert match("CIVILZATION", VOCAB) == ("civilization", 1)
 
 
 def test_reader_refreshes_vocabulary_when_card_data_changes(tmp_path):
@@ -113,13 +115,13 @@ def test_reads_every_card_at_any_rotation(reader):
         Scrap("SUN", 0.2, 0.7, angle=95),
         Scrap("ICE", 0.5, 0.6, angle=-40),
         Scrap("FOREST", 0.8, 0.75, angle=200),
-        Scrap("VILLAGE", 0.5, 0.88, angle=5),
+        Scrap("CIVILIZATION", 0.5, 0.88, angle=5),
     ]
     vision = Vision(reader)
     run(vision, scraps, frames=6)
     assert vision.play_area.locked
     cards = by_card(vision)
-    assert set(cards) == {"big", "mountain", "rain", "sun", "ice", "forest", "village"}
+    assert set(cards) == {"big", "mountain", "rain", "sun", "ice", "forest", "civilization"}
     for scrap in scraps:
         (card,) = cards[scrap.word.lower()]
         assert abs(card["x"] - scrap.x) < 0.03, (scrap.word, card)

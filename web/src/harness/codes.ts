@@ -157,7 +157,7 @@ function scenario(code: string, layout: Layout, name?: string): Scenario {
  * from typed words have their own set (`words`), so the others stay the same size and the same worlds.
  */
 const ids = () => CARD_DEFS.filter((d) => !d.modifier && BUILT_IN_IDS.has(d.id)).map((d) => d.id);
-/** The cards mixed in every-combination sets. A compound card (VOLCANO) is already a mix, and each card here doubles the list. */
+/** The cards mixed in every-combination sets. A compound card (one that is already a mix of simpler cards) is left out: each card here doubles the list. */
 const mixable = () => CARD_DEFS.filter((d) => !d.modifier && !d.compound && BUILT_IN_IDS.has(d.id)).map((d) => d.id);
 /** Cards made from typed words, in the order they were made. */
 const wordIds = () => CARD_DEFS.filter((d) => !BUILT_IN_IDS.has(d.id)).map((d) => d.id);
@@ -185,13 +185,16 @@ const SHOWCASE: [code: string, name?: string][] = [
   ['lake'], ['big+lake'], ['lake+ice'], ['river'],
   ['mountain@0.15,0.5+river@0.5,0.5', 'river_from_the_mountain'],
   ['mountain@0.15,0.4+river@0.45,0.5+lake@0.7,0.55+forest@0.6,0.35', 'river_through_a_lake'],
-  ['village'], ['town'], ['city'], ['village+rain+forest'],
-  ['village@0.2,0.5+town@0.5,0.45+city@0.8,0.5+rain@0.5,0.7', 'village_town_city'],
+  ['civilization'], ['civilization*2'], ['civilization*3'], ['civilization+rain+forest'],
+  ['civilization@0.15,0.5+civilization*2@0.5,0.45+civilization*3@0.85,0.5+rain@0.5,0.75', 'village_town_city'],
   ['big+mountain'],
-  ['ravine'], ['ravine*3'], ['ravine+rain'], ['ravine+rain*3'], ['mountain+ravine'], ['lava'], ['lava+mountain'], ['lava+ravine'], ['lava+rain'], ['lava+ice'],
-  ['volcano'], ['volcano+rain'], ['volcano+forest+rain'], ['volcano+ice'],
-  ['big+volcano'], ['volcano+mountain'], ['volcano+rain*3'], ['volcano@0.45,0.5+ravine@0.62,0.5', 'volcano_by_ravine'],
-  ['volcano@0.3,0.45+volcano@0.7,0.55', 'two_volcanoes'],
+  ['ravine'], ['ravine*3'], ['ravine+rain'], ['ravine+rain*3'], ['mountain+ravine'], ['lava'], ['lava+ravine'], ['lava+rain'], ['lava+ice'],
+  ['mountain@0.25,0.4+lava@0.7,0.55', 'lava_far_from_the_mountain'],
+  // MOUNTAIN next to LAVA is a volcano.
+  ['mountain+lava', 'volcano'], ['mountain+lava+rain', 'volcano_rain'], ['mountain+lava+forest+rain', 'volcano_forest_rain'], ['mountain+lava+ice', 'volcano_ice'],
+  ['big+mountain+lava', 'big_volcano'], ['mountain*2+lava', 'volcano_by_a_mountain'], ['mountain+lava+rain*3', 'volcano_rain_x3'],
+  ['mountain@0.42,0.5+lava@0.48,0.5+ravine@0.62,0.5', 'volcano_by_ravine'],
+  ['mountain@0.27,0.45+lava@0.33,0.45+mountain@0.67,0.55+lava@0.73,0.55', 'two_volcanoes'],
 ];
 
 export const SETS: Record<string, () => [code: string, name?: string][]> = {
