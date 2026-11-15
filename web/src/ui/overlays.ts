@@ -55,7 +55,7 @@ export class Guide {
         <figure>${PHONE_SVG}<figcaption><b>4. Prop the phone above.</b> 40–60 cm up, the whole sheet in view with a little table showing on every side. Press <b>P</b> for the QR code, then tap Start camera.</figcaption></figure>
       </div>
       <p class="words">The words: ${words}</p>
-      <p class="hint">Turning ordinary cards does nothing. WIND is directional: rotate its card to point the arrow where the wind should blow. WIND+FOREST+RAIN grows a downwind tree line; WIND+ICE makes a blizzard and blows snow off high ground. Check a new card with <b>C</b>. If left and right are swapped, press <b>R</b>.</p>`;
+      <p class="hint">Turning ordinary cards does nothing. WIND is directional: rotate its card to point the arrow where the wind should blow. WIND+FOREST+RAIN grows a downwind tree line; WIND+COLD makes a blizzard and blows snow off high ground. Check a new card with <b>C</b>. If left and right are swapped, press <b>R</b>.</p>`;
   }
   toggle(): void {
     this.root.hidden = !this.root.hidden;

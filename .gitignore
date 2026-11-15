@@ -219,7 +219,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Deck of Worlds
+# Hand of God
 .deck/
 recordings/
 node_modules/

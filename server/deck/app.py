@@ -1,4 +1,4 @@
-"""Deck of Worlds server.
+"""Hand of God server.
 
 Serves the world page to the laptop (http://localhost:8000), the camera page
 to the phone (https://<laptop-ip>:8443/phone), receives camera frames, runs
@@ -420,7 +420,7 @@ class Server:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Deck of Worlds server")
+    parser = argparse.ArgumentParser(description="Hand of God server")
     parser.add_argument("--http-port", type=int, default=8000, help="laptop page port (localhost only)")
     parser.add_argument("--https-port", type=int, default=8443, help="phone page port")
     parser.add_argument(

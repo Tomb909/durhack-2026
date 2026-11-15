@@ -35,7 +35,13 @@ import { makeWindEffects } from './wind';
 const FOV = 30;
 const SWAY = THREE.MathUtils.degToRad(22); // never a full spin: left stays left
 const SWAY_PERIOD = 52;
-const TARGET = new THREE.Vector3(0, 0.55, 0.25);
+/** What the camera turns about: the middle of the world, at about the height of the ground. */
+const TARGET = new THREE.Vector3(0, 0.4, 0);
+/**
+ * What "the whole world fits" means: the land, this much of the slab under it and this much air
+ * over it (scene units) fill this share of the picture, the rest being border.
+ */
+const FIT = { below: -0.7, above: 1.5, fill: 0.94 };
 /** Never draw at fewer than this many picture pixels per screen pixel, however slow the machine. */
 const LEAST_PIXEL_RATIO = 0.5;
 
@@ -316,15 +322,35 @@ export class WorldRenderer {
     const sway = this.sway ? SWAY * Math.sin((this.time * Math.PI * 2) / SWAY_PERIOD) : 0;
     // Real time, not the world's: the camera still answers the hand when the picture is frozen.
     const pose = this.rig.step(sway, performance.now() / 1000);
-    // Far enough back that the whole chunk fits, whatever the window shape.
-    const distance = Math.max((world.w / 2 + 0.9) / Math.tan(halfH), (world.d / 2 + 1.9) / Math.tan(half)) / (this.zoom * pose.zoom);
+    // Just far enough back that the whole chunk fills the picture, from this angle and in this
+    // window shape: the eight corners of the box round the world are each brought inside the frame.
+    const sa = Math.sin(pose.azimuth), ca = Math.cos(pose.azimuth);
+    const se = Math.sin(pose.elevation), ce = Math.cos(pose.elevation);
+    // From the looked-at point: back to the camera, to the picture's right, and up the picture.
+    const bx = sa * ce, by = se, bz = ca * ce;
+    const rx = ca, rz = -sa;
+    const ux = -sa * se, uy = ce, uz = -ca * se;
+    const kx = FIT.fill * Math.tan(halfH), ky = FIT.fill * Math.tan(half);
+    let across = -Infinity, top = -Infinity, bottom = -Infinity;
+    for (let corner = 0; corner < 8; corner++) {
+      const x = (corner & 1 ? 0.5 : -0.5) * world.w - TARGET.x;
+      const y = (corner & 2 ? FIT.above : FIT.below) - TARGET.y;
+      const z = (corner & 4 ? 0.5 : -0.5) * world.d - TARGET.z;
+      const back = x * bx + y * by + z * bz;
+      const up = x * ux + y * uy + z * uz;
+      across = Math.max(across, Math.abs(x * rx + z * rz) / kx + back);
+      top = Math.max(top, up / ky + back);
+      bottom = Math.max(bottom, -up / ky + back);
+    }
+    // The view is slid up or down the picture so the box has the same border above as below.
+    const fit = Math.max(across, (top + bottom) / 2);
+    const closer = this.zoom * pose.zoom;
+    const distance = fit / closer;
+    const slide = ((top - bottom) / 2) * ky / closer;
     const viewHeight = this.fixed?.height ?? (this.canvas.clientHeight || window.innerHeight);
     this.rig.frameInfo(world.w / 2, world.d / 2, (2 * distance * Math.tan(half)) / viewHeight);
-    const flat = Math.cos(pose.elevation) * distance;
-    this.lookAt.set(TARGET.x + pose.panX, TARGET.y, TARGET.z + pose.panZ);
-    this.camera.position.set(
-      this.lookAt.x + Math.sin(pose.azimuth) * flat, this.lookAt.y + Math.sin(pose.elevation) * distance, this.lookAt.z + Math.cos(pose.azimuth) * flat,
-    );
+    this.lookAt.set(TARGET.x + pose.panX + ux * slide, TARGET.y + uy * slide, TARGET.z + pose.panZ + uz * slide);
+    this.camera.position.set(this.lookAt.x + bx * distance, this.lookAt.y + by * distance, this.lookAt.z + bz * distance);
     this.camera.lookAt(this.lookAt);
   }
 

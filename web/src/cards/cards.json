@@ -14,7 +14,7 @@
     "aliases": ["MOUNTAINS"],
     "icon": "⛰️",
     "color": "#b08a5a",
-    "effects": [{ "field": "height", "amount": 0.5, "radius": 0.15 }]
+    "effects": [{ "field": "height", "amount": 0.4, "radius": 0.1 }]
   },
   {
     "id": "rain",
@@ -22,7 +22,7 @@
     "aliases": ["WATER"],
     "icon": "🌧️",
     "color": "#3aa0ff",
-    "effects": [{ "field": "wetness", "amount": 0.5, "radius": 0.2 }]
+    "effects": [{ "field": "wetness", "amount": 0.5, "radius": 0.15 }]
   },
   {
     "id": "lake",
@@ -42,19 +42,19 @@
   },
   {
     "id": "sun",
-    "word": "SUN",
-    "aliases": [],
+    "word": "HOT",
+    "aliases": ["SUN"],
     "icon": "☀️",
     "color": "#ffc23a",
-    "effects": [{ "field": "temperature", "amount": 0.62, "radius": 0.24 }]
+    "effects": [{ "field": "temperature", "amount": 0.62, "radius": 0.17 }]
   },
   {
     "id": "ice",
-    "word": "ICE",
-    "aliases": [],
+    "word": "COLD",
+    "aliases": ["ICE"],
     "icon": "❄️",
     "color": "#bfe9ff",
-    "effects": [{ "field": "temperature", "amount": -0.62, "radius": 0.24 }]
+    "effects": [{ "field": "temperature", "amount": -0.62, "radius": 0.17 }]
   },
   {
     "id": "forest",
@@ -62,7 +62,7 @@
     "aliases": ["FORESTS", "LIFE"],
     "icon": "🌲",
     "color": "#58c46a",
-    "effects": [{ "field": "forest", "amount": 1.0, "radius": 0.24 }]
+    "effects": [{ "field": "forest", "amount": 1.0, "radius": 0.16 }]
   },
   {
     "id": "wind",
@@ -86,7 +86,7 @@
     "aliases": ["CANYON", "CHASM", "FISSURE"],
     "icon": "🪨",
     "color": "#9a7b62",
-    "effects": [{ "field": "height", "amount": -0.42, "radius": 0.11, "crack": 0.014 }]
+    "effects": [{ "field": "height", "amount": -0.42, "radius": 0.09, "crack": 0.014 }]
   },
   {
     "id": "lava",

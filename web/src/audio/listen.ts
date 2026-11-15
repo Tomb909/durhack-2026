@@ -51,7 +51,7 @@ export const LISTEN = {
   /** Rivers above this are drawn as rivers, not sea. */
   riverLine: 0.25,
   /** Height above the sea where the wind is at its strongest. */
-  windHeight: 0.22,
+  windHeight: 0.15,
   windCalm: 0.12,
   /** People are a small part of the land, so a little of them is already easy to hear. */
   lifeGain: 6,

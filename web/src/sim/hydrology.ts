@@ -229,6 +229,8 @@ export class Hydrology {
    * @param spring   optional: water welling up per cell, in units of flow. It fills the
    *                 hollows it runs into (LAKE, RIVER) but draws no river of its own.
    * @param course   optional: 0..1 river strength laid down per cell (a RIVER card's bed).
+   * @param pass     optional: the share of the flow reaching a cell that carries on out of it
+   *                 (0..1). Lava uses it: none of it leaves a cell where water stands.
    */
   compute(
     height: Float32Array, sea: number, rain: Float32Array,
@@ -236,6 +238,7 @@ export class Hydrology {
     inside?: Uint8Array | null,
     holeBelow = -Infinity,
     spring?: Float32Array | null, course?: Float32Array | null,
+    pass?: Float32Array | null,
   ): void {
     const { w, h, n, filled, parent, order, flow, lakeFlow, fillFlow, seaCell } = this;
     const raw = this.scratch;
@@ -257,11 +260,12 @@ export class Hydrology {
       const c = order[k];
       const p = parent[c];
       if (p >= 0) {
-        flow[p] += flow[c] * keep;
+        const on = pass ? keep * pass[c] : keep;
+        flow[p] += flow[c] * on;
         // Spring water fills the hollow it is in and goes no further: a LAKE's overflow
         // does not go on to flood every dip below it.
         const leavesHollow = !seaCell[c] && filled[c] - height[c] > minDepth && (seaCell[p] || !(filled[p] - height[p] > minDepth));
-        if (!leavesHollow) fillFlow[p] += fillFlow[c] * keep;
+        if (!leavesHollow) fillFlow[p] += fillFlow[c] * on;
       }
     }
 

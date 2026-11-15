@@ -20,7 +20,7 @@ import { HARNESS_OUT, harnessPlugin, readWords } from './harness-plugin.mjs';
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const HELP = `Deck of Worlds harness
+const HELP = `Hand of God harness
 
   npm --prefix web run harness -- [codes...] [options]
 
@@ -39,7 +39,7 @@ const HELP = `Deck of Worlds harness
   --tile N           tile width in pixels (default 400)
   --cols N           tiles per row (default: a roughly square sheet)
   --time N           the moment drawn, in seconds (default 6)
-  --zoom N           how close the camera is (default 1.3; 1 = as in the app)
+  --zoom N           how close the camera is (default 1: the whole world fits, as in the app)
   --az N, --el N     look from N degrees round the world, and N degrees above the table (default 0 and 37)
   --no-beacons       hide the card markers
   --png              save PNG instead of JPEG

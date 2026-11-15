@@ -188,7 +188,7 @@ export const RULES = {
   river: {
     lie: 0.036, // the land is smoothed over about this share of the world's width to find the course
     aim: 0.15, // and over about this much to find which way the river heads as it passes the card
-    drift: 0.18, // on open ground the river heads for the near edge: a slope this steep (height per world width) turns it half aside
+    drift: 0.13, // on open ground the river heads for the near edge: a slope this steep (height per world width) turns it half aside
     pull: 0.6, // how hard the river is drawn on in that direction (height per world width)
     steady: 0.85, // how much of its heading the river keeps at each step (0 turns at once, 1 never turns)
     onward: 0.2, // at least this share of every step is the way the river heads
@@ -203,6 +203,10 @@ export const RULES = {
     bedDepth: 0.0035,
     bankReach: 4, // cells either side shaped into the valley
     bankRise: 0.0022, // valley side: height gained per cell squared
+    // Where the bed cuts through a rise, the valley widens with the depth of the cut.
+    valleyWiden: 320, // cells of valley either side per unit of height cut
+    valleyReach: 14, // and never wider than this
+    valleyEven: 8, // the depth of the cut is averaged over this many steps each way along the river
   },
   /** Lava wells up where it is pushed, runs downhill, pools in hollows, and cools to black rock under water or in the cold. */
   lava: {
@@ -212,6 +216,7 @@ export const RULES = {
     ragged: 1.6, // how much noise breaks up the edge of where it wells up (share of the push, per unit of noise)
     coolBelow: -0.3, // colder than this and it has set to rock
     coolSpan: 0.25, // fully molten this much warmer than that
+    setSpan: 0.03, // it flows on freely where the cards leave the ground this much warmer than `coolBelow`: ICE stops it, a high cold summit does not
     flow: {
       riverStart: 10,
       riverFull: 60,
@@ -439,6 +444,8 @@ export class WorldSim {
   private lavaTarget: Float32Array;
   private lavaHeatTarget: Float32Array;
   private lavaSurfaceTarget: Float32Array;
+  /** The share of the lava reaching a cell that flows on out of it: none where water stands. */
+  private lavaPass: Float32Array;
   private lastSurface: Float32Array;
   private lastRiver: Float32Array;
   private settle = 0;
@@ -457,7 +464,7 @@ export class WorldSim {
     this.basin = new Uint8Array(n);
     this.fault = f(); this.faultGrade = f(); this.jag = f(); this.swell = f(); this.coneLift = f(); this.ventFlow = f(); this.coneMask = f(); this.coneFloor = f(); this.formed = f(); this.formMask = f(); this.formFloor = f(); this.ground = new Float64Array(n);
     this.push = { height: f(), temperature: f(), wetness: f(), forest: f(), settlement: f(), town: f(), city: f(), plaza: f(), lava: f() };
-    this.lavaSource = f(); this.lavaTarget = f(); this.lavaHeatTarget = f(); this.lavaSurfaceTarget = f();
+    this.lavaSource = f(); this.lavaTarget = f(); this.lavaHeatTarget = f(); this.lavaSurfaceTarget = f(); this.lavaPass = f();
     this.lavaFlow = new Hydrology(w, h);
     this.copies = f(); this.surfaceTarget = f(); this.riverTarget = f(); this.nearWater = f(); this.scratch = f();
     this.lastSurface = f(); this.lastRiver = f();
@@ -846,8 +853,16 @@ export class WorldSim {
     }
     this.hadLava = true;
     // The same downhill rules as water, with no sea to stop at. `scratch` holds the streams.
+    // Lava that runs into water, or onto ground cold enough to set it, sets there and goes no
+    // further: it does not follow a river down its valley, fill a lake's bed from underneath,
+    // or draw a line of black rock across the snow.
     const stream = this.scratch;
-    this.lavaFlow.compute(height, -Infinity, lavaSource, lavaSurfaceTarget, stream, L.flow, this.inside);
+    const pass = this.lavaPass;
+    const cold = this.push.temperature; // what the cards make of the climate: height alone does not stop lava
+    for (let i = 0; i < n; i++) {
+      pass[i] = (1 - smoothstep(0.0, 0.003, surfaceTarget[i] - height[i])) * smoothstep(L.coolBelow, L.coolBelow + L.setSpan, cold[i]);
+    }
+    this.lavaFlow.compute(height, -Infinity, lavaSource, lavaSurfaceTarget, stream, L.flow, this.inside, -Infinity, null, null, pass);
     for (let i = 0; i < n; i++) {
       const pooled = smoothstep(0.0005, 0.004, lavaSurfaceTarget[i] - height[i]);
       const amount = Math.max(stream[i], pooled, Math.min(1, lavaSource[i]));
@@ -1062,26 +1077,41 @@ export class WorldSim {
 
       // The bed never climbs: it cuts through whatever rise is in its way. Across a LAKE it
       // rides at the lake's own level (what the basin fills to), so it leaves by the brim.
-      hydrology.flood(height, sea, inside);
+      hydrology.flood(height, sea, inside, RULES.seaBase); // as the water itself is worked out: a hole dug below the sea is a hollow, not sea
       const filled = hydrology.filled;
       const reach = R.bankReach;
       let level = Infinity;
       const beds = new Float32Array(path.length);
+      // How far the bed has had to cut below the ground it crosses (a rise in its way), beyond its own depth.
+      const cut = new Float32Array(path.length);
       for (let s = 0; s < path.length; s++) {
         const c = path[s];
-        level = Math.min(basin[c] ? filled[c] : height[c], level - 3e-5);
-        beds[s] = level - (basin[c] ? 0 : R.bedDepth);
+        // Any hollow deeper than the bed (a RAVINE, a crater) is crossed the same way: the river
+        // fills it and leaves by its brim. (Following the floor down, the bed could never climb
+        // out again, and cut a trench as deep as the hollow all the way to the edge of the world.)
+        const pool = basin[c] || filled[c] - height[c] > R.bedDepth;
+        level = Math.min(pool ? filled[c] : height[c], level - 3e-5);
+        beds[s] = level - (pool ? 0 : R.bedDepth);
+        cut[s] = pool ? 0 : height[c] - level;
       }
       for (let s = 0; s < path.length; s++) {
         const c = path[s];
         const cx = c % w, cy = (c - cx) / w;
-        for (let dy = -reach; dy <= reach; dy++) {
-          for (let dx = -reach; dx <= reach; dx++) {
+        // Where it cuts deep the valley is wide, with sides that ease up to the ground either
+        // side: a narrow trench there would be a slot with a hard black shadow down one bank.
+        let deep = 0, among = 0;
+        for (let o = Math.max(0, s - R.valleyEven); o <= Math.min(path.length - 1, s + R.valleyEven); o++) deep += cut[o], among++;
+        deep /= among;
+        const wide = Math.min(R.valleyReach, Math.max(reach, Math.round(deep * R.valleyWiden)));
+        for (let dy = -wide; dy <= wide; dy++) {
+          for (let dx = -wide; dx <= wide; dx++) {
             const nx = cx + dx, ny = cy + dy;
             if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
             const k = ny * w + nx;
             if (!inside[k] || basin[k]) continue;
-            const target = Math.max(sea + 0.002, beds[s] + R.bankRise * (dx * dx + dy * dy));
+            const d2 = dx * dx + dy * dy;
+            const side = R.bedDepth + deep * smoothstep(0, wide, Math.sqrt(d2));
+            const target = Math.max(sea + 0.002, beds[s] + Math.min(R.bankRise * d2, side));
             if (height[k] > target) height[k] -= (height[k] - target) * card.strength;
           }
         }

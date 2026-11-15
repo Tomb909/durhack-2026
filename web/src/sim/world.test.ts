@@ -229,11 +229,11 @@ describe('river', () => {
     expect(fractionWhere(f, (i) => f.river[i] > 0.5 && (i % w < 2 || i % w > w - 3 || i < 2 * w || i >= (h - 2) * w))).toBeGreaterThan(0);
   });
   it('flows from a mountain, through the card, and on away from it', () => {
-    const right = settle([card('mountain', 0.15, 0.5), card('river', 0.5, 0.5)]);
-    expect(wetAt(right, 0.33, 0.5)).toBeGreaterThan(0.5); // between the mountain and the card
+    const right = settle([card('mountain', 0.25, 0.5), card('river', 0.5, 0.5)]);
+    expect(wetAt(right, 0.4, 0.5)).toBeGreaterThan(0.5); // between the mountain and the card
     expect(wetAt(right, 0.8, 0.5)).toBeGreaterThan(0.5); // beyond the card
     expect(at(right, right.height, 0.3, 0.5)).toBeGreaterThan(at(right, right.height, 0.5, 0.5));
-    const left = settle([card('mountain', 0.85, 0.5), card('river', 0.5, 0.5)]);
+    const left = settle([card('mountain', 0.75, 0.5), card('river', 0.5, 0.5)]);
     expect(wetAt(left, 0.2, 0.5)).toBeGreaterThan(0.5);
   });
   it('always runs downhill', () => {
@@ -326,6 +326,18 @@ describe('river', () => {
     const apart = settle([card('lake', 0.2, 0.3), card('river', 0.7, 0.7)]);
     const alone = settle([card('river', 0.7, 0.7)]);
     expect(kept(apart, alone)).toBeGreaterThan(0.9);
+  });
+  it('fills a ravine it runs into and leaves by the brim (it used to cut a trench as deep as the ravine from there to the edge)', () => {
+    const land = [card('mountain', 0.14, 0.27), card('mountain', 0.14, 0.81), card('ravine', 0.66, 0.56)];
+    const dry = settle(land);
+    const f = settle([...land, card('river', 0.47, 0.52)]);
+    // The ravine is full of water...
+    expect(at(f, f.waterSurface, 0.66, 0.56) - at(f, f.height, 0.66, 0.56)).toBeGreaterThan(0.05);
+    // ...and beyond it the river runs in its own small valley, cutting deep only through a rise in its way.
+    expect(fractionWhere(f, (i) => dry.height[i] - f.height[i] > 0.02)).toBeLessThan(0.015);
+    // It still reaches the edge of the world.
+    const { w, h } = f;
+    expect(fractionWhere(f, (i) => f.river[i] > 0.5 && (i % w < 2 || i % w > w - 3 || i < 2 * w || i >= (h - 2) * w))).toBeGreaterThan(0);
   });
   it('fills a lake it runs into without draining it', () => {
     const f = settle([card('mountain', 0.15, 0.5), card('river', 0.4, 0.5), card('lake', 0.62, 0.5)]);
@@ -498,7 +510,10 @@ describe('people', () => {
   });
 
   it('do not live on mountain peaks or in frozen land', () => {
-    expect(Math.max(...settle([card('village', 0.4, 0.5), card('mountain', 0.4, 0.5)]).homes)).toBeLessThan(0.35);
+    // A village put on a mountain stands round its foot: nobody lives on the peak or the steep flanks.
+    const onPeak = settle([card('village', 0.4, 0.5), card('mountain', 0.4, 0.5)]);
+    expect(at(onPeak, onPeak.homes, 0.4, 0.5)).toBeLessThan(0.05);
+    onPeak.homes.forEach((homes, i) => { if (onPeak.height[i] > RULES.people.peaks) expect(homes).toBe(0); });
     expect(Math.max(...settle([card('village', 0.4, 0.5), card('ice', 0.4, 0.5), card('ice', 0.42, 0.5)]).homes)).toBeLessThan(0.3);
   });
 
@@ -619,6 +634,54 @@ describe('lava', () => {
         expect(lived.farms[i]).toBe(0);
       }
     }
+  });
+});
+
+describe('lava meeting water and cold', () => {
+  const beside = (f: WorldFrame, i: number, reach: number, test: (k: number) => boolean) => {
+    const x = i % f.w, y = (i - x) / f.w;
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < f.w && ny < f.h && test(ny * f.w + nx)) return true;
+      }
+    }
+    return false;
+  };
+  it('stops at a river: it does not run on down the valley beside the water', () => {
+    for (const cards of [
+      [card('river', 0.48, 0.5), card('lava', 0.52, 0.5)],
+      [card('river', 0.5, 0.35), card('lava', 0.5, 0.6)],
+      [card('river', 0.35, 0.5), card('lava', 0.6, 0.45)],
+    ]) {
+      const f = settle(cards);
+      const lava = cards[1];
+      let along = 0;
+      for (let i = 0; i < f.lava.length; i++) {
+        if (f.lava[i] < 0.25) continue;
+        const x = (i % f.w) / (f.w - 1), y = Math.floor(i / f.w) / (f.h - 1);
+        // Lava far from its card is only what ran there: it lies by the river where it met it, and no further.
+        if (Math.hypot(x - lava.x, y - lava.y) > 0.12 && beside(f, i, 3, (k) => f.river[k] > 0.5)) along++;
+      }
+      expect(along).toBeLessThan(40);
+    }
+    const close = settle([card('river', 0.48, 0.5), card('lava', 0.52, 0.5)]);
+    expect(fractionWhere(close, (i) => close.lava[i] > 0.25 && close.waterSurface[i] - close.height[i] > 0.003 && close.lavaHeat[i] === 0)).toBeGreaterThan(0);
+  });
+  it('does not pool under a lake', () => {
+    const f = settle([card('lake', 0.47, 0.5), card('lava', 0.53, 0.5)]);
+    expect(at(f, f.lava, 0.44, 0.5)).toBeLessThan(0.05); // the far side of the lake's bed
+    expect(open(f, 0.44, 0.5)).toBeGreaterThan(0.002);
+  });
+  it('stops on frozen ground: no line of set rock runs on across the snow', () => {
+    const f = settle([card('lava', 0.5, 0.5), card('ice', 0.53, 0.5)]);
+    // Lava far from its card is only what ran there. On frozen ground that is the spot where it set, and no more.
+    let onIce = 0;
+    for (let i = 0; i < f.lava.length; i++) {
+      const x = (i % f.w) / (f.w - 1), y = Math.floor(i / f.w) / (f.h - 1);
+      if (Math.hypot(x - 0.5, y - 0.5) > 0.12 && f.temperature[i] < RULES.lava.coolBelow && f.lava[i] > 0.25) onIce++;
+    }
+    expect(onIce).toBeLessThan(12);
   });
 });
 

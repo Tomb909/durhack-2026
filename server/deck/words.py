@@ -285,7 +285,7 @@ CARD_SCHEMA: dict[str, Any] = {
 }
 
 PROMPT = """\
-You design cards for Deck of Worlds, a table-top game. People write a word on a paper card and put it on a \
+You design cards for Hand of God, a table-top game. People write a word on a paper card and put it on a \
 table; a camera reads it, and a small 3D world on a screen changes to match. The world is a low-poly diorama: \
 a slab of land about ten metres across in the game's scale, seen from above and far away, with flat-coloured \
 faceted shapes and soft light. It already has rolling hills, a sea that rises with water cards, rivers and \
@@ -306,8 +306,8 @@ or falls everywhere). At most six effects.
 Every effect but seaLevel has a shape, which says where it acts and, for height, what landform it makes. \
 radius is a share of the world's width.
   patch     a soft round patch that fades out slowly, reaching about three times its radius. Keep the \
-radius small (0.05 to 0.3). Good for weather and gentle climate; bad for a place with an edge.
-  Every other shape STOPS at its radius (0.04 to 0.6), with an uneven natural outline, so it changes only \
+radius small (0.05 to 0.2). Good for weather and gentle climate; bad for a place with an edge.
+  Every other shape STOPS at its radius (0.04 to 0.4), with an uneven natural outline, so it changes only \
 its own region:
   mound     a smooth dome (a hill, a burial mound), or with a negative amount a bowl
   flat      level with steep sides: a mesa or plateau; with a negative amount a basin or pit
@@ -318,15 +318,20 @@ its own region:
   rim       a whole crater in one effect: a raised crest, a gentle slope outside it, and inside it a \
 floor sunk below the land around (a crater, a caldera, an atoll). amount is how high the crest stands and \
 is always positive: 0.04 for a shallow old crater, 0.1 for a fresh deep one. The floor sinks by itself, so \
-add no second effect to dig it. Radius 0.08 to 0.2; a crater wider than that swallows the world.
+add no second effect to dig it. Radius 0.08 to 0.16; a crater wider than that swallows the world.
 On temperature, wetness, life, settlement and lava only the outline matters: mound fades from the middle, \
 and every other shape but patch is level right up to a hard edge.
 
-For scale, the built-in cards are: MOUNTAIN height +0.5 patch radius 0.15 (a great peak); RAIN wetness +0.5 \
-patch radius 0.2; SUN temperature +0.62 patch radius 0.24; ICE temperature -0.62 patch \
-radius 0.24; FOREST life +1.0 patch radius 0.24; CIVILIZATION (a village) settlement +1.0 patch radius 0.13; LAVA lava +1.0 \
+Size: the card is a scrap of paper about a sixth of the table wide, and what it makes should look like it \
+belongs to that card: about a quarter to a third of the world across, so that five or six cards share the \
+world without one of them covering it. That is a shape of radius 0.1 to 0.16, or a patch of radius 0.08 to \
+0.14. Go wider only for a word that means somewhere vast (an ocean, a desert, a planet's surface), and then \
+no wider than a shape of radius 0.25.
+For scale, the built-in cards are: MOUNTAIN height +0.4 patch radius 0.1 (a great peak); RAIN wetness +0.5 \
+patch radius 0.15; HOT temperature +0.62 patch radius 0.17; COLD temperature -0.62 patch \
+radius 0.17; FOREST life +1.0 patch radius 0.16; CIVILIZATION (a village) settlement +1.0 patch radius 0.13; LAVA lava +1.0 \
 patch radius 0.045. For landforms, height is the real height: a low rise 0.03, a mesa or a field of spires \
-0.08 to 0.15, a mountain 0.3 to 0.5; a shallow basin -0.03, a deep pit -0.1.
+0.08 to 0.15, a mountain 0.3 to 0.4; a shallow basin -0.03, a deep pit -0.1.
 
 Know what follows from a push, because the world's rules carry on from it:
 - Ground pushed below zero is below the sea. If the sea can reach it, it floods. \
@@ -337,7 +342,7 @@ lake, give a flat basin a lava effect of the same radius or a little less; for a
 - A place has an edge. Give a place's climate (temperature, wetness, life) the flat shape at the place's \
 own radius, so the place is hot, dry or dead inside and the rest of the world is left alone. life -1 as \
 a patch kills forest across half the world.
-- settlement is how many people live there, not that something was built. Up to 0.4 gives ploughed fields on flat fertile land and fishing boats on open water, with no houses; houses begin above 0.45, and 1.0 is a whole village of dozens of houses. Fields grow only on moist ground, so a FARM, an ORCHARD or a VINEYARD is settlement +0.4 and wetness +0.3, both with the flat shape at the same radius of 0.1 to 0.15 (that makes the fields; the barn is the card's object). A HAMLET is +0.6, and only a word that means many homes (a town, a port, a market) goes to 1.0. One building (a barn, a castle, a temple, a lighthouse, a factory) is the card's object and needs no settlement at all.
+- settlement is how many people live there, not that something was built. Up to 0.4 gives ploughed fields on flat fertile land and fishing boats on open water, with no houses; houses begin above 0.45, and 1.0 is a whole village of dozens of houses. Fields grow only on moist ground, so a FARM, an ORCHARD or a VINEYARD is settlement +0.4 and wetness +0.3, both with the flat shape at the same radius of 0.1 to 0.13 (that makes the fields; the barn is the card's object). A HAMLET is +0.6, and only a word that means many homes (a town, a port, a market) goes to 1.0. One building (a barn, a castle, a temple, a lighthouse, a factory) is the card's object and needs no settlement at all.
 Use effects for places, landscapes, weather and climates (a desert, a marsh, a glacier, a hill). Leave \
 effects empty for an object that simply stands in the world: a lighthouse does not raise the land.
 
@@ -481,7 +486,7 @@ in that language. A misspelt word means the word it was meant to be.
 Do not make things the world already makes for itself unless the word is about them: it has trees, houses, \
 rain, snow and boats of its own, and a TREE card is better as a few large striking trees than as a forest \
 effect, while a FOREST card is better as life plus wetness. Built-in cards already cover MOUNTAIN, RAIN, \
-LAKE, RIVER, SUN, ICE, FOREST, CIVILIZATION, WIND, RAVINE and LAVA. A place from a story or a game (THE NETHER, \
+LAKE, RIVER, HOT, COLD, FOREST, CIVILIZATION, WIND, RAVINE and LAVA. A place from a story or a game (THE NETHER, \
 MORDOR, HOTH, PANDORA, ATLANTIS) is a place like any other: build what a person who knows it would expect \
 to see there, from landforms, climate, materials, air and one or two of its most recognisable things.
 
@@ -492,27 +497,27 @@ emoji for the card's label; color, the card's own colour as #rrggbb. All colours
 Examples (sketched, not complete):
 - LIGHTHOUSE: no effects; no change to the air; one object on the shore, as built in full above. glow \
 false (the lamp is small), motion still.
-- MEADOW: effects life +0.6 and wetness +0.2, patch radius 0.18, a little temperature +0.1; no biome \
+- MEADOW: effects life +0.6 and wetness +0.2, patch radius 0.12, a little temperature +0.1; no biome \
 (ground_strength 0: a meadow is the world's own grass); air a light \
 yellow-green tint at 0.15, light +0.2, particles drift, small, sparse, pale yellow (pollen); an object of \
 many small flowers (metres 0.3): a few leaning green stems with leaves, each topped with a bright \
 centre and a repeat of petals round it, in two or three colours.
-- MARS SURFACE: effects height +0.06 dunes radius 0.3, temperature +0.3 flat radius 0.3, wetness -0.8 \
-flat radius 0.3, life -1.0 flat radius 0.3; biome ground #b5532e at 0.9, radius 0.32, rock #7a3520, no \
+- MARS SURFACE: effects height +0.06 dunes radius 0.22, temperature +0.3 flat radius 0.22, wetness -0.8 \
+flat radius 0.22, life -1.0 flat radius 0.22; biome ground #b5532e at 0.9, radius 0.24, rock #7a3520, no \
 plant colour, no liquid colour, keep_trees false; air a red-orange tint at 0.3, particles drift, small, \
 sparse, rust (dust); no object.
-- THE NETHER: effects height -0.03 flat radius 0.22 (a shallow basin for the lava to pool in), lava +1.0 \
-flat radius 0.17, height +0.1 spires radius 0.3 (pillars and outcrops of netherrack round it), temperature \
-+0.8 flat radius 0.3, wetness -0.9 flat radius 0.3, life -1.0 flat radius 0.3; biome ground #6e2a2e at \
-0.95, radius 0.32, rock #4a1c20, liquid #ff6a1a glow 1.0 (so even a sea that floods in is lava), \
+- THE NETHER: effects height -0.03 flat radius 0.15 (a shallow basin for the lava to pool in), lava +1.0 \
+flat radius 0.12, height +0.1 spires radius 0.2 (pillars and outcrops of netherrack round it), temperature \
++0.8 flat radius 0.2, wetness -0.9 flat radius 0.2, life -1.0 flat radius 0.2; biome ground #6e2a2e at \
+0.95, radius 0.22, rock #4a1c20, liquid #ff6a1a glow 1.0 (so even a sea that floods in is lava), \
 keep_trees false; air a deep red tint at 0.35, light -0.35, particles rise, small, glowing, orange (embers); \
 an object of few glowstone clusters or one nether portal (an obsidian frame with a purple pane), land.
-- SWAMP: effects height -0.02 flat radius 0.2, wetness +0.7 flat radius 0.22, life +0.6 flat radius 0.22; \
-biome ground #4a4a2c at 0.85, radius 0.24, plants #5c6b2e, liquid #3f5a2a glow 0, keep_trees true; air a \
+- SWAMP: effects height -0.02 flat radius 0.14, wetness +0.7 flat radius 0.15, life +0.6 flat radius 0.15; \
+biome ground #4a4a2c at 0.85, radius 0.17, plants #5c6b2e, liquid #3f5a2a glow 0, keep_trees true; air a \
 green-grey tint at 0.25, light -0.15, particles drift, large, sparse, pale (mist); an object of few dead \
 leaning trees or many reeds, shore.
-- MUSHROOM FOREST: effects life +0.7 and wetness +0.4, flat radius 0.2; biome ground #4b3a52 at 0.8, \
-radius 0.22, plants #6a4f8a, keep_trees false; air a purple tint at 0.3, light -0.2, \
+- MUSHROOM FOREST: effects life +0.7 and wetness +0.4, flat radius 0.15; biome ground #4b3a52 at 0.8, \
+radius 0.17, plants #6a4f8a, keep_trees false; air a purple tint at 0.3, light -0.2, \
 particles drift, glowing, sparse, pale green (spores); an object of few giant mushrooms (metres 8): a thick \
 pale stalk with a wide spotted cap that overhangs it, gills underneath, small ones at its foot.
 - LONELINESS: no effects; tint a cold grey-blue at 0.35, light -0.3, particles fall, small, sparse, pale \

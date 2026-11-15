@@ -33,7 +33,7 @@ const SIZES: Record<Size, { min: number; draw: number; label: string; name: stri
 };
 const DETAIL_WIDTH = 1600;
 const MOMENT = 6; // seconds: the instant every picture is taken at
-const ZOOM = 1.3;
+const ZOOM = 1;
 const MOST = 64; // more tiles than this is not a view any more
 const STORE = 'deck.combinations.2';
 

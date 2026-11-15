@@ -48,6 +48,8 @@ describe('combination codes', () => {
   });
   it('accepts any unambiguous start of a card id', () => {
     expect(parseCode('m+rai+su+i+f').map((c) => c.id)).toEqual(['mountain', 'rain', 'sun', 'ice', 'forest']);
+    // A card's word, or another word it answers to, means the card: HOT and COLD are `sun` and `ice`.
+    expect(parseCode('hot+cold+water').map((c) => c.id)).toEqual(['sun', 'ice', 'rain']);
     expect(() => parseCode('r')).toThrow(/could be rain or river or ravine/);
     expect(() => parseCode('l')).toThrow(/could be lake or lava/);
     expect(() => parseCode('fog')).toThrow(/no card called/);

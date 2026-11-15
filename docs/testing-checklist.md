@@ -56,7 +56,7 @@ Useful while testing: **Tab** opens the card tray, **V** the Combinations view, 
 
 ### Smoothness (by eye)
 
-- [ ] **Not yet checked by anyone on a real screen:** with a normal mix of 6 to 10 cards the picture holds the screen's frame rate while idle and while dragging a card that does not move the ground (SUN, FOREST, VILLAGE).
+- [ ] **Not yet checked by anyone on a real screen:** with a normal mix of 6 to 10 cards the picture holds the screen's frame rate while idle and while dragging a card that does not move the ground (HOT, FOREST, VILLAGE).
 - [ ] Dragging MOUNTAIN, RAVINE or a volcano (MOUNTAIN next to LAVA) is the heaviest case. Note the frame rate on the demo laptop.
 
 ## 2. Lava, ravine and volcano
@@ -109,7 +109,7 @@ Useful while testing: **Tab** opens the card tray, **V** the Combinations view, 
 ## 4. Where this branch meets main
 
 - [ ] **Wind and lava together.** `mountain+lava+wind~45+rain`: wind streaks, slanted rain and lava all draw correctly, and the lava is not blown about or coloured like wind. (Both were written to use the same texture channels; wind was moved to its own.)
-- [ ] **WIND bends everything it should:** chimney smoke, rain, clouds, people, boats, water ripples; wind beside ICE makes a blizzard; wind beside FOREST and RAIN (or LAKE, or RIVER) grows a line of trees downwind.
+- [ ] **WIND bends everything it should:** chimney smoke, rain, clouds, people, boats, water ripples; wind beside COLD makes a blizzard; wind beside FOREST and RAIN (or LAKE, or RIVER) grows a line of trees downwind.
 - [ ] **CIVILIZATION** alone is a village; a card reading VILLAGE, TOWN, CITY, PEOPLE or SETTLEMENT is the same card.
 - [ ] **Two CIVILIZATION cards next to each other** are one town with a church, standing between them; **three** (in a row or a huddle) are one city with a castle. Apart, they are separate villages. **Not yet checked with real cards:** that scraps laid side by side on the sheet are close enough to count (within about a quarter of the sheet's width, centre to centre).
 - [ ] **Villages look like main's:** cottages with windows and chimneys, each on its own plot; fewer people and sheep than before; five-wisp smoke from about two houses in five.

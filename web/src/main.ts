@@ -1,4 +1,4 @@
-// Deck of Worlds: cards in, world out.
+// Hand of God: cards in, world out.
 //   cards (camera + simulated)  ->  CardStore (smoothing)  ->  WorldSim (rules)  ->  WorldRenderer (picture)
 import { onCardsChanged } from './cards/defs';
 import { SeenWords } from './cards/seen';
@@ -363,7 +363,7 @@ function tick(now: number): void {
     drawFrame(now);
   } catch (error) {
     // Say so once, then now and again: an error on every frame must not bury the console.
-    if (frameErrors++ % 600 === 0) console.error('Deck of Worlds: a frame failed', error);
+    if (frameErrors++ % 600 === 0) console.error('Hand of God: a frame failed', error);
   }
 }
 

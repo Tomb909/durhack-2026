@@ -1,1 +1,1 @@
-"""Deck of Worlds server: phone camera link and card tracking."""
+"""Hand of God server: phone camera link and card tracking."""

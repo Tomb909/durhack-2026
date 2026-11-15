@@ -4,7 +4,7 @@ Spec for a prototype. Status: to build.
 
 ## Why
 
-Deck of Worlds reads a handwritten word and changes the world. Today it knows seven words. We want to test one assumption: **that it is not possible to let people write any word or phrase and have it take effect in near real time.** If the assumption is wrong, this is the feature that makes the project.
+Hand of God reads a handwritten word and changes the world. Today it knows seven words. We want to test one assumption: **that it is not possible to let people write any word or phrase and have it take effect in near real time.** If the assumption is wrong, this is the feature that makes the project.
 
 The prototype is judged by eye, in the Combinations view: type a word, see what it does alone and beside every other card.
 

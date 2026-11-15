@@ -58,6 +58,9 @@ function resolveId(token: string): string {
   if (exact) return exact.id;
   const starts = builtIn.filter((d) => d.id.toLowerCase().startsWith(token));
   if (starts.length === 1) return starts[0].id;
+  // A built-in card by the word written on it, or another word it answers to (`hot` is the card whose id is `sun`).
+  const named = starts.length ? undefined : builtIn.find((d) => [d.word, ...(d.aliases ?? [])].some((word) => word.toLowerCase() === token));
+  if (named) return named.id;
   const made = CARD_DEFS.find((d) => !BUILT_IN_IDS.has(d.id) && d.id.toLowerCase() === token);
   if (made && !starts.length) return made.id;
   const known = CARD_DEFS.filter((d) => BUILT_IN_IDS.has(d.id)).map((d) => d.id).join(', ');
@@ -183,7 +186,7 @@ const SHOWCASE: [code: string, name?: string][] = [
   ['empty'], ['mountain'], ['mountain*3'], ['rain'], ['rain*3'], ['sun'], ['ice'], ['mountain+ice'], ['rain+ice'],
   ['rain+sun'], ['forest'], ['forest+rain'], ['forest+rain+sun'], ['forest+rain+ice'], ['forest+sun'], ['mountain+rain'],
   ['lake'], ['big+lake'], ['lake+ice'], ['river'],
-  ['mountain@0.15,0.5+river@0.5,0.5', 'river_from_the_mountain'],
+  ['mountain@0.25,0.5+river@0.5,0.5', 'river_from_the_mountain'],
   ['mountain@0.15,0.4+river@0.45,0.5+lake@0.7,0.55+forest@0.6,0.35', 'river_through_a_lake'],
   ['civilization'], ['civilization*2'], ['civilization*3'], ['civilization+rain+forest'],
   ['civilization@0.15,0.5+civilization*2@0.5,0.45+civilization*3@0.85,0.5+rain@0.5,0.75', 'village_town_city'],
